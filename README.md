@@ -1,0 +1,46 @@
+# authentication
+
+`authentication` is a Rust workspace that provides:
+
+- `auth_server`: a multi-realm authentication server supporting username/password, JWT/OIDC, mTLS, and TOTP
+- `auth_client`: a client library and shared types used to integrate with the server
+
+## Documentation
+
+Project documentation is in `server/documentation`:
+
+- [Index](server/documentation/index.md)
+- [Getting Started](server/documentation/getting_started.md)
+- [API Reference](server/documentation/api_reference.md)
+- [Authentication Flows](server/documentation/authentication_flows.md)
+- [Session Management](server/documentation/session_management.md)
+- [Authorization and Administration](server/documentation/authorization_and_administration.md)
+- [Two-Factor Authentication](server/documentation/two_factor_authentication.md)
+- [Server Configuration](server/documentation/server_configuration.md)
+- [Client Library](server/documentation/client_library.md)
+
+## Build
+
+From the workspace root:
+
+```bash
+# Build all workspace members
+cargo build --workspace
+
+# Build one crate
+cargo build -p auth_server
+cargo build -p auth_client
+```
+
+## Test
+
+From the workspace root:
+
+```bash
+# Run all tests in the workspace
+cargo test --workspace
+
+# Run tests for a single crate
+cargo test -p auth_server
+cargo test -p auth_client
+```

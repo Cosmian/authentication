@@ -1,0 +1,293 @@
+use crate::{
+    AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm, InjectAdminRealm, UserAuth,
+    UsernamePasswordAuth,
+    middleware::{EnsureAuth, JwksManager, JwtAuth},
+    server::{
+        endpoints::{
+            add_user_to_realm, create_realm, create_user, create_userpass, delete_expired_sessions,
+            delete_realm, delete_sessions, delete_sessions_for_realm, delete_user, delete_userpass,
+            get_realm, get_session, get_session_by_id, get_sessions_for_clients, get_user,
+            get_userpass, list_all_userpass, list_realms, list_userpass_by_realm, list_users,
+            login, remove_user_from_realm, totp_disable, totp_generate, totp_verify, update_realm,
+            update_user, update_userpass, upsert_session, version_endpoint, whoami,
+        },
+        parameters::{DatabaseBackend, DatabaseParams, ServerParams},
+    },
+    session::{self, JwtTokenConfig},
+};
+use actix_cors::Cors;
+use actix_web::{
+    App, Error, HttpServer,
+    body::MessageBody,
+    dev::{ServerHandle, ServiceFactory, ServiceRequest, ServiceResponse},
+    web::{self, Data, JsonConfig, PayloadConfig},
+};
+use cosmian_logger::{debug, info, trace};
+use jsonwebtoken::Algorithm;
+use std::{
+    io,
+    sync::{Arc, mpsc},
+};
+
+#[cfg(feature = "openssl")]
+use crate::tls::openssl_config::{create_openssl_acceptor, extract_openssl_peer_certificate};
+
+/// Inner function to start the test server asynchronously.
+pub async fn start_auth_server(
+    server_params: Arc<ServerParams>,
+    auth_server_handle_tx: Option<mpsc::Sender<ServerHandle>>,
+) -> AuthResult<()> {
+    // Log the server configuration
+    info!("Authentication Server configuration: {server_params:#?}");
+
+    // Instantiate and prepare the Authentication server
+    let (server, _collector_handle) = prepare_auth_server(server_params).await?;
+
+    // send the server handle to the caller
+    if let Some(tx) = &auth_server_handle_tx {
+        info!("Sending the server handle to the caller...");
+        tx.send(server.handle())
+            .context("failed to send server handle")?;
+    }
+
+    info!("Starting the HTTPS Auth auth server...");
+    // Run the server and return the result
+    server
+        .await
+        .map_err(|e: io::Error| crate::AuthError::Unexpected(format!("{e}")))
+}
+
+/// Prepares the auth server with the given parameters and returns the server instance.
+/// This function is responsible for setting up the database, session store, and Actix app configuration.
+/// It does not start the server, allowing the caller to control when to run it.
+///
+/// # Returns
+/// A tuple containing the prepared Actix server
+/// and an optional JoinHandle for the stale session collector task (if applicable).
+async fn prepare_auth_server(
+    params: Arc<ServerParams>,
+) -> AuthResult<(actix_web::dev::Server, Option<tokio::task::JoinHandle<()>>)> {
+    // Determine the address to bind the server to.
+    let address = format!("{}:{}", &params.host_name, params.host_port);
+
+    let database_params = if let Some(ref db_params) = params.database_params {
+        db_params.clone()
+    } else {
+        DatabaseParams {
+            backend: DatabaseBackend::SQLite,
+            connection_url: "sqlite::auth_server.db".to_string(),
+            max_connections: 5,
+            min_connections: 1,
+            connect_timeout_secs: 5,
+            idle_timeout_secs: 300,
+            auto_init_schema: true,
+        }
+    };
+    let database = crate::database::create_database(&database_params).await?;
+
+    let session_store_params = params
+        .sessions_store_params
+        .clone()
+        .unwrap_or_else(|| database_params.clone());
+    let collector_config = params
+        .stale_session_collector_config
+        .clone()
+        .unwrap_or_default();
+    let (session_store, collector_handle) = crate::session::create_session_store_with_collector(
+        &session_store_params,
+        collector_config,
+    )
+    .await?;
+
+    let jwks_manager = JwksManager::new(params.proxy_params.as_ref()).await;
+
+    // let auth_public_url = params.params.auth_public_url.clone().unwrap_or_else(|| {
+    //     format!(
+    //         "http{}://{}:{}",
+    //         if tls_config.is_some() { "s" } else { "" },
+    //         &params.params.http_hostname,
+    //         &params.params.http_port
+    //     )
+    // });
+
+    let jwt_token_config = Arc::new(JwtTokenConfig {
+        algorithm: Algorithm::ES256,
+        encoding_key: params.get_jwt_encoding_key()?,
+        decoding_key: params.get_jwt_decoding_key()?,
+    });
+
+    // Clone test server params for HttpServer closure
+    let server_params = params.clone();
+
+    let default_username = params.default_username.clone();
+
+    // Redis session store - store implements Clone
+    let http_server = HttpServer::new(move || {
+        build_app(
+            server_params.clone(),
+            database.clone(),
+            session_store.clone(),
+            jwks_manager.clone(),
+            default_username.clone(),
+            jwt_token_config.clone(),
+        )
+    });
+    let http_server = http_server
+        .keep_alive(actix_web::http::KeepAlive::Timeout(
+            std::time::Duration::from_secs(120),
+        ))
+        .client_request_timeout(std::time::Duration::from_secs(10));
+
+    #[cfg(feature = "openssl")]
+    let http_server = http_server
+        .on_connect(extract_openssl_peer_certificate)
+        .bind_openssl(&address, create_openssl_acceptor(&params.tls_params)?)
+        .map_err(|e| {
+            crate::AuthError::Init(format!("Failed binding the OpenSSL TLS connector: {e}"))
+        })?;
+
+    #[cfg(feature = "rustls")]
+    let http_server = http_server
+        .on_connect(extract_rustls_peer_certificate)
+        .bind_rustls_0_23(&address, rustls_server_config(&params.tls_params)?)
+        .map_err(|e| {
+            crate::AuthError::Init(format!("Failed binding the Rustls TLS connector: {e}"))
+        })?;
+
+    debug!("Starting Authentication Server on {} ", &address,);
+    Ok((http_server.run(), collector_handle))
+}
+
+/// Builds the Actix App with the given session middleware.
+///
+/// This function is generic over the session store type to support both
+/// `CookieSessionStore` and `RedisSessionStore`.
+fn build_app(
+    server_params: Arc<ServerParams>,
+    database: Arc<dyn crate::database::Database>,
+    session_store: Arc<dyn session::SessionStore>,
+    jwks_manager: Arc<JwksManager>,
+    default_username: Option<String>,
+    jwt_token_config: Arc<JwtTokenConfig>,
+) -> App<
+    impl ServiceFactory<
+        ServiceRequest,
+        Config = (),
+        Response = ServiceResponse<impl MessageBody>,
+        Error = Error,
+        InitError = (),
+    >,
+> {
+    trace!("Configuring the Actix server application...");
+
+    // Create an `App` instance and configure the passed data and the various scopes
+    let app = App::new()
+        .app_data(Data::new(server_params.clone()))
+        .app_data(Data::new(database.clone()))
+        .app_data(Data::new(session_store.clone()))
+        .app_data(Data::new(jwt_token_config.clone()))
+        .app_data(PayloadConfig::new(1_000_000))
+        .app_data(JsonConfig::default().limit(1_000_000));
+
+    #[cfg(test)]
+    let app = {
+        let idp: std::sync::Arc<dyn crate::tests::IdP + Send + Sync> = std::sync::Arc::new(
+            crate::tests::RsaIdp::new("test_auth_issuer").expect("failed to create dummy idp"),
+        );
+        app.app_data(Data::new(idp))
+    };
+
+    // The client scope
+    let client_scope = web::scope("/login")
+        .wrap(EnsureAuth::new(true, default_username.as_deref()))
+        .wrap(JwtAuth::new(jwks_manager.clone()))
+        .wrap(UsernamePasswordAuth::new(database.clone()))
+        .wrap(ExtractRealm::new(database.clone()))
+        .wrap(Cors::permissive())
+        .route("", web::post().to(login));
+
+    let whoami_scope = web::scope("/whoami")
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(ExtractRealm::new(database.clone()))
+        .wrap(Cors::permissive())
+        .route("", web::get().to(whoami));
+
+    // The public scope
+    let public_scope = web::scope("/public")
+        .wrap(Cors::permissive())
+        .route("/version", web::get().to(version_endpoint));
+
+    #[cfg(test)]
+    let public_scope = public_scope.route("/jwks", web::get().to(crate::tests::jwks_endpoint));
+
+    // The super admin scope
+    let super_admins_scope = web::scope("/admin")
+        .wrap(UserAuth::new(database.clone()))
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(InjectAdminRealm::new(database.clone()))
+        .wrap(Cors::permissive())
+        .service(create_realm)
+        .service(get_realm)
+        .service(update_realm)
+        .service(delete_realm)
+        .service(list_realms)
+        .service(list_all_userpass);
+
+    let app_scope = web::scope("/realms")
+        .wrap(UserAuth::new(database.clone()))
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(ExtractRealm::new(database.clone()))
+        .wrap(Cors::permissive())
+        .service(create_userpass)
+        .service(get_userpass)
+        .service(update_userpass)
+        .service(delete_userpass)
+        .service(list_userpass_by_realm)
+        .service(totp_generate)
+        .service(totp_verify)
+        .service(totp_disable);
+
+    let sessions_scope = web::scope("/sessions")
+        .wrap(Cors::permissive())
+        .wrap(ExtractRealm::new(database.clone()))
+        .service(upsert_session)
+        .service(get_session_by_id)
+        .service(get_session)
+        .service(get_sessions_for_clients)
+        .service(delete_sessions)
+        .service(delete_expired_sessions)
+        .service(delete_sessions_for_realm);
+
+    let users_scope = web::scope("/users")
+        .wrap(UserAuth::new(database.clone()))
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(InjectAdminRealm::new(database.clone()))
+        .wrap(Cors::permissive())
+        .service(create_user)
+        .service(get_user)
+        .service(update_user)
+        .service(delete_user)
+        .service(list_users)
+        .service(add_user_to_realm)
+        .service(remove_user_from_realm);
+
+    app.service(public_scope)
+        .service(client_scope)
+        .service(whoami_scope)
+        .service(sessions_scope)
+        .service(app_scope)
+        .service(users_scope)
+        .service(super_admins_scope)
+}

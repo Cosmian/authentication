@@ -1,0 +1,66 @@
+[package]
+name = "auth_server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "API Server"
+
+[features]
+default = ["openssl", "database"]
+openssl = ["actix-web/openssl", "dep:openssl"]
+rustls = ["actix-web/rustls-0_23", "dep:rustls"]
+# no_jwt_validation: only useful for tests, do not enable in production
+# this feature will disable JWT verification of the token issuer and expiration date
+no_jwt_validation = []
+# Database support - all backends are available at runtime based on DatabaseParams
+database = ["dep:sqlx", "sqlx?/postgres", "sqlx?/sqlite", "sqlx?/mysql"]
+
+[dependencies]
+actix-cors = { workspace = true }
+actix-tls = { workspace = true }
+actix-web = { workspace = true, features = ["macros", "cookies"] }
+argon2 = { workspace = true }
+async-trait = { workspace = true }
+base32 = { workspace = true }
+base64 = { workspace = true }
+chrono = { workspace = true }
+cosmian_logger = { workspace = true, features = ["full"] }
+futures = { workspace = true }
+hex = { workspace = true }
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs", "use_pem"] }
+openssl = { workspace = true, features = ["vendored"], optional = true }
+redis = { workspace = true }
+reqwest = { workspace = true, features = [
+    "json",
+    "native-tls",
+    "http2",
+    "cookies",
+] }
+rustls = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sqlx = { workspace = true, features = [
+    "tls-rustls-aws-lc-rs",
+], optional = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+auth_client = { path = "../client", features = ["_server"] }
+toml = { workspace = true }
+totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
+url = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "auth_server"
+path = "src/main.rs"
+
+
+[dev-dependencies]
+openssl = { workspace = true, features = ["vendored"] }
+tokio = { workspace = true }
