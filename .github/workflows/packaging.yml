@@ -121,6 +121,10 @@ jobs:
       - name: List GPG keys
         run: gpg -K
 
+      - name: Install cargo-packager (macOS DMG builds)
+        if: runner.os == 'macOS'
+        run: cargo install --locked cargo-packager
+
       - name: Package with GPG signature
         run: |
           bash .github/scripts/nix.sh --link ${{ matrix.link }} package

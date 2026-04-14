@@ -92,5 +92,4 @@ pkgs.dockerTools.buildImage {
   };
 
   created = "now";
-  diskUsage = true;
 }

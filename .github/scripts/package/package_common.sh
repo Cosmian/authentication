@@ -72,7 +72,7 @@ build_or_reuse_server() {
 
   OUT_LINK="$REPO_ROOT/result-server-${LINK}"
 
-  nix-build -I "nixpkgs=${PIN_URL}" --option substituters "" "$REPO_ROOT/default.nix" -A "$attr" -o "$OUT_LINK"
+  nix-build -I "nixpkgs=${PIN_URL}" "$REPO_ROOT/default.nix" -A "$attr" -o "$OUT_LINK"
   REAL_SERVER=$(readlink -f "$OUT_LINK" || echo "$OUT_LINK")
   BIN_OUT="$REAL_SERVER/bin/auth_server"
 

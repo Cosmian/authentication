@@ -111,14 +111,12 @@ ensure_nix_path() {
 
 parse_global_options() {
   LINK="static"
-  LINK_EXPLICIT=""
   COMMAND=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
     -l | --link)
       LINK="${2:-}"
-      LINK_EXPLICIT=1
       shift 2 || true
       ;;
     docker | test | package | update-hashes)
@@ -427,7 +425,7 @@ update_hashes_command() {
     echo "Building auth-server (static) to capture hashes..."
     ATTR="auth-server-static"
     OUT_LINK="$REPO_ROOT/result-server-static"
-    nix-build -I "nixpkgs=${PIN_URL}" --option substituters "" "$REPO_ROOT/default.nix" -A "$ATTR" -o "$OUT_LINK"
+    nix-build -I "nixpkgs=${PIN_URL}" "$REPO_ROOT/default.nix" -A "$ATTR" -o "$OUT_LINK"
     REAL_OUT=$(readlink -f "$OUT_LINK")
 
     # Copy generated hash file from derivation output
