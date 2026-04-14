@@ -1,3 +1,10 @@
+## Bug Fixes
+
+- Remove unused `tokio` dev-dependency from `auth_client` and unused `base32` dependency from `auth_server` (cargo-machete)
+- Add `.cargo/audit.toml` ignoring RUSTSEC-2023-0071 (`rsa` Marvin Attack — transitive via `sqlx-mysql`, no upstream fix available)
+- Add `.github/reusable_scripts/get_openssl_binaries.sh` stub so the shared `clippy.yml` reusable workflow passes; `auth_server` uses vendored OpenSSL and does not need pre-built binaries
+- Fix `packaging.yml` job `if` conditions: remove `github.event_name == 'workflow_call'` guards (inside a reusable workflow `github.event_name` reflects the caller's original event, not `workflow_call`); `publish-release` now only runs on tag pushes
+
 ## CI
 
 - Add Nix-based CI/CD infrastructure for Cosmian Authentication Server: `default.nix`, `shell.nix`, `nix/auth-server.nix`, `nix/docker.nix`, pinned nixpkgs (glibc 2.34, Rocky Linux 9 compatibility) and rust-overlay (Rust 1.94.1)
