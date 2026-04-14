@@ -35,4 +35,3 @@ url = { workspace = true }
 path = "src/lib.rs"
 
 [dev-dependencies]
-tokio = { workspace = true }

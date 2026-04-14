@@ -293,7 +293,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "tokio",
  "url",
 ]
 
@@ -307,7 +306,6 @@ dependencies = [
  "argon2",
  "async-trait",
  "auth_client",
- "base32",
  "base64",
  "chrono",
  "cosmian_logger",

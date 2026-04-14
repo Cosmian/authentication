@@ -20,10 +20,6 @@ jobs:
   docker:
     name: docker-${{ matrix.runner }}
     runs-on: ${{ matrix.runner }}
-    if: |
-      github.event_name == 'workflow_call'
-      || startsWith(github.ref, 'refs/tags/')
-      || github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
@@ -83,11 +79,6 @@ jobs:
   packages:
     name: ${{ matrix.runner }}-${{ matrix.link }}
     runs-on: ${{ matrix.runner }}
-    if: |
-      github.event_name == 'workflow_call'
-      || startsWith(github.ref, 'refs/tags/')
-      || github.event_name == 'workflow_dispatch'
-
     strategy:
       fail-fast: false
       matrix:
@@ -146,10 +137,7 @@ jobs:
           if-no-files-found: error
 
   publish-release:
-    if: |
-      github.event_name == 'workflow_call'
-      || startsWith(github.ref, 'refs/tags/')
-      || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/')
 
     name: Publish ${{ matrix.runner }}-${{ matrix.link }}
     needs: packages

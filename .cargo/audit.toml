@@ -1,0 +1,6 @@
+[advisories]
+# RUSTSEC-2023-0071: rsa crate Marvin Attack (timing side-channel)
+# Pulled in transitively by sqlx-mysql (MySQL backend). No fix available upstream.
+# This is only exploitable in network-observable timing scenarios; the KMS server
+# does not expose RSA operations through the MySQL connection path.
+ignore = ["RUSTSEC-2023-0071"]
