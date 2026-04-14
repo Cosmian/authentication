@@ -1,0 +1,208 @@
+---
+name: Packaging
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        required: true
+        type: string
+        default: stable
+  workflow_dispatch:
+    inputs:
+      toolchain:
+        description: Rust toolchain to use (e.g., stable, 1.86.0)
+        required: true
+        type: string
+        default: stable
+
+jobs:
+  docker:
+    name: docker-${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    if: |
+      github.event_name == 'workflow_call'
+      || startsWith(github.ref, 'refs/tags/')
+      || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+
+    steps:
+      - name: Nix installation
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            connect-timeout = 15
+            stalled-download-timeout = 15
+            narinfo-cache-negative-ttl = 0
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Warm Nix store
+        run: |
+          sed -n 's/.*url *= *"\(https:\/\/[^"]*\.tar\.gz\)".*/\1/p' default.nix | sort -u | while read -r url; do
+            dest="/tmp/$(basename "$url")"
+            fallback=$(echo "$url" | sed 's|https://package.cosmian.com/nixpkgs/|https://github.com/NixOS/nixpkgs/archive/|')
+            echo "Downloading $(basename "$url") …"
+            if ! curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL -o "$dest" "$url"; then
+              echo "Mirror failed, falling back to GitHub …"
+              curl --retry 5 --retry-delay 10 --retry-max-time 300 --retry-all-errors -fsSL -o "$dest" "$fallback"
+            fi
+            nix-prefetch-url --unpack --name source "file://$dest"
+            rm -f "$dest"
+          done
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image via Nix
+        run: |
+          bash .github/scripts/nix.sh docker --load
+
+      - name: Push Docker image
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        run: |
+          VERSION=$(bash .github/scripts/release/get_version.sh)
+          docker tag "cosmian-auth-server:${VERSION}" "ghcr.io/cosmian/auth-server:${VERSION}"
+          docker tag "cosmian-auth-server:${VERSION}" "ghcr.io/cosmian/auth-server:latest"
+          docker push "ghcr.io/cosmian/auth-server:${VERSION}"
+          docker push "ghcr.io/cosmian/auth-server:latest"
+
+  packages:
+    name: ${{ matrix.runner }}-${{ matrix.link }}
+    runs-on: ${{ matrix.runner }}
+    if: |
+      github.event_name == 'workflow_call'
+      || startsWith(github.ref, 'refs/tags/')
+      || github.event_name == 'workflow_dispatch'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        link: [static, dynamic]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+
+    steps:
+      - name: Nix installation
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            connect-timeout = 15
+            stalled-download-timeout = 15
+            narinfo-cache-negative-ttl = 0
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Warm Nix store
+        run: |
+          sed -n 's/.*url *= *"\(https:\/\/[^"]*\.tar\.gz\)".*/\1/p' default.nix | sort -u | while read -r url; do
+            dest="/tmp/$(basename "$url")"
+            fallback=$(echo "$url" | sed 's|https://package.cosmian.com/nixpkgs/|https://github.com/NixOS/nixpkgs/archive/|')
+            echo "Downloading $(basename "$url") …"
+            if ! curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL -o "$dest" "$url"; then
+              echo "Mirror failed, falling back to GitHub …"
+              curl --retry 5 --retry-delay 10 --retry-max-time 300 --retry-all-errors -fsSL -o "$dest" "$fallback"
+            fi
+            nix-prefetch-url --unpack --name source "file://$dest"
+            rm -f "$dest"
+          done
+
+      - name: Set up GPG
+        uses: crazy-max/ghaction-import-gpg@v7
+        with:
+          gpg_private_key: ${{ secrets.GPG_SIGNING_KEY }}
+          passphrase: ${{ secrets.GPG_SIGNING_KEY_PASSPHRASE }}
+
+      - name: List GPG keys
+        run: gpg -K
+
+      - name: Package with GPG signature
+        run: |
+          bash .github/scripts/nix.sh --link ${{ matrix.link }} package
+        env:
+          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+          GPG_SIGNING_KEY_PASSPHRASE: ${{ secrets.GPG_SIGNING_KEY_PASSPHRASE }}
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.link }}_${{ matrix.runner }}-release
+          path: result-*-${{ matrix.link }}/*
+          retention-days: 1
+          if-no-files-found: error
+
+  publish-release:
+    if: |
+      github.event_name == 'workflow_call'
+      || startsWith(github.ref, 'refs/tags/')
+      || github.event_name == 'workflow_dispatch'
+
+    name: Publish ${{ matrix.runner }}-${{ matrix.link }}
+    needs: packages
+    concurrency:
+      group: publish-release
+      cancel-in-progress: false
+    runs-on: [self-hosted, not-sgx]
+    container:
+      image: cosmian/docker_doc_ci
+      volumes:
+        - /home/cosmian/.ssh/id_rsa:/root/.ssh/id_rsa
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        link: [static, dynamic]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+        package-type: [deb, rpm, dmg]
+        cpu-arch: [amd64, arm64]
+        exclude:
+          - runner: ubuntu-24.04
+            package-type: dmg
+          - runner: ubuntu-24.04-arm
+            package-type: dmg
+          - runner: macos-15
+            package-type: deb
+          - runner: macos-15
+            package-type: rpm
+          - runner: ubuntu-24.04
+            cpu-arch: arm64
+          - runner: ubuntu-24.04-arm
+            cpu-arch: amd64
+          - runner: macos-15
+            cpu-arch: arm64
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.link }}_${{ matrix.runner }}-release
+
+      - name: Display structure
+        run: find . -type f | head -40
+
+      - name: Push packages
+        run: |
+          set -ex
+          VERSION=$(cat result-*/VERSION 2>/dev/null || echo "unknown")
+          for ext in deb rpm dmg; do
+            for f in $(find . -name "*.${ext}" 2>/dev/null); do
+              scp "$f" "package@package.cosmian.com:/data/packages/authentication/${VERSION}/"
+              [ -f "${f}.sha256" ] && scp "${f}.sha256" "package@package.cosmian.com:/data/packages/authentication/${VERSION}/" || true
+              [ -f "${f}.asc" ]    && scp "${f}.asc"    "package@package.cosmian.com:/data/packages/authentication/${VERSION}/" || true
+            done
+          done
