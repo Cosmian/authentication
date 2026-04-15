@@ -13,11 +13,11 @@ pub use server::parameters::{DatabaseBackend, DatabaseParams, ServerParams};
 pub use server::start_auth_server;
 
 mod session;
-pub use session::{build_cookie, delete_cookie};
 pub use session::{
-    create_session_store_with_collector, start_stale_session_collector, SessionStore,
-    StaleSessionCollectorConfig,
+    SessionStore, StaleSessionCollectorConfig, create_session_store_with_collector,
+    start_stale_session_collector,
 };
+pub use session::{build_cookie, delete_cookie};
 
 pub mod tls;
 
@@ -28,9 +28,9 @@ pub mod client {
 }
 pub mod models {
     pub use auth_client::{
-        AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme, AuthenticationNextStep,
-        AuthenticationResult, ClientClaims, LoginRequest, Realm, RegisteredClaims, SessionData,
-        User, UserPass, ADMIN_REALM,
+        ADMIN_REALM, AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme,
+        AuthenticationNextStep, AuthenticationResult, ClientClaims, LoginRequest, Realm,
+        RegisteredClaims, SessionData, User, UserPass,
     };
 }
 
