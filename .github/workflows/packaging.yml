@@ -193,7 +193,11 @@ jobs:
       - name: Push packages
         run: |
           set -ex
-          VERSION=$(cat result-*/VERSION 2>/dev/null || echo "unknown")
+          if [[ "${GITHUB_REF}" =~ 'refs/tags/' ]]; then
+            VERSION="${GITHUB_REF_NAME}"
+          else
+            VERSION="last_build/${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+          fi
           for ext in deb rpm dmg; do
             for f in $(find . -name "*.${ext}" 2>/dev/null); do
               scp "$f" "package@package.cosmian.com:/data/packages/authentication/${VERSION}/"
@@ -202,9 +206,22 @@ jobs:
             done
           done
 
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/') && matrix.link == 'static'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            result-${{ matrix.package-type }}-${{ matrix.link }}/*
+
   cargo-publish:
     uses: ./.github/workflows/cargo-publish.yml
     with:
       toolchain: ${{ inputs.toolchain }}
     secrets:
       token: ${{ secrets.CRATES_IO }}
+
+  tests:
+    needs: packages
+    uses: ./.github/workflows/packaging-tests.yml
+    with:
+      toolchain: 1.90.0
