@@ -102,8 +102,22 @@ stage_binary() {
 
 gpg_sign_file() {
   local file="$1"
-  if [ -n "${GPG_SIGNING_KEY:-}" ] && command -v gpg >/dev/null 2>&1; then
-    echo "GPG-signing: $file"
+  if [ -z "${GPG_SIGNING_KEY:-}" ] || ! command -v gpg >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "GPG-signing: $file"
+  # (Re-)import the signing key in the current $HOME. This is necessary because
+  # build_deb / build_rpm reset HOME to $TMPDIR for Cargo, so GPG's default
+  # keyring (~/.gnupg) is a fresh empty directory — different from the one where
+  # crazy-max/ghaction-import-gpg originally imported the key.
+  if ! echo "$GPG_SIGNING_KEY" | gpg --batch --import 2>/dev/null; then
+    echo "$GPG_SIGNING_KEY" | base64 --decode | gpg --batch --import
+  fi
+  if [ -n "${GPG_SIGNING_KEY_PASSPHRASE:-}" ]; then
+    echo "$GPG_SIGNING_KEY_PASSPHRASE" | gpg --batch --yes \
+      --passphrase-fd 0 --pinentry-mode loopback \
+      --detach-sign --armor "$file"
+  else
     gpg --batch --yes --detach-sign --armor "$file"
   fi
 }

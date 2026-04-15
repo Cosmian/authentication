@@ -4,6 +4,8 @@
 - Add `.cargo/audit.toml` ignoring RUSTSEC-2023-0071 (`rsa` Marvin Attack — transitive via `sqlx-mysql`, no upstream fix available)
 - Add `.github/reusable_scripts/get_openssl_binaries.sh` stub so the shared `clippy.yml` reusable workflow passes; `auth_server` uses vendored OpenSSL and does not need pre-built binaries
 - Fix `packaging.yml` job `if` conditions: remove `github.event_name == 'workflow_call'` guards (inside a reusable workflow `github.event_name` reflects the caller's original event, not `workflow_call`); `publish-release` now only runs on tag pushes
+- Fix GPG signing failure in all packaging jobs: `build_deb`/`build_rpm`/`package_dmg.sh` set `export HOME="${TMPDIR}"` for Cargo, causing GPG to use a fresh empty keyring; fix by re-importing the key from `$GPG_SIGNING_KEY` with passphrase in `gpg_sign_file()` and the DMG inline signing block
+- Fix `aws-lc-sys v0.39.1` build failure on aarch64 Linux: `pkgs234` (nixpkgs 22.05) defaults to gcc-9.3.0 on aarch64 which is rejected due to a memcmp bug ([GCC PR#95189](https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189)); use `platform.gcc11` instead in `nix/auth-server.nix` buildPhase CC/CXX exports on aarch64
 
 ## CI
 

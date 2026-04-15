@@ -136,8 +136,15 @@ rustPlatform.buildRustPackage {
   # referencing __isoc23_strtol / __isoc23_sscanf — symbols absent in glibc 2.34.
   buildPhase =
     let
-      ccBin = "${platform.stdenv.cc}/bin/${platform.stdenv.cc.targetPrefix}cc";
-      cxxBin = "${platform.stdenv.cc}/bin/${platform.stdenv.cc.targetPrefix}c++";
+      # On aarch64 Linux, pkgs234's default stdenv.cc is gcc-9.3.0 which is rejected
+      # by aws-lc-sys v0.39.1+ due to a memcmp bug (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95189).
+      # Use gcc11 from pkgs234 instead — still glibc 2.34 compatible but without the bug.
+      effectiveCc =
+        if pkgs.stdenv.isLinux && platform.stdenv.hostPlatform.isAarch64
+        then platform.gcc11
+        else platform.stdenv.cc;
+      ccBin = "${effectiveCc}/bin/${effectiveCc.targetPrefix}cc";
+      cxxBin = "${effectiveCc}/bin/${effectiveCc.targetPrefix}c++";
       # Convert "x86_64-unknown-linux-gnu" → "x86_64_unknown_linux_gnu"
       rustTriple = lib.replaceStrings [ "-" ] [ "_" ] platform.stdenv.hostPlatform.config;
       ccExports = lib.optionalString pkgs.stdenv.isLinux ''

@@ -78,7 +78,18 @@ done
 
 # GPG sign
 if [ -n "${GPG_SIGNING_KEY:-}" ] && command -v gpg >/dev/null 2>&1; then
+  # (Re-)import the signing key in the current $HOME (export HOME="${TMPDIR}" above
+  # means the default keyring is a fresh empty directory).
+  if ! echo "$GPG_SIGNING_KEY" | gpg --batch --import 2>/dev/null; then
+    echo "$GPG_SIGNING_KEY" | base64 --decode | gpg --batch --import
+  fi
   find "$OUT_DIR" -name '*.dmg' | while IFS= read -r dmg; do
-    gpg --batch --yes --detach-sign --armor "$dmg"
+    if [ -n "${GPG_SIGNING_KEY_PASSPHRASE:-}" ]; then
+      echo "$GPG_SIGNING_KEY_PASSPHRASE" | gpg --batch --yes \
+        --passphrase-fd 0 --pinentry-mode loopback \
+        --detach-sign --armor "$dmg"
+    else
+      gpg --batch --yes --detach-sign --armor "$dmg"
+    fi
   done
 fi
