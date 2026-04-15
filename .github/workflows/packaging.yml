@@ -183,7 +183,7 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.link }}_${{ matrix.runner }}-release
 
@@ -198,11 +198,17 @@ jobs:
           else
             VERSION="last_build/${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
           fi
+          DESTINATION_DIR="/data/packages/authentication/${VERSION}"
+          ssh -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
+            package@package.cosmian.com mkdir -p "$DESTINATION_DIR"
           for ext in deb rpm dmg; do
             for f in $(find . -name "*.${ext}" 2>/dev/null); do
-              scp "$f" "package@package.cosmian.com:/data/packages/authentication/${VERSION}/"
-              [ -f "${f}.sha256" ] && scp "${f}.sha256" "package@package.cosmian.com:/data/packages/authentication/${VERSION}/" || true
-              [ -f "${f}.asc" ]    && scp "${f}.asc"    "package@package.cosmian.com:/data/packages/authentication/${VERSION}/" || true
+              scp -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
+                "$f" "package@package.cosmian.com:${DESTINATION_DIR}/"
+              [ -f "${f}.sha256" ] && scp -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
+                "${f}.sha256" "package@package.cosmian.com:${DESTINATION_DIR}/" || true
+              [ -f "${f}.asc" ]    && scp -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
+                "${f}.asc"    "package@package.cosmian.com:${DESTINATION_DIR}/" || true
             done
           done
 

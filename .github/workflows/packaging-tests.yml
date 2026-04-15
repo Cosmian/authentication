@@ -154,14 +154,14 @@ jobs:
         run: |
           set -ex
           BIN="/usr/sbin/auth_server"
-          if [ ! -x "$BIN" ]; then
-            BIN=$(find /usr -name 'auth_server' -type f 2>/dev/null | head -1)
+          if [ ! -f "$BIN" ]; then
+            BIN=$(find /usr/sbin /usr/bin /usr/local/bin -name 'auth_server' -type f 2>/dev/null | head -1)
           fi
-          [ -x "$BIN" ] || { echo "ERROR: auth_server not found"; exit 1; }
+          [ -f "$BIN" ] || { echo "ERROR: auth_server not found"; exit 1; }
           sudo ldd "$BIN" || true
-          sudo chmod +x "$BIN"
           # Verify the binary executes and exits with a config error (not a crash)
-          output=$("$BIN" 2>&1 || true)
+          # Binary is installed root-only (-r-x------); run via sudo
+          output=$(sudo "$BIN" 2>&1 || true)
           echo "$output"
           echo "$output" | grep -qiE 'failed to read|auth_server\.toml|configuration' \
             || { echo "ERROR: unexpected output from auth_server"; exit 1; }
