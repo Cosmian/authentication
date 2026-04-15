@@ -390,7 +390,7 @@ package_command() {
         SMOKE_TEST="$REPO_ROOT/.github/scripts/package/smoke_test_rpm.sh"
         RPM_FILE=$(find "$REAL_OUT" -maxdepth 1 -type f -name '*.rpm' 2>/dev/null | head -n1 || true)
         if [ -n "${RPM_FILE:-}" ] && [ -f "$RPM_FILE" ] && [ -f "$SMOKE_TEST" ]; then
-          nix-shell -I "nixpkgs=${NIXPKGS_ARG}" -p binutils file coreutils --run "bash '$SMOKE_TEST' '$RPM_FILE'" || {
+          nix-shell -I "nixpkgs=${NIXPKGS_ARG}" -p binutils file coreutils rpm cpio --run "bash '$SMOKE_TEST' '$RPM_FILE'" || {
             echo "ERROR: Smoke test failed for $RPM_FILE" >&2
             exit 1
           }
