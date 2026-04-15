@@ -191,6 +191,7 @@ jobs:
         run: find . -type f | head -40
 
       - name: Push packages
+        shell: bash
         run: |
           set -ex
           if [[ "${GITHUB_REF}" =~ 'refs/tags/' ]]; then
