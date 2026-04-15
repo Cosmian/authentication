@@ -606,7 +606,8 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 [[package]]
 name = "cosmian_logger"
 version = "0.7.0"
-source = "git+https://github.com/Cosmian/http_client_server.git?branch=develop#72d420e8ec2ad732bebc28e16af3f98ba3cec2da"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c4ea19c5444482c327d94474b9c7d81d5c6a9137f49b3e5e5ff35493198ccb"
 dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",

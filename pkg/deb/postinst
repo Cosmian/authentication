@@ -20,3 +20,5 @@ if [ -f /etc/cosmian/auth_server.toml ]; then
   chmod 400 /etc/cosmian/auth_server.toml
   chown root:cosmian /etc/cosmian/auth_server.toml
 fi
+
+#DEBHELPER#

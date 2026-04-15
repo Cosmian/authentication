@@ -72,9 +72,7 @@ let
   # Git-sourced crate output hashes.
   # When adding a new git dep, set a fake hash here, run nix-build, and copy the
   # "got: sha256-..." value from the error into this attribute set.
-  gitDepOutputHashes = {
-    "cosmian_logger-0.7.0" = "sha256-lbTlq/bOPdgIdebC8xX6hRD9P1h6bWXZ9rJaqd8PvpI=";
-  };
+  gitDepOutputHashes = { };
 
   # Build inputs: darwin frameworks + iconv
   buildInputs =
@@ -130,10 +128,27 @@ rustPlatform.buildRustPackage {
   auditable = false;
 
   # Custom build phase: explicit cargo build so we control flags precisely.
-  buildPhase = ''
-    echo "== cargo build auth_server (release) =="
-    cargo build --release -p auth_server --bin auth_server
-  '';
+  # We must set CC_<triple> / CXX_<triple> explicitly here because we use a
+  # custom buildPhase that bypasses cargoBuildHook, which normally injects these
+  # variables pointing to platform.stdenv.cc (pkgs234, glibc 2.34).  Without
+  # them the cc/cmake crates fall back to whatever `cc` is found in PATH, which
+  # may be from the modern nixpkgs (glibc 2.40) and would produce object files
+  # referencing __isoc23_strtol / __isoc23_sscanf — symbols absent in glibc 2.34.
+  buildPhase =
+    let
+      ccBin = "${platform.stdenv.cc}/bin/${platform.stdenv.cc.targetPrefix}cc";
+      cxxBin = "${platform.stdenv.cc}/bin/${platform.stdenv.cc.targetPrefix}c++";
+      # Convert "x86_64-unknown-linux-gnu" → "x86_64_unknown_linux_gnu"
+      rustTriple = lib.replaceStrings [ "-" ] [ "_" ] platform.stdenv.hostPlatform.config;
+      ccExports = lib.optionalString pkgs.stdenv.isLinux ''
+        export CC_${rustTriple}=${ccBin}
+        export CXX_${rustTriple}=${cxxBin}
+      '';
+    in
+    ''
+      echo "== cargo build auth_server (release) =="
+      ${ccExports}cargo build --release -p auth_server --bin auth_server
+    '';
 
   # Custom install phase: copy the binary and immediately patch its ELF
   # interpreter to the SYSTEM dynamic linker (not the Nix store one),

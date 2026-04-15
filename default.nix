@@ -59,12 +59,44 @@ let
     else
       pkgs;
 
-  # rustPlatform: on Linux use pkgs234.makeRustPlatform (glibc 2.34)
+  # pkgs234.makeRustPlatform (nixpkgs 22.05) has two bugs for git deps with
+  # workspace inheritance (version.workspace = true, added in Cargo 1.64):
+  #
+  # Bug 1: import-cargo-lock.nix is called with `{}` (no cargo override), so it
+  #   uses buildPackages.cargo (= cargo-1.60.0) which can't parse workspace syntax.
+  #   Fix: extend pkgs234 to set cargo = rustToolchain so buildPackages.cargo is modern.
+  #
+  # Bug 2: pkgs234's import-cargo-lock.nix is missing the replace-workspace-values.py
+  #   step, so workspace inheritance keys remain in vendored Cargo.toml files.
+  #   Fix: use the modern importCargoLock from pkgsWithRust which has this step,
+  #   and inject it into the pkgs234-based rustPlatform.buildRustPackage.
+  pkgs234Fixed =
+    if pkgs.stdenv.isLinux then
+      pkgs234.extend (_: _: { cargo = rustToolchain; })
+    else
+      pkgs234;
+
+  # Modern importCargoLock (from pkgsWithRust) that supports workspace inheritance
+  # via replace-workspace-values.py. Used to override the missing step in pkgs234.
+  importCargoLockModern =
+    (pkgsWithRust.makeRustPlatform {
+      cargo = rustToolchain;
+      rustc = rustToolchain;
+    }).importCargoLock;
+
+  # rustPlatform: on Linux use pkgs234Fixed (glibc 2.34) with modern importCargoLock
   rustPlatform =
     if pkgs.stdenv.isLinux then
-      pkgs234.makeRustPlatform {
-        cargo = rustToolchain;
-        rustc = rustToolchain;
+      let
+        base = pkgs234Fixed.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
+      in
+      base // {
+        buildRustPackage = base.buildRustPackage.override {
+          importCargoLock = importCargoLockModern;
+        };
       }
     else
       pkgsWithRust.makeRustPlatform {

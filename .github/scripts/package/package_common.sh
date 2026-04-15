@@ -90,8 +90,9 @@ stage_binary() {
   host_triple=$(rustc -vV 2>/dev/null | awk '/host:/ {print $2}' || echo "")
   mkdir -p "server/target/release" "target/release"
   if [ -n "$host_triple" ]; then
-    mkdir -p "server/target/${host_triple}/release"
+    mkdir -p "server/target/${host_triple}/release" "target/${host_triple}/release"
     cp -f "$BIN_OUT" "server/target/${host_triple}/release/auth_server"
+    cp -f "$BIN_OUT" "target/${host_triple}/release/auth_server"
   fi
   cp -f "$BIN_OUT" "server/target/release/auth_server"
   cp -f "$BIN_OUT" "target/release/auth_server"
