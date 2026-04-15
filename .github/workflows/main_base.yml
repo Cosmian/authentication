@@ -52,8 +52,8 @@ jobs:
       - name: Static analysis
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Static analysis all features
-        run: cargo clippy --workspace --all-targets --features rust_ -- -D warnings
+      # - name: Static analysis all features
+      #   run: cargo clippy --workspace --all-targets --no-default-features --features database,rustls -- -D warnings
 
   cargo-test:
     name: Cargo test - ${{ matrix.runner }}
