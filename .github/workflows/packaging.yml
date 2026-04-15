@@ -198,3 +198,10 @@ jobs:
               [ -f "${f}.asc" ]    && scp "${f}.asc"    "package@package.cosmian.com:/data/packages/authentication/${VERSION}/" || true
             done
           done
+
+  cargo-publish:
+    uses: ./.github/workflows/cargo-publish.yml
+    with:
+      toolchain: ${{ inputs.toolchain }}
+    secrets:
+      token: ${{ secrets.CRATES_IO }}

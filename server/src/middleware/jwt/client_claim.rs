@@ -3,9 +3,9 @@ use cosmian_logger::{debug, trace};
 use jsonwebtoken::dangerous::insecure_decode;
 #[cfg(not(feature = "no_jwt_validation"))]
 use jsonwebtoken::decode;
+use jsonwebtoken::decode_header;
 #[cfg(not(feature = "no_jwt_validation"))]
 use jsonwebtoken::{DecodingKey, Validation};
-use jsonwebtoken::decode_header;
 use std::sync::Arc;
 
 use crate::{

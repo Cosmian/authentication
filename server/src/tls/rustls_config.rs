@@ -44,9 +44,7 @@ pub(crate) fn rustls_server_config(tls_config: &TlsParams) -> ServerResult<Serve
     let client_auth = WebPkiClientVerifier::builder(Arc::new(cert_store))
         .allow_unknown_revocation_status()
         .build()
-        .map_err(|e| {
-            ServerError::Config(format!("Failed to create WebPkiClientVerifier: {e}"))
-        })?;
+        .map_err(|e| ServerError::Config(format!("Failed to create WebPkiClientVerifier: {e}")))?;
 
     // import server cert and key
     let key_der = PrivateKeyDer::from_pem_file(&tls_config.server_private_key).map_err(|e| {
