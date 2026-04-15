@@ -6,14 +6,7 @@ on:
     branches:
       - main
       - develop
-      - feature/**
-      - fix/**
-      - chore/**
-      - ci/**
   pull_request:
-    branches:
-      - main
-      - develop
   workflow_dispatch:
 
 jobs:

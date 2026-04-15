@@ -3,6 +3,9 @@ pub use auth_client::*;
 // Macros must be re-exported explicitly
 pub use auth_client::{auth_bail, auth_ensure, auth_error};
 
+pub mod error;
+pub use error::{ServerError, ServerResult};
+
 mod database;
 
 mod middleware;
