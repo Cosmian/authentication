@@ -192,7 +192,7 @@ build_rpm() {
     else
       ensure_modern_rust
       cargo install cargo-generate-rpm --version "0.16.0" --locked || true
-      CARGO_GENERATE_RPM_BIN="cargo-generate-rpm"
+      CARGO_GENERATE_RPM_BIN="$CARGO_HOME/bin/cargo-generate-rpm"
     fi
   fi
 

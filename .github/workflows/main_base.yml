@@ -17,11 +17,6 @@ jobs:
     uses: ./.github/workflows/cla.yml
     secrets: inherit
 
-  cargo-clippy:
-    uses: Cosmian/reusable_workflows/.github/workflows/clippy.yml@develop
-    with:
-      toolchain: ${{ inputs.toolchain }}
-
   cargo-deny:
     uses: Cosmian/reusable_workflows/.github/workflows/cargo-audit.yml@develop
     name: Security Audit
@@ -32,6 +27,33 @@ jobs:
     uses: Cosmian/reusable_workflows/.github/workflows/cargo-machete.yml@develop
     with:
       toolchain: ${{ inputs.toolchain }}
+
+  cargo-clippy:
+    name: Cargo test - ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+
+    steps:
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.toolchain }}
+          components: rustfmt, clippy
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Run unit tests
+        run: cargo fmt --all -- --check --color always
+
+      - name: Static analysis
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Static analysis all features
+        run: cargo clippy --workspace --all-targets --features rust_ -- -D warnings
 
   cargo-test:
     name: Cargo test - ${{ matrix.runner }}
