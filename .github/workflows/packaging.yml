@@ -199,7 +199,7 @@ jobs:
           else
             VERSION="last_build/${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
           fi
-          DESTINATION_DIR="/data/packages/authentication/${VERSION}"
+          DESTINATION_DIR="/mnt/packages/authentication/${VERSION}"
           ssh -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
             cosmian@package.cosmian.com mkdir -p "$DESTINATION_DIR"
           for ext in deb rpm dmg; do
