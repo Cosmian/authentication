@@ -1,0 +1,236 @@
+---
+name: Packaging - Docker
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        required: true
+        type: string
+        default: stable
+  workflow_dispatch:
+    inputs:
+      toolchain:
+        description: Rust toolchain to use (e.g., stable, 1.86.0)
+        required: true
+        type: string
+        default: stable
+
+jobs:
+  nix-docker-image:
+    name: docker-${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # Required for cosign keyless signing
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+
+    steps:
+      - name: Derive architecture from runner
+        id: arch
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.runner }}" == *arm* ]]; then
+            echo "arch=arm64" >> "$GITHUB_OUTPUT"
+            echo "platform=linux/arm64" >> "$GITHUB_OUTPUT"
+            echo "suffix=-arm64" >> "$GITHUB_OUTPUT"
+          else
+            echo "arch=amd64" >> "$GITHUB_OUTPUT"
+            echo "platform=linux/amd64" >> "$GITHUB_OUTPUT"
+            echo "suffix=-amd64" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Nix installation
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            connect-timeout = 15
+            stalled-download-timeout = 15
+            narinfo-cache-negative-ttl = 0
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Warm Nix store
+        run: |
+          sed -n 's/.*url *= *"\(https:\/\/[^"]*\.tar\.gz\)".*/\1/p' default.nix | sort -u | while read -r url; do
+            dest="/tmp/$(basename "$url")"
+            fallback=$(echo "$url" | sed 's|https://package.cosmian.com/nixpkgs/|https://github.com/NixOS/nixpkgs/archive/|')
+            echo "Downloading $(basename "$url") …"
+            if ! curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL -o "$dest" "$url"; then
+              echo "Mirror failed, falling back to GitHub …"
+              curl --retry 5 --retry-delay 10 --retry-max-time 300 --retry-all-errors -fsSL -o "$dest" "$fallback"
+            fi
+            nix-prefetch-url --unpack --name source "file://$dest"
+            rm -f "$dest"
+          done
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Extract base Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/cosmian/auth-server
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Append arch suffix to tags
+        id: arch_tags
+        run: |
+          set -euo pipefail
+          echo "tags_with_arch<<EOF" >> $GITHUB_OUTPUT
+          while IFS= read -r t; do
+            [ -n "$t" ] && echo "${t}${{ steps.arch.outputs.suffix }}" >> $GITHUB_OUTPUT
+          done <<< "${{ steps.meta.outputs.tags }}"
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build and load Docker image
+        id: build
+        run: |
+          bash .github/scripts/nix.sh docker --load
+
+      - name: Get image name and digest
+        id: image_info
+        run: |
+          set -euo pipefail
+          IMAGE_INFO=$(docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | grep "cosmian-auth-server" | head -n1)
+          IMAGE_NAME=$(echo "$IMAGE_INFO" | awk '{print $1}')
+          IMAGE_ID=$(echo "$IMAGE_INFO" | awk '{print $2}')
+          echo "Original image: $IMAGE_NAME (ID: $IMAGE_ID)"
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "image_id=$IMAGE_ID" >> $GITHUB_OUTPUT
+
+      - name: Tag and push images
+        id: push
+        env:
+          TAGS: ${{ steps.arch_tags.outputs.tags_with_arch }}
+          IMAGE_NAME: ${{ steps.image_info.outputs.image_name }}
+        run: |
+          set -euo pipefail
+          DIGEST=""
+          for tag in ${TAGS}; do
+            echo "Tagging and pushing: $tag"
+            docker tag "$IMAGE_NAME" "$tag"
+            docker push "$tag"
+            # Capture digest from the first push
+            if [ -z "$DIGEST" ]; then
+              DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$tag" | cut -d'@' -f2)
+              echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+            fi
+          done
+
+      - name: Sign Docker images with Cosign
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TAGS: ${{ steps.arch_tags.outputs.tags_with_arch }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag}@${DIGEST} "
+          done
+          cosign sign --yes ${images}
+
+      - name: Select test tag
+        id: pick_test_tag
+        run: |
+          first=$(echo "${{ steps.arch_tags.outputs.tags_with_arch }}" | head -n1)
+          echo "test_tag=$first" >> $GITHUB_OUTPUT
+          # Make the GHCR-tagged name available locally for the test script
+          docker tag "${{ steps.image_info.outputs.image_name }}" "$first"
+
+      - name: Test Docker image
+        env:
+          DOCKER_IMAGE_NAME: ${{ steps.pick_test_tag.outputs.test_tag }}
+        run: |
+          bash .github/scripts/test/test_docker_image.sh
+
+      - name: Select tag for output
+        id: pick
+        run: |
+          first=$(echo "${{ steps.arch_tags.outputs.tags_with_arch }}" | head -n1)
+          echo "first_tag=$first" >> $GITHUB_OUTPUT
+
+    outputs:
+      arch-tag: ${{ steps.pick.outputs.first_tag }}
+      arch: ${{ steps.arch.outputs.arch }}
+
+  nix-docker-manifest:
+    name: docker-manifest
+    needs: nix-docker-image
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # Required for cosign keyless signing
+    env:
+      REGISTRY_IMAGE: ghcr.io/cosmian/auth-server
+
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.1
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Create and push manifest list
+        id: manifest
+        run: |
+          set -euo pipefail
+          echo "Tags to manifest:"; echo "${{ steps.meta.outputs.tags }}"
+          while IFS= read -r tag; do
+            [ -z "$tag" ] && continue
+            echo "Creating manifest for $tag"
+            docker buildx imagetools create \
+              --tag "$tag" \
+              "${tag}-amd64" \
+              "${tag}-arm64"
+            # Get the manifest digest
+            DIGEST=$(docker buildx imagetools inspect "$tag" --format '{{json .Manifest}}' | jq -r '.digest')
+            echo "manifest_digest_${tag##*:}=$DIGEST" >> $GITHUB_OUTPUT
+            docker buildx imagetools inspect "$tag"
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+      - name: Sign multi-arch manifest with Cosign
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do
+            images+="${tag} "
+          done
+          cosign sign --yes ${images}
