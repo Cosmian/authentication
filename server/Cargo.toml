@@ -24,7 +24,6 @@ actix-tls = { workspace = true }
 actix-web = { workspace = true, features = ["macros", "cookies"] }
 argon2 = { workspace = true }
 async-trait = { workspace = true }
-base32 = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 cosmian_logger = { workspace = true, features = ["full"] }
@@ -48,7 +47,7 @@ sqlx = { workspace = true, features = [
 ], optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-auth_client = { path = "../client", features = ["_server"] }
+auth_client = { path = "../client", features = ["_server"], version = "1.0.0" }
 toml = { workspace = true }
 totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
 url = { workspace = true }
@@ -64,3 +63,48 @@ path = "src/main.rs"
 [dev-dependencies]
 openssl = { workspace = true, features = ["vendored"] }
 tokio = { workspace = true }
+
+[package.metadata.deb]
+maintainer = "Cosmian support team <tech@cosmian.com>"
+maintainer-scripts = "../pkg/deb/"
+copyright = "2026, Cosmian Tech SAS <tech@cosmian.com>"
+license-file = ["../LICENSE", "0"]
+section = "security"
+priority = "optional"
+depends = ""
+assets = [
+  [
+    "target/release/auth_server",
+    "usr/sbin/auth_server",
+    "500",
+  ],
+  [
+    "../README.md",
+    "usr/share/doc/cosmian-auth-server/README.md",
+    "644",
+  ],
+  [
+    "../server/auth_server.toml",
+    "etc/cosmian/auth_server.toml",
+    "400",
+  ],
+]
+systemd-units = [
+  { unit-name = "auth_server", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
+]
+
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/auth_server", dest = "/usr/sbin/auth_server", mode = "0500" },
+  { source = "../README.md", dest = "/usr/share/doc/cosmian-auth-server/README.md", mode = "0644" },
+  { source = "../server/auth_server.toml", dest = "/etc/cosmian/auth_server.toml", mode = "0400" },
+]
+[package.metadata.generate-rpm.requires]
+
+[package.metadata.packager]
+name = "Cosmian Authentication Server"
+identifier = "com.cosmian.authentication"
+description = "Cosmian Authentication Server"
+homepage = "https://github.com/Cosmian/authentication"
+license-file = "../LICENSE"
+formats = ["dmg"]

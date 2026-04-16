@@ -6,7 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Authentication Client – shared models, DTOs and HTTP client for the Auth Authentication Server"
+description = "Authentication Client - shared models, DTOs and HTTP client for the Auth Authentication Server"
 
 [features]
 default = []
@@ -35,4 +35,3 @@ url = { workspace = true }
 path = "src/lib.rs"
 
 [dev-dependencies]
-tokio = { workspace = true }

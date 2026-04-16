@@ -32,6 +32,9 @@ use std::{
 #[cfg(feature = "openssl")]
 use crate::tls::openssl_config::{create_openssl_acceptor, extract_openssl_peer_certificate};
 
+#[cfg(feature = "rustls")]
+use crate::tls::rustls_config::{extract_rustls_peer_certificate, rustls_server_config};
+
 /// Inner function to start the test server asynchronously.
 pub async fn start_auth_server(
     server_params: Arc<ServerParams>,

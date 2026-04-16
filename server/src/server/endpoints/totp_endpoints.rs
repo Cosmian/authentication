@@ -8,9 +8,9 @@ use actix_web::{
     HttpRequest, HttpResponse, delete, post,
     web::{Data, Json, Path},
 };
+use auth_client::{TotpGenerateRequest, TotpGenerateResponse, TotpVerifyRequest};
 use cosmian_logger::info;
 use std::sync::Arc;
-use auth_client::{TotpGenerateRequest, TotpGenerateResponse, TotpVerifyRequest};
 
 /// Generate a new TOTP secret for a user.
 ///
