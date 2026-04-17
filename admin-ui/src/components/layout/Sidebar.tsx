@@ -19,6 +19,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
             collapsible
             collapsed={collapsed}
             onCollapse={onCollapse}
+            theme="light"
             className="overflow-auto"
             style={{ height: "calc(100vh - 64px)" }}
         >

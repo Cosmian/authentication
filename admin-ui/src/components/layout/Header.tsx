@@ -25,6 +25,7 @@ export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => 
             </div>
             <div className="flex items-center gap-4">
                 <Switch
+                    className="w-20"
                     checked={isDarkMode}
                     onChange={() => setIsDarkMode(!isDarkMode)}
                     checkedChildren={<MoonOutlined />}

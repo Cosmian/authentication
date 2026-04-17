@@ -29,7 +29,9 @@ describe("Header", () => {
 
     it("should render the dark mode toggle", () => {
         render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
-        expect(screen.getByRole("switch")).toBeInTheDocument();
+        const toggle = screen.getByRole("switch");
+        expect(toggle).toBeInTheDocument();
+        expect(toggle).toHaveClass("w-20");
     });
 
     it("should show loading state in realm selector when realms are loading", () => {
