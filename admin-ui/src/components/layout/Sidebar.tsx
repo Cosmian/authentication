@@ -3,12 +3,13 @@ import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { menuItems } from "../../menuItems";
 
-interface SidebarProps {
+export interface SidebarProps {
     collapsed: boolean;
     onCollapse: (collapsed: boolean) => void;
+    isDarkMode: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse, isDarkMode }) => {
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -19,7 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
             collapsible
             collapsed={collapsed}
             onCollapse={onCollapse}
-            theme="light"
+            theme={isDarkMode ? "dark" : "light"}
             className="overflow-auto"
             style={{ height: "calc(100vh - 64px)" }}
         >

@@ -82,3 +82,11 @@ Per component, always test:
 - 🔄 State transition (e.g., realm switch triggers refresh)
 
 Coverage target: statements ≥80%, branches ≥75%
+
+## Dark Mode
+
+- Always pair `darkTheme` in `theme.ts` with `algorithm: theme.darkAlgorithm`. Never override tokens alone — derived tokens (`colorTextSecondary`, status/alert palette) are only computed correctly when the dark algorithm runs.
+- Never hardcode `theme="light"` on Ant Design components (e.g., `Sider`, `Menu`). Derive from the app's `isDarkMode` prop/state: `theme={isDarkMode ? "dark" : "light"}`.
+- Never use bare light-only Tailwind color utilities (e.g., `border-gray-300`, `bg-yellow-100`, `text-gray-500`) without providing a dark counterpart via a conditional className based on `isDarkMode`: e.g., `` `${isDarkMode ? "border-gray-600" : "border-gray-300"}` ``.
+- Prefer Ant Design theme tokens over Tailwind color utilities for any color that must adapt to the theme.
+- Do NOT use Tailwind's `dark:` prefix — the app does not add a `dark` class to `<html>`; theme is controlled via Ant Design's `ConfigProvider`.

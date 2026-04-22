@@ -1,3 +1,5 @@
+import { theme } from "antd";
+
 export const lightTheme = {
     token: {
         colorPrimary: "#e34319",
@@ -24,6 +26,7 @@ export const lightTheme = {
 };
 
 export const darkTheme = {
+    algorithm: theme.darkAlgorithm,
     token: {
         colorPrimary: "#9e6eff",
         colorText: "#e4dddd",
@@ -37,6 +40,8 @@ export const darkTheme = {
     components: {
         Layout: {
             headerBg: "#272d33",
+            siderBg: "#272d33",
+            triggerBg: "#272d33",
             footerPadding: "5px 50px",
         },
         Menu: {
