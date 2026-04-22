@@ -169,7 +169,30 @@ null
 
 ---
 
-### `POST /sessions/{session_id}`
+
+<!-- TODO : This endpoint should be reworked as it doesn't follow REST best practices
+LLM suggestion :
+POST /sessions/session/{session_id} reads like “operate on one session resource”, but it can trigger bulk side effects on other sessions. That is usually not aligned with REST naming clarity.
+
+Better REST-style options are:
+
+Keep lookup pure:
+GET /sessions/session/{session_id} (already good)
+Move bulk logout to a separate target:
+DELETE /sessions/session (by IDs) / DELETE /sessions/session/realms/{realm_id} (you already have these)
+or an explicit action resource, e.g. POST /sessions/actions/logout
+or POST /sessions/session/{session_id}/actions with { "type": "LogoutOtherSessions" } 
+
+Also : /users/user/{user_id} and /sessions/session/{id} are redundant in REST naming.
+Best practice is usually:
+
+collection: /users
+item: /users/{user_id}
+and similarly:
+
+/sessions/{session_id} instead of /sessions/session/{session_id}
+/realms/{realm_id}/userpass is already closer to normal resource nesting.-->
+### `POST /sessions/session/{session_id}`
 
 Retrieve session data and optionally apply a bulk logout action in the same request.
 

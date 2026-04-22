@@ -218,6 +218,7 @@ impl JwksManager {
         })?;
 
         realm_jwks.last_update = Some(Utc::now());
+        // Check that the keys are equal the new set or that we are allow to change to URI set dynamically
         realm_jwks.jwks = new_jwks;
         Ok(())
     }
@@ -272,6 +273,7 @@ impl JwksManager {
     /// # Ok(())
     /// # }
     /// ```
+    /// TODO : Could maybe be optimized by flatening double hashmap into a single map
     pub async fn find_jwk(&self, realm_id: &str, kid: &str) -> AuthResult<Option<Jwk>> {
         let realm = {
             self.realm_jwks
@@ -291,9 +293,12 @@ impl JwksManager {
             let refreshed_jwks = Self::fetch_all(&realm.uris, &self.proxy_params).await;
             info!("Refresh of JWKS for realm `{realm_id}` completed.");
             self.set_jwks(realm_id, refreshed_jwks)?;
+
+            // Prevents repeating call when refreshing fails
+            return Ok(realm.find_jwk(kid).cloned())
         }
 
-        Ok(realm.find_jwk(kid).cloned())
+        Ok(None)
     }
 
     /// Refresh the JWK Set by making an external HTTP call to all the `uris`.
@@ -429,6 +434,8 @@ impl JwksManager {
                     "Removing stale JWKS realm `{}` due to retention policy.",
                     realm_jwks.realm_id
                 );
+                // TODO : Are we really removing a realm ? Is the function named correctly ?
+                // Wouldn't it be better to just remove the key set entries
                 let _err = self.remove_realm(&realm_jwks.realm_id);
             }
         }

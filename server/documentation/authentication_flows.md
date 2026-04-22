@@ -261,6 +261,7 @@ DELETE /sessions/realms/{realm_id}
 ## Session Actions on `POST /sessions/{id}`
 
 When fetching a session you can pass an optional `sessions_action` in the request body to perform a bulk logout as part of the same call. This is the recommended way to implement "log out everywhere else" and "log out everywhere" features.
+<!-- TODO : Where is the recommendation from ? -->
 
 ### Request body
 

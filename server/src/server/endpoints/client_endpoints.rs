@@ -63,6 +63,7 @@ pub async fn login(
 
                 let totps = crate::totp::Totps::from_secret(
                     &secret,
+                    // TODO : Shouldn't issuer be the realm ?
                     None,
                     authenticated_client.username.clone(),
                     totp_params,
@@ -80,6 +81,7 @@ pub async fn login(
         &authenticated_client.username,
         authenticated_client.auth_scheme,
         &realm.id,
+        // TODO : Only useful for VELO ?
         login_request.public_key_pem.clone(),
         jwt_token_config.algorithm,
         jwt_token_config.encoding_key.clone(),

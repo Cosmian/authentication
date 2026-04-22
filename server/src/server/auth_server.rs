@@ -207,6 +207,7 @@ fn build_app(
         .wrap(JwtAuth::new(jwks_manager.clone()))
         .wrap(UsernamePasswordAuth::new(database.clone()))
         .wrap(ExtractRealm::new(database.clone()))
+        // TODO : Remove permissive CORS and replace with more restrictive configuration if needed
         .wrap(Cors::permissive())
         .route("", web::post().to(login));
 
