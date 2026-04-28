@@ -308,7 +308,7 @@ let user = Admin {
     totp_secret: None,
     totp_auth_url: None,
 };
-let created: Admin = admin.create_admin_as_super_admin(&admin).await?;
+let created: Admin = admin.create_admin_as_super_admin(&user).await?;
 
 // Check admin roles
 assert!(created.can_administer_realm("my-service"));
