@@ -1,7 +1,7 @@
 use crate::{
     AuthError,
     database::Database,
-    server::endpoints::user_from_request,
+    server::endpoints::admin_from_request,
     totp::{create_totp_secret, realm_params_to_totp_params},
 };
 use actix_web::{
@@ -27,7 +27,7 @@ pub async fn totp_generate(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -82,7 +82,7 @@ pub async fn totp_verify(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -143,7 +143,7 @@ pub async fn totp_disable(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm_id, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(

@@ -12,7 +12,7 @@ The authentication server sits in front of your application. Every **client** mu
 Client ──► Auth Server ──► Session Cookie ──► Your API ──► Services
 ```
 
-> **Terminology note:** Throughout this documentation, **client** means any entity that authenticates against the `/login` endpoint — a human via browser, the Auth CLI, or a machine/service account. A **User** (capitalised) is a database record representing an administrator account (super admin or realm admin). See [index.md](index.md#terminology) for the full glossary.
+> **Terminology note:** Throughout this documentation, **client** means any entity that authenticates against the `/login` endpoint — a human via browser, the Auth CLI, or a machine/service account. An **Admin** (capitalised) is a database record representing an administrator account (super admin or realm admin). See [index.md](index.md#terminology) for the full glossary.
 
 All communication uses **HTTPS** (TLS). Session cookies carry a plain-text `cookie_string` that is the session identifier stored in the server-side session store.
 
@@ -52,7 +52,7 @@ sequenceDiagram
     U->>API: GET /api/resource<br/>Cookie: _ea_=<cookie_string>
     note over API: CookieAuthSameServer middleware<br/>1. Extracts cookie_string from _ea_ cookie<br/>2. Looks up session in store by cookie_string<br/>3. Returns SessionData claims to handler
     API->>EA: (internal) find_users_by_auth_scheme
-    EA-->>API: User{id, realms, …}
+    EA-->>API: Admin{id, realms, …}
     API-->>U: 200 OK  {"data": …}
 ```
 
@@ -251,7 +251,7 @@ DELETE /sessions/session/realms/{realm_id}
 |--------|------|-------------|---------------|
 | `GET` | `/sessions/session/{id}` | Retrieve `SessionData` by session ID (`null` when not found) | — |
 | `POST` | `/sessions/session/{id}` | Retrieve `SessionData` and optionally apply a `SessionsAction` | — |
-| `POST` | `/sessions/session/realms/{realm}/users` | Get `SessionData` list for a set of users | — |
+| `POST` | `/sessions/session/realms/{realm}/admins` | Get `SessionData` list for a set of users | — |
 | `DELETE` | `/sessions/session` | Delete sessions by ID list (logout) | — |
 | `DELETE` | `/sessions/session/expired` | Purge all expired sessions | — |
 | `DELETE` | `/sessions/session/realms/{realm}` | Revoke all sessions for a realm | — |
@@ -341,9 +341,9 @@ flowchart TD
     G -- Yes --> H[SessionData → ClientClaims injected]
     H --> I{UserAuth required?}
     I -- Yes --> J[DB lookup: find_users_by_auth_scheme]
-    J --> K{User record exists?}
+    J --> K{Admin record exists?}
     K -- No --> F
-    K -- Yes --> L[User injected → handler runs]
+    K -- Yes --> L[Admin injected → handler runs]
     I -- No --> M[Handler runs with claims only]
 
     C -- No --> N{Has Basic Auth header?}

@@ -24,7 +24,7 @@ The following methods are **planned for future implementation**:
 Once a client is authenticated, the server issues a session cookie which is returned to the client. This cookie is then used by the client to authenticate subsequent requests to an API server.
 The API server validates the session cookie with the authentication server to ensure the client is authenticated.
 
-> **Note on Users vs Clients:** `User` records (super admins and realm admins) are simply authenticated clients that also hold a `User` record granting them server-administration privileges. Every admin must still log in through the normal `/login` endpoint — there is no separate admin login path. A `User` record has no special meaning outside the auth server's own administration APIs.
+> **Note on Users vs Clients:** `Admin` records (super admins and realm admins) are simply authenticated clients that also hold a `Admin` record granting them server-administration privileges. Every admin must still log in through the normal `/login` endpoint — there is no separate admin login path. A `Admin` record has no special meaning outside the auth server's own administration APIs.
 
 ## Authentication Flow
 
@@ -118,10 +118,10 @@ Administrator clients authenticate against the special `_` realm. The API endpoi
 | Term | Definition |
 |------|------------|
 | **Client** | Any entity that authenticates against `/login` and receives a session cookie: a human via browser, the Auth CLI, a machine/service account, etc. Represented in the code as `AuthenticatedClient` / `ClientClaims`. |
-| **User** | A `User` database record representing an administrator account. Every `User` has a `realms` list that determines what it may administer. A `User` is always either a super admin or a realm admin — there are no non-admin `User` records. |
-| **Super Admin** | A `User` whose `realms` list contains `"_"` (the `ADMIN_REALM`). Can administer every realm and every other `User` record. |
-| **Realm Admin** | A `User` whose `realms` list contains one or more specific realm IDs (but not `"_"`). Can only administer the explicitly listed realms and the `User` records that belong exclusively to those realms. |
-| **UserPass** | A credential record in the `userpass` table that stores an Argon2id-hashed password for a given username and realm. Referenced by `User.userpass` (a foreign key by username). |
+| **Admin** | An `Admin` database record representing an administrator account. Every `Admin` has a `realms` list that determines what it may administer. An `Admin` is always either a super admin or a realm admin — there are no non-admin `Admin` records. |
+| **Super Admin** | An `Admin` whose `realms` list contains `"_"` (the `ADMIN_REALM`). Can administer every realm and every other `Admin` record. |
+| **Realm Admin** | An `Admin` whose `realms` list contains one or more specific realm IDs (but not `"_"`). Can only administer the explicitly listed realms and the `Admin` records that belong exclusively to those realms. |
+| **UserPass** | A credential record in the `userpass` table that stores an Argon2id-hashed password for a given username and realm. Referenced by `Admin.userpass` (a foreign key by username). |
 | **Realm** | An isolated authentication domain with its own encryption key, session settings, and allowed authentication methods. The `_` realm is the administrative realm. |
 | **Session** | A server-side record created on successful login, identified by a `session_id` and encrypted into the `_ea_` cookie. Scoped to the realm the client logged into. |
 
@@ -135,7 +135,7 @@ Administrator clients authenticate against the special `_` realm. The API endpoi
 | [Server Configuration](server_configuration.md) | Complete reference for the `auth_server.toml` configuration file: TLS, database backends, session store, proxy, stale-session cleanup, and JWT signing keys. |
 | [Authentication Flows](authentication_flows.md) | Detailed sequence diagrams for every authentication method: username/password, JWT bearer, mTLS client certificates, and TOTP. Includes session lifecycle, endpoint reference, and a request-authentication decision flowchart. |
 | [API Reference](api_reference.md) | Full HTTP endpoint reference: every route, request/response body schemas, status codes, and authentication requirements. |
-| [Client Library](client_library.md) | How to use the `auth_client` crate in an API server: session validation, realm management, user and credential management, TOTP management. |
+| [Client Library](client_library.md) | How to use the `auth_client` crate in an API server: session validation, realm management, admin and credential management, TOTP management. |
 | [Session Management](session_management.md) | Session lifecycle, validation strategies (cookie decryption, session endpoint, direct store query), session actions, stale-session cleanup. |
 | [Two-Factor Authentication](two_factor_authentication.md) | TOTP implementation: module architecture, data model, enrollment flow (`POST /realms/{realm}/totp/generate` + `POST /realms/{realm}/totp/verify`), login-flow integration (`TotpRequired` step), disable endpoint (`DELETE /realms/{realm}/totp/{username}`), per-realm configuration (algorithm and time step), code path walkthrough, and security considerations. |
 | [Authorization and Administration](authorization_and_administration.md) | The two-tier super admin / realm admin model, the exclusive-ownership rule, endpoint authorization matrix, how to bootstrap the first admin, how to create realm admins, and known caveats. |

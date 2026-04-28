@@ -12,7 +12,7 @@ All endpoints are served over **HTTPS only**. The base URL is `https://{host}:{p
 - [Authentication — Login and Session Claims](#authentication--login-and-session-claims)
 - [Session Management](#session-management)
 - [Realm Administration](#realm-administration)
-- [User Administration](#user-administration)
+- [Admin Administration](#admin-administration)
 - [Credential Management](#credential-management)
 - [TOTP Management](#totp-management)
 - [Common Response Codes](#common-response-codes)
@@ -262,7 +262,7 @@ Delete all sessions for a given realm (administrative bulk logout).
 
 ## Realm Administration
 
-All endpoints under `/admin` require the caller to be authenticated as a **super admin** (a `User` whose `realms` list contains `"_"`).
+All endpoints under `/admin` require the caller to be authenticated as a **super admin** (a `Admin` whose `realms` list contains `"_"`).
 
 ### `POST /admin/realm`
 
@@ -357,11 +357,11 @@ List all username/password credentials across every realm (super admin only).
 
 ---
 
-## User Administration
+## Admin Administration
 
-### `POST /users/user`
+### `POST /admins/admin`
 
-Create a new `User` record. Super admin only.
+Create a new `Admin` record. Super admin only.
 
 **Request body**
 
@@ -393,31 +393,31 @@ Create a new `User` record. Super admin only.
 | `totp_secret` | `String` \| `null` | Base32-encoded TOTP secret (read-only via API) |
 | `totp_auth_url` | `String` \| `null` | `otpauth://` URL for QR code enrollment (read-only) |
 
-**Response — `200 OK`** — created `User` object.
+**Response — `200 OK`** — created `Admin` object.
 
 ---
 
-### `GET /users/user/{user_id}`
+### `GET /admins/admin/{user_id}`
 
 Retrieve a user by ID.
 
-**Response — `200 OK`** — `User` object.
+**Response — `200 OK`** — `Admin` object.
 
 **Response — `404 Not Found`** — user does not exist.
 
 ---
 
-### `PUT /users/user/{user_id}`
+### `PUT /admins/admin/{user_id}`
 
 Replace a user record. Returns the updated user.
 
-**Request body** — same shape as `POST /users/user`.
+**Request body** — same shape as `POST /admins/admin`.
 
-**Response — `200 OK`** — updated `User` object.
+**Response — `200 OK`** — updated `Admin` object.
 
 ---
 
-### `DELETE /users/user/{user_id}`
+### `DELETE /admins/admin/{user_id}`
 
 Delete a user record.
 
@@ -425,27 +425,27 @@ Delete a user record.
 
 ---
 
-### `GET /users`
+### `GET /admins`
 
 List all users. Super admin only.
 
-**Response — `200 OK`** — array of `User` objects.
+**Response — `200 OK`** — array of `Admin` objects.
 
 ---
 
-### `PUT /users/user/{user_id}/realm/{realm_id}`
+### `PUT /admins/admin/{user_id}/realm/{realm_id}`
 
 Add a realm to a user's `realms` list.
 
-**Response — `200 OK`** — updated `User` object.
+**Response — `200 OK`** — updated `Admin` object.
 
 ---
 
-### `DELETE /users/user/{user_id}/realm/{realm_id}`
+### `DELETE /admins/admin/{user_id}/realm/{realm_id}`
 
 Remove a realm from a user's `realms` list.
 
-**Response — `200 OK`** — updated `User` object.
+**Response — `200 OK`** — updated `Admin` object.
 
 ---
 
@@ -594,7 +594,7 @@ Disable TOTP for a user.
 
 ## Authentication for Admin Endpoints
 
-Admin endpoints (`/admin`, `/users`, `/realms`) require a valid session cookie obtained by logging into the `_` realm (super admin) or the target realm (realm admin).
+Admin endpoints (`/admin`, `/admins`, `/realms`) require a valid session cookie obtained by logging into the `_` realm (super admin) or the target realm (realm admin).
 
 ```bash
 # Log in as super admin
@@ -639,7 +639,7 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 }
 ```
 
-### `User`
+### `Admin`
 
 ```json
 {

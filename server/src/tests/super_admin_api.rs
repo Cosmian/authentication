@@ -13,7 +13,7 @@ use crate::{
     database::{
         APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, hash_password_with_argon2,
     },
-    models::{ADMIN_REALM, User, UserPass},
+    models::{ADMIN_REALM, Admin, UserPass},
     tests::{init_test_logging, start_default_test_server},
 };
 use cosmian_logger::info;
@@ -25,8 +25,8 @@ fn admin_scheme() -> AuthClientScheme {
     }
 }
 
-fn test_user(id: &str) -> User {
-    User {
+fn test_user(id: &str) -> Admin {
+    Admin {
         id: id.to_string(),
         realms: vec![],
         userpass: None,
@@ -107,7 +107,7 @@ async fn create_and_authenticate_realm_admin(
     let password = "realm_admin_pass";
     let userpass = create_user(ADMIN_REALM, &username, password, false)?;
     super_admin
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
         .await?;
 
     // Create the User record — realm membership grants admin rights over realm_id
@@ -115,7 +115,7 @@ async fn create_and_authenticate_realm_admin(
     realm_admin_user.realms = vec![realm_id.to_string()];
     realm_admin_user.userpass = Some(username.clone());
     super_admin
-        .create_user_as_super_admin(&realm_admin_user)
+        .create_admin_as_super_admin(&realm_admin_user)
         .await?;
 
     // Authenticate as the realm admin
@@ -384,7 +384,7 @@ async fn test_list_realms_filtered_for_realm_admin() -> AuthResult<()> {
 /// A realm admin for realm X must not be able to manage credentials in the admin
 /// realm `_` because they do not administer it.
 ///
-/// `create_user_credentials_in_realm(ADMIN_REALM, …)` calls
+/// `create_admin_credentials_in_realm(ADMIN_REALM, …)` calls
 /// `POST /realms/_/userpass?realm=_`.  The cookie used was issued by `_` (so
 /// decryption succeeds), but the authorisation check — `can_administer_realm("_")`
 /// — is false for the realm admin → HTTP 403.
@@ -398,7 +398,7 @@ async fn test_userpass_endpoints_require_realm_admin() -> AuthResult<()> {
 
     let userpass = create_user(ADMIN_REALM, "some_user", "some_pass", false)?;
     let result = realm_admin
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
         .await;
 
     assert!(
@@ -425,13 +425,13 @@ async fn test_userpass_crud_by_super_admin() -> AuthResult<()> {
 
     // CREATE
     client
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
         .await?;
     info!("userpass created");
 
     // READ
     let fetched = client
-        .get_user_credentials_in_realm(ADMIN_REALM, "crud_test_user")
+        .get_admin_credentials_in_realm(ADMIN_REALM, "crud_test_user")
         .await?;
     assert_eq!(fetched.username, "crud_test_user");
     assert_eq!(fetched.realm, ADMIN_REALM);
@@ -440,13 +440,13 @@ async fn test_userpass_crud_by_super_admin() -> AuthResult<()> {
     // UPDATE
     let new_pass = create_user(ADMIN_REALM, "crud_test_user", "updated_pass", false)?;
     let updated = client
-        .update_user_credentials_in_realm(ADMIN_REALM, "crud_test_user", &new_pass)
+        .update_admin_credentials_in_realm(ADMIN_REALM, "crud_test_user", &new_pass)
         .await?;
     assert_eq!(updated.username, "crud_test_user");
     info!("userpass updated");
 
     // LIST BY REALM
-    let list = client.list_user_credentials_in_realm(ADMIN_REALM).await?;
+    let list = client.list_admin_credentials_in_realm(ADMIN_REALM).await?;
     assert!(
         list.iter().any(|u| u.username == "crud_test_user"),
         "crud_test_user must appear in the realm list"
@@ -463,13 +463,13 @@ async fn test_userpass_crud_by_super_admin() -> AuthResult<()> {
 
     // DELETE
     client
-        .delete_user_credentials_in_realm(ADMIN_REALM, "crud_test_user")
+        .delete_admin_credentials_in_realm(ADMIN_REALM, "crud_test_user")
         .await?;
     info!("userpass deleted");
 
     // Must be gone
     let result = client
-        .get_user_credentials_in_realm(ADMIN_REALM, "crud_test_user")
+        .get_admin_credentials_in_realm(ADMIN_REALM, "crud_test_user")
         .await;
     assert!(result.is_err(), "Expected not-found after deletion");
     info!("userpass CRUD roundtrip complete");
@@ -558,7 +558,7 @@ async fn test_unauthenticated_access_to_realms_endpoints() -> AuthResult<()> {
 
     // GET /realms/_/userpass/someuser?realm=_
     let result = unauthenticated
-        .get_user_credentials_in_realm(ADMIN_REALM, "someuser")
+        .get_admin_credentials_in_realm(ADMIN_REALM, "someuser")
         .await;
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -569,7 +569,7 @@ async fn test_unauthenticated_access_to_realms_endpoints() -> AuthResult<()> {
 
     // GET /realms/_/userpass?realm=_
     let result = unauthenticated
-        .list_user_credentials_in_realm(ADMIN_REALM)
+        .list_admin_credentials_in_realm(ADMIN_REALM)
         .await;
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -597,7 +597,7 @@ async fn test_update_userpass_cannot_change_realm() -> AuthResult<()> {
     // Create credentials in the admin realm.
     let userpass = create_user(ADMIN_REALM, "realm_change_user", "initial_pass", false)?;
     client
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
         .await?;
 
     // Create a second realm to smuggle the credential into.
@@ -615,7 +615,7 @@ async fn test_update_userpass_cannot_change_realm() -> AuthResult<()> {
 
     // Update via the `_` path — the endpoint must keep realm = "_".
     let updated = client
-        .update_user_credentials_in_realm(ADMIN_REALM, "realm_change_user", &smuggled)
+        .update_admin_credentials_in_realm(ADMIN_REALM, "realm_change_user", &smuggled)
         .await?;
 
     assert_eq!(
@@ -648,7 +648,7 @@ async fn test_realm_admin_cannot_operate_on_other_realms() -> AuthResult<()> {
     // Attempt to create credentials in realm B using realm admin A - should fail with 403
     let userpass = create_user("realm_b", "user_in_b", "password", false)?;
     let result = realm_admin_a
-        .create_user_credentials_in_realm("realm_b", &userpass)
+        .create_admin_credentials_in_realm("realm_b", &userpass)
         .await;
     assert!(
         result.is_err(),

@@ -1,15 +1,16 @@
 use crate::{
-    AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm, InjectAdminRealm, UserAuth,
+    AdminAuth, AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm, InjectAdminRealm,
     UsernamePasswordAuth,
     middleware::{EnsureAuth, JwksManager, JwtAuth},
     server::{
         endpoints::{
-            add_user_to_realm, create_realm, create_user, create_userpass, delete_expired_sessions,
-            delete_realm, delete_sessions, delete_sessions_for_realm, delete_user, delete_userpass,
-            get_realm, get_session, get_session_by_id, get_sessions_for_clients, get_user,
-            get_userpass, list_all_userpass, list_realms, list_userpass_by_realm, list_users,
-            login, remove_user_from_realm, totp_disable, totp_generate, totp_verify, update_realm,
-            update_user, update_userpass, upsert_session, version_endpoint, whoami,
+            add_admin_to_realm, create_admin, create_realm, create_userpass, delete_admin,
+            delete_expired_sessions, delete_realm, delete_sessions, delete_sessions_for_realm,
+            delete_userpass, get_admin, get_realm, get_session, get_session_by_id,
+            get_sessions_for_clients, get_userpass, list_admins, list_all_userpass, list_realms,
+            list_userpass_by_realm, login, remove_admin_from_realm, totp_disable, totp_generate,
+            totp_verify, update_admin, update_realm, update_userpass, upsert_session,
+            version_endpoint, whoami,
         },
         parameters::{DatabaseBackend, DatabaseParams, ServerParams},
     },
@@ -228,7 +229,7 @@ fn build_app(
 
     // The super admin scope
     let super_admins_scope = web::scope("/admin")
-        .wrap(UserAuth::new(database.clone()))
+        .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),
             jwt_token_config.clone(),
@@ -243,7 +244,7 @@ fn build_app(
         .service(list_all_userpass);
 
     let app_scope = web::scope("/realms")
-        .wrap(UserAuth::new(database.clone()))
+        .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),
             jwt_token_config.clone(),
@@ -270,27 +271,27 @@ fn build_app(
         .service(delete_expired_sessions)
         .service(delete_sessions_for_realm);
 
-    let users_scope = web::scope("/users")
-        .wrap(UserAuth::new(database.clone()))
+    let admins_scope = web::scope("/admins")
+        .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),
             jwt_token_config.clone(),
         ))
         .wrap(InjectAdminRealm::new(database.clone()))
         .wrap(Cors::permissive())
-        .service(create_user)
-        .service(get_user)
-        .service(update_user)
-        .service(delete_user)
-        .service(list_users)
-        .service(add_user_to_realm)
-        .service(remove_user_from_realm);
+        .service(create_admin)
+        .service(get_admin)
+        .service(update_admin)
+        .service(delete_admin)
+        .service(list_admins)
+        .service(add_admin_to_realm)
+        .service(remove_admin_from_realm);
 
     app.service(public_scope)
         .service(client_scope)
         .service(whoami_scope)
         .service(sessions_scope)
         .service(app_scope)
-        .service(users_scope)
+        .service(admins_scope)
         .service(super_admins_scope)
 }

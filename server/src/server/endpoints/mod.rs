@@ -3,10 +3,10 @@ pub use super_admins_endpoints::{
     create_realm, delete_realm, get_realm, list_realms, update_realm,
 };
 
-mod user_endpoints;
-pub use user_endpoints::{
-    add_user_to_realm, create_user, delete_user, get_user, list_users, remove_user_from_realm,
-    update_user,
+mod admin_endpoints;
+pub use admin_endpoints::{
+    add_admin_to_realm, create_admin, delete_admin, get_admin, list_admins,
+    remove_admin_from_realm, update_admin,
 };
 
 mod realms_endpoints;
@@ -27,14 +27,14 @@ pub use sessions_endpoints::{
     get_session_by_id, get_sessions_for_clients, upsert_session,
 };
 
-use crate::{AuthError, models::User};
+use crate::{AuthError, models::Admin};
 use actix_web::HttpMessage;
 use actix_web::HttpRequest;
 
-/// Helper function to extract the authenticated user from the request extensions
-pub fn user_from_request(req: &HttpRequest) -> Result<User, AuthError> {
+/// Helper function to extract the authenticated admin from the request extensions
+pub fn admin_from_request(req: &HttpRequest) -> Result<Admin, AuthError> {
     req.extensions()
-        .get::<User>()
+        .get::<Admin>()
         .cloned()
-        .ok_or_else(|| AuthError::Session("No authenticated user found in request".to_string()))
+        .ok_or_else(|| AuthError::Session("No authenticated admin found in request".to_string()))
 }

@@ -1,5 +1,5 @@
 use crate::{
-    AuthError, database::Database, models::UserPass, server::endpoints::user_from_request,
+    AuthError, database::Database, models::UserPass, server::endpoints::admin_from_request,
 };
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -19,7 +19,7 @@ pub async fn create_userpass(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -50,7 +50,7 @@ pub async fn get_userpass(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm) {
         return Err(AuthError::Forbidden(format!(
@@ -83,7 +83,7 @@ pub async fn update_userpass(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm) {
         return Err(AuthError::Forbidden(format!(
@@ -115,7 +115,7 @@ pub async fn delete_userpass(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm) {
         return Err(AuthError::Forbidden(format!(
@@ -143,7 +143,7 @@ pub async fn list_userpass_by_realm(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -163,7 +163,7 @@ pub async fn list_all_userpass(
     req: HttpRequest,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.is_super_admin() {
         return Err(AuthError::Forbidden(

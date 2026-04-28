@@ -32,6 +32,6 @@ pub use test_server::{start_default_test_server, start_test_server};
 
 mod totp_tests;
 
-mod user_api;
+mod admin_api;
 
 mod username_password_tests;

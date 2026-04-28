@@ -1,4 +1,4 @@
-use crate::server::endpoints::user_from_request;
+use crate::server::endpoints::admin_from_request;
 use crate::{AuthError, database::Database, models::Realm};
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -22,17 +22,17 @@ pub async fn create_realm(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm = realm.into_inner();
-    let user = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
-    if !user.is_super_admin() {
+    if !requester.is_super_admin() {
         return Err(AuthError::Forbidden(
             "Only super admins can create realms".to_string(),
         ));
     }
 
     info!(
-        "create_realm: authenticated user '{}' is creating realm '{}'",
-        user.id, realm.id
+        "create_realm: authenticated admin '{}' is creating realm '{}'",
+        requester.id, realm.id
     );
 
     database.create_realm(&realm).await?;
@@ -55,11 +55,11 @@ pub async fn get_realm(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = id.into_inner();
-    let user = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
-    if !user.can_administer_realm(&realm_id) {
+    if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(
-            "User does not have permission to retrieve this realm".to_string(),
+            "Admin does not have permission to retrieve this realm".to_string(),
         ));
     }
 
@@ -89,9 +89,9 @@ pub async fn update_realm(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = id.into_inner();
-    let user = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
-    if !user.is_super_admin() {
+    if !requester.is_super_admin() {
         return Err(AuthError::Forbidden(
             "Only super admins can update realms".to_string(),
         ));
@@ -103,7 +103,7 @@ pub async fn update_realm(
 
     info!(
         "update_realm: '{}' is updating realm '{}'",
-        user.id, realm.id
+        requester.id, realm.id
     );
     database.update_realm(&realm).await?;
 
@@ -125,9 +125,9 @@ pub async fn delete_realm(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = id.into_inner();
-    let user = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
-    if !user.is_super_admin() {
+    if !requester.is_super_admin() {
         return Err(AuthError::Forbidden(
             "Only super admins can delete realms".to_string(),
         ));
@@ -135,7 +135,7 @@ pub async fn delete_realm(
 
     info!(
         "delete_realm: '{}' is deleting realm '{}'",
-        user.id, realm_id
+        requester.id, realm_id
     );
     database.delete_realm(&realm_id).await?;
 
@@ -154,15 +154,15 @@ pub async fn list_realms(
     req: HttpRequest,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
-    let user = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
     let realms = database.list_realms().await?;
 
-    let visible: Vec<_> = if user.is_super_admin() {
+    let visible: Vec<_> = if requester.is_super_admin() {
         realms
     } else {
         realms
             .into_iter()
-            .filter(|r| user.can_administer_realm(&r.id))
+            .filter(|r| requester.can_administer_realm(&r.id))
             .collect()
     };
 
