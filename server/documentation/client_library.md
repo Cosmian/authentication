@@ -17,7 +17,7 @@ The `auth_client` crate provides an HTTP client and shared types for interacting
 - [Session Actions — Log Out Everywhere](#session-actions--log-out-everywhere)
 - [Logging In](#logging-in)
 - [Realm Management](#realm-management)
-- [Admin Management](#user-management)
+- [Admin Management](#admin-management)
 - [Credential Management](#credential-management)
 - [TOTP Management](#totp-management)
 - [Public Endpoints](#public-endpoints)
