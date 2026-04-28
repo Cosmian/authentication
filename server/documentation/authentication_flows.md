@@ -51,7 +51,7 @@ sequenceDiagram
 
     U->>API: GET /api/resource<br/>Cookie: _ea_=<cookie_string>
     note over API: CookieAuthSameServer middleware<br/>1. Extracts cookie_string from _ea_ cookie<br/>2. Looks up session in store by cookie_string<br/>3. Returns SessionData claims to handler
-    API->>EA: (internal) find_users_by_auth_scheme
+    API->>EA: (internal) find_admins_by_auth_scheme
     EA-->>API: Admin{id, realms, …}
     API-->>U: 200 OK  {"data": …}
 ```
