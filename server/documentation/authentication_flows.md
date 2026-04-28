@@ -339,8 +339,8 @@ flowchart TD
     D --> G{Session found\nin store by cookie_string?}
     G -- No --> F[401 Unauthorized]
     G -- Yes --> H[SessionData → ClientClaims injected]
-    H --> I{UserAuth required?}
-    I -- Yes --> J[DB lookup: find_users_by_auth_scheme]
+    H --> I{AdminAuth required?}
+    I -- Yes --> J[DB lookup: find_admins_by_auth_scheme]
     J --> K{Admin record exists?}
     K -- No --> F
     K -- Yes --> L[Admin injected → handler runs]
