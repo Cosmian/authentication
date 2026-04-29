@@ -15,7 +15,7 @@ use std::sync::Arc;
 ///
 /// # Errors
 /// Returns an error if the realm creation fails
-#[post("/realm")]
+#[post("")]
 pub async fn create_realm(
     req: HttpRequest,
     realm: Json<Realm>,
@@ -48,7 +48,7 @@ pub async fn create_realm(
 ///
 /// # Errors
 /// Returns an error if the realm is not found or retrieval fails
-#[get("/realm/{id}")]
+#[get("/{id}")]
 pub async fn get_realm(
     req: HttpRequest,
     id: Path<String>,
@@ -81,7 +81,7 @@ pub async fn get_realm(
 ///
 /// # Errors
 /// Returns an error if the realm update fails
-#[put("/realm/{id}")]
+#[put("/{id}")]
 pub async fn update_realm(
     req: HttpRequest,
     id: Path<String>,
@@ -118,7 +118,7 @@ pub async fn update_realm(
 ///
 /// # Errors
 /// Returns an error if the realm deletion fails
-#[delete("/realm/{id}")]
+#[delete("/{id}")]
 pub async fn delete_realm(
     req: HttpRequest,
     id: Path<String>,
@@ -149,7 +149,7 @@ pub async fn delete_realm(
 ///
 /// # Errors
 /// Returns an error if listing realms fails
-#[get("/realms")]
+#[get("")]
 pub async fn list_realms(
     req: HttpRequest,
     database: Data<Arc<dyn Database>>,

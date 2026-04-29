@@ -1304,7 +1304,7 @@ async fn test_realm_id_with_special_characters() -> AuthResult<()> {
     let client = authenticate_as_admin(&ctx).await?;
 
     // `%2F` is URL-encoded `/` — a classic path-traversal attempt.
-    // The raw HTTP path `/admin/realm/..%2F_` should not expose `_` via traversal.
+    // The raw HTTP path `/admins/realms/..%2F_` should not expose `_` via traversal.
     let result = client.get_realm_as_super_admin("..%2F_").await;
 
     assert!(

@@ -6,13 +6,13 @@
 //!
 //! | Endpoint | Who may call it |
 //! |---|---|
-//! | `POST /admins/admin` | Super admin **or** realm admin (exclusive ownership) |
-//! | `GET /admins/admin/{id}` | Super admin **or** realm admin (exclusive ownership) |
-//! | `PUT /admins/admin/{id}` | Super admin **or** realm admin (exclusive ownership) |
-//! | `DELETE /admins/admin/{id}` | Super admin **or** realm admin (exclusive ownership) |
+//! | `POST /admins` | Super admin **or** realm admin (exclusive ownership) |
+//! | `GET /admins/{id}` | Super admin **or** realm admin (exclusive ownership) |
+//! | `PUT /admins/{id}` | Super admin **or** realm admin (exclusive ownership) |
+//! | `DELETE /admins/{id}` | Super admin **or** realm admin (exclusive ownership) |
 //! | `GET /admins` | Super admin |
-//! | `PUT /admins/admin/{id}/realm/{realm_id}` | Admin of `realm_id` **or** super admin |
-//! | `DELETE /admins/admin/{id}/realm/{realm_id}` | Admin of `realm_id` **or** super admin |
+//! | `PUT /admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
+//! | `DELETE /admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 
 use crate::{AuthError, database::Database, models::Admin, server::endpoints::admin_from_request};
 use actix_web::{
@@ -27,7 +27,7 @@ use std::sync::Arc;
 /// Super admins may create any admin.  Realm admins may create an admin only if
 /// the admin's `realms` list is non-empty and every realm it contains is
 /// administered by the requester.
-#[post("/admin")]
+#[post("")]
 pub async fn create_admin(
     req: HttpRequest,
     created_admin: Json<Admin>,
@@ -64,7 +64,7 @@ pub async fn create_admin(
 /// if the admin's `realms` list is non-empty and every realm it contains is
 /// administered by the requester (i.e. the admin belongs exclusively to the
 /// requester's realm(s)).
-#[get("/admin/{id}")]
+#[get("/{id}")]
 pub async fn get_admin(
     req: HttpRequest,
     id: Path<String>,
@@ -102,7 +102,7 @@ pub async fn get_admin(
 ///
 /// The `id` path parameter is authoritative — the `id` field in the JSON body
 /// is overwritten to keep them consistent.
-#[put("/admin/{id}")]
+#[put("/{id}")]
 pub async fn update_admin(
     req: HttpRequest,
     id: Path<String>,
@@ -167,7 +167,7 @@ pub async fn update_admin(
 ///
 /// Associated `userpass` credentials (if any) are cascade-deleted so that no
 /// orphaned entries remain in the `userpass` table.
-#[delete("/admin/{id}")]
+#[delete("/{id}")]
 pub async fn delete_admin(
     req: HttpRequest,
     id: Path<String>,
@@ -238,8 +238,8 @@ pub async fn list_admins(
 /// The requester must be an administrator of `realm_id` (or a super admin).
 /// If the admin is already a member, the request is a no-op.
 ///
-/// Full URL: `PUT /admins/admin/{id}/realm/{realm_id}`
-#[put("/admin/{admin_id}/realm/{realm_id}")]
+/// Full URL: `PUT /admins/{id}/realms/{realm_id}`
+#[put("/{admin_id}/realms/{realm_id}")]
 pub async fn add_admin_to_realm(
     req: HttpRequest,
     path: Path<(String, String)>,
@@ -277,8 +277,8 @@ pub async fn add_admin_to_realm(
 /// The requester must be an administrator of `realm_id` (or a super admin).
 /// If the admin is not a member, the request is a no-op.
 ///
-/// Full URL: `DELETE /admins/admin/{id}/realm/{realm_id}`
-#[delete("/admin/{admin_id}/realm/{realm_id}")]
+/// Full URL: `DELETE /admins/{id}/realms/{realm_id}`
+#[delete("/{admin_id}/realms/{realm_id}")]
 pub async fn remove_admin_from_realm(
     req: HttpRequest,
     path: Path<(String, String)>,

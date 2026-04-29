@@ -227,8 +227,9 @@ fn build_app(
     #[cfg(test)]
     let public_scope = public_scope.route("/jwks", web::get().to(crate::tests::jwks_endpoint));
 
-    // The super admin scope
-    let super_admins_scope = web::scope("/admin")
+    // Realm CRUD — lives under /admins/realms so it shares the same AdminAuth +
+    // InjectAdminRealm middleware stack as other admin-authority endpoints.
+    let realms_crud_scope = web::scope("/admins/realms")
         .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),
@@ -240,8 +241,7 @@ fn build_app(
         .service(get_realm)
         .service(update_realm)
         .service(delete_realm)
-        .service(list_realms)
-        .service(list_all_userpass);
+        .service(list_realms);
 
     let app_scope = web::scope("/realms")
         .wrap(AdminAuth::new(database.clone()))
@@ -279,11 +279,14 @@ fn build_app(
         ))
         .wrap(InjectAdminRealm::new(database.clone()))
         .wrap(Cors::permissive())
+        // list_all_userpass must be registered before get_admin/update_admin/delete_admin
+        // so that GET /admins/userpass is matched before GET /admins/{id}
+        .service(list_all_userpass)
+        .service(list_admins)
         .service(create_admin)
         .service(get_admin)
         .service(update_admin)
         .service(delete_admin)
-        .service(list_admins)
         .service(add_admin_to_realm)
         .service(remove_admin_from_realm);
 
@@ -291,7 +294,7 @@ fn build_app(
         .service(client_scope)
         .service(whoami_scope)
         .service(sessions_scope)
+        .service(realms_crud_scope)
         .service(app_scope)
         .service(admins_scope)
-        .service(super_admins_scope)
 }

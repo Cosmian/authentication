@@ -1,4 +1,4 @@
-//! API tests for the super-admin realm endpoints (`/admin/*`).
+//! API tests for the super-admin realm endpoints (`/admins/realms/*`).
 //!
 //! Each test:
 //! 1. Starts a fresh in-memory test server.
@@ -134,7 +134,7 @@ async fn create_and_authenticate_realm_admin(
     Ok(client)
 }
 
-// ── GET /admin/realms ──────────────────────────────────────────────────────
+// ── GET /admins/realms ────────────────────────────────────────────────────────
 
 /// After authentication the realm list must include at least the seeded `_` realm.
 #[actix_web::test]
@@ -159,7 +159,7 @@ async fn test_list_realms() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-// ── GET /admin/realm/{id} ─────────────────────────────────────────────────
+// ── GET /admins/realms/{id} ──────────────────────────────────────────────────
 
 /// Fetching the seeded `_` realm must succeed and return its ID.
 #[actix_web::test]
@@ -200,7 +200,7 @@ async fn test_get_realm_not_found() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-// ── PUT /admin/realm/{id} ─────────────────────────────────────────────────
+// ── PUT /admins/realms/{id} ──────────────────────────────────────────────────
 
 /// Updating the `_` realm with a new `session_max_age_seconds` must succeed and
 /// the change must be visible on a subsequent GET.
@@ -241,7 +241,7 @@ async fn test_update_realm() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-// ── DELETE /admin/realm/{id} ──────────────────────────────────────────────
+// ── DELETE /admins/realms/{id} ───────────────────────────────────────────────
 
 /// Deleting a realm that does not exist returns HTTP 204 (the underlying SQL
 /// DELETE is a no-op and does not raise an error).
@@ -260,7 +260,7 @@ async fn test_delete_realm_nonexistent_is_idempotent() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-// ── POST /admin/realm ─────────────────────────────────────────────────────
+// ── POST /admins/realms ──────────────────────────────────────────────────────
 
 #[actix_web::test]
 async fn test_create_realm() -> AuthResult<()> {
@@ -479,7 +479,7 @@ async fn test_userpass_crud_by_super_admin() -> AuthResult<()> {
 
 // ── list_all_userpass requires super admin ────────────────────────────────────
 
-/// `GET /admin/userpass` is in the `/admin` scope which hosts super-admin-only
+/// `GET /admins/userpass` is in the `/admins` scope which hosts super-admin-only
 /// endpoints.  A realm admin calling it must receive HTTP 403.
 #[actix_web::test]
 async fn test_list_all_userpass_requires_super_admin() -> AuthResult<()> {
@@ -506,7 +506,7 @@ async fn test_list_all_userpass_requires_super_admin() -> AuthResult<()> {
 
 // ── Unauthenticated access to protected scopes ────────────────────────────────
 
-/// All `/admin/*` endpoints must return HTTP 401 for a client that has never
+/// All `/admins/realms/*` endpoints must return HTTP 401 for a client that has never
 /// authenticated (no session cookie, no credentials).
 #[actix_web::test]
 async fn test_unauthenticated_access_to_admin_endpoints() -> AuthResult<()> {
@@ -515,34 +515,34 @@ async fn test_unauthenticated_access_to_admin_endpoints() -> AuthResult<()> {
 
     let unauthenticated = ctx.get_test_client(crate::client::AuthClientScheme::None);
 
-    // GET /admin/realm/_
+    // GET /admins/realms/_
     let result = unauthenticated.get_realm_as_super_admin(ADMIN_REALM).await;
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(
         msg.contains("401"),
-        "Expected 401 for unauthenticated GET /admin/realm/_, got: {msg}"
+        "Expected 401 for unauthenticated GET /admins/realms/_, got: {msg}"
     );
 
-    // GET /admin/realms
+    // GET /admins/realms
     let result = unauthenticated.list_realms_as_super_admin().await;
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(
         msg.contains("401"),
-        "Expected 401 for unauthenticated GET /admin/realms, got: {msg}"
+        "Expected 401 for unauthenticated GET /admins/realms, got: {msg}"
     );
 
-    // GET /admin/userpass
+    // GET /admins/userpass
     let result = unauthenticated.list_all_userpass_as_super_admin().await;
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
     assert!(
         msg.contains("401"),
-        "Expected 401 for unauthenticated GET /admin/userpass, got: {msg}"
+        "Expected 401 for unauthenticated GET /admins/userpass, got: {msg}"
     );
 
-    info!("All /admin/* endpoints correctly returned 401 for unauthenticated requests");
+    info!("All /admins/realms/* endpoints correctly returned 401 for unauthenticated requests");
 
     ctx.stop_server().await
 }

@@ -14,7 +14,7 @@ use auth_client::{
 };
 
 /// Create or update a session.
-#[post("/session")]
+#[post("")]
 pub async fn upsert_session(
     payload: Json<UpsertSessionRequest>,
     session_store: Data<Arc<dyn session::SessionStore>>,
@@ -35,7 +35,7 @@ pub async fn upsert_session(
 
 /// Retrieve session information by session ID (simple GET, no session actions).
 /// Returns `null` (HTTP 200) when the session does not exist or has expired.
-#[get("/session/{session_id}")]
+#[get("/{session_id}")]
 pub async fn get_session_by_id(
     session_id: Path<String>,
     session_store: Data<Arc<dyn session::SessionStore>>,
@@ -48,7 +48,7 @@ pub async fn get_session_by_id(
 /// Retrieve session information by session ID.
 /// Optionally perform session actions (logout other sessions, logout all sessions)
 /// based on the presence of other authenticated clients in the request payload.
-#[post("/session/{session_id}")]
+#[post("/{session_id}")]
 pub async fn get_session(
     session_id: Path<String>,
     payload: Json<GetSessionRequest>,
@@ -96,7 +96,7 @@ pub async fn get_session(
 }
 
 /// Retrieve all sessions for a list of clients in a realm.
-#[post("/session/realms/{realm_id}/clients")]
+#[post("/realms/{realm_id}/clients")]
 pub async fn get_sessions_for_clients(
     realm_id: Path<String>,
     payload: Json<GetSessionsForClientsRequest>,
@@ -116,7 +116,7 @@ pub async fn get_sessions_for_clients(
 }
 
 /// Delete sessions by session IDs.
-#[delete("/session")]
+#[delete("")]
 pub async fn delete_sessions(
     payload: Json<DeleteSessionsRequest>,
     session_store: Data<Arc<dyn session::SessionStore>>,
@@ -130,7 +130,7 @@ pub async fn delete_sessions(
 }
 
 /// Delete all expired sessions.
-#[delete("/session/expired")]
+#[delete("/expired")]
 pub async fn delete_expired_sessions(
     session_store: Data<Arc<dyn session::SessionStore>>,
 ) -> Result<HttpResponse, AuthError> {
@@ -139,7 +139,7 @@ pub async fn delete_expired_sessions(
 }
 
 /// Delete all sessions for a given realm.
-#[delete("/session/realms/{realm_id}")]
+#[delete("/realms/{realm_id}")]
 pub async fn delete_sessions_for_realm(
     realm_id: Path<String>,
     session_store: Data<Arc<dyn session::SessionStore>>,
