@@ -64,7 +64,7 @@ pub async fn create_admin(
 /// if the admin's `realms` list is non-empty and every realm it contains is
 /// administered by the requester (i.e. the admin belongs exclusively to the
 /// requester's realm(s)).
-#[get("/{id}")]
+#[get("/{admin_id}")]
 pub async fn get_admin(
     req: HttpRequest,
     id: Path<String>,
@@ -102,7 +102,7 @@ pub async fn get_admin(
 ///
 /// The `id` path parameter is authoritative — the `id` field in the JSON body
 /// is overwritten to keep them consistent.
-#[put("/{id}")]
+#[put("/{admin_id}")]
 pub async fn update_admin(
     req: HttpRequest,
     id: Path<String>,
@@ -167,7 +167,7 @@ pub async fn update_admin(
 ///
 /// Associated `userpass` credentials (if any) are cascade-deleted so that no
 /// orphaned entries remain in the `userpass` table.
-#[delete("/{id}")]
+#[delete("/{admin_id}")]
 pub async fn delete_admin(
     req: HttpRequest,
     id: Path<String>,

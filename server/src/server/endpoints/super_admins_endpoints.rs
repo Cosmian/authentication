@@ -48,7 +48,7 @@ pub async fn create_realm(
 ///
 /// # Errors
 /// Returns an error if the realm is not found or retrieval fails
-#[get("/{id}")]
+#[get("/{realm_id}")]
 pub async fn get_realm(
     req: HttpRequest,
     id: Path<String>,
@@ -81,7 +81,7 @@ pub async fn get_realm(
 ///
 /// # Errors
 /// Returns an error if the realm update fails
-#[put("/{id}")]
+#[put("/{realm_id}")]
 pub async fn update_realm(
     req: HttpRequest,
     id: Path<String>,
@@ -118,7 +118,7 @@ pub async fn update_realm(
 ///
 /// # Errors
 /// Returns an error if the realm deletion fails
-#[delete("/{id}")]
+#[delete("/{realm_id}")]
 pub async fn delete_realm(
     req: HttpRequest,
     id: Path<String>,

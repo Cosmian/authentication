@@ -359,8 +359,7 @@ connection_url = "sqlite::memory:"
 
 ## Realm Authentication Parameters
 
-Realm configuration is managed at runtime via the API, not through the TOML file. These parameters are stored in the database and modified through `POST /admins/realms` and `PUT /admins/realms/{id}`.
-# TODO : Sometimes endpoint use {id} and others {session_id}, check consistency and align
+Realm configuration is managed at runtime via the API, not through the TOML file. These parameters are stored in the database and modified through `POST /admins/realms` and `PUT /admins/realms/{realm_id}`.
 
 For each realm you can configure:
 
