@@ -633,8 +633,7 @@ impl AuthClient {
         realm_id: &str,
         userpass: &UserPass,
     ) -> AuthResult<()> {
-        // TODO : Is this correct ? Did it break after changes to API endpoints ?
-        let path = format!("/realms/{}/userpass?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/userpass", realm_id);
         let _: serde_json::Value = self.post(&path, userpass).await?;
         Ok(())
     }
@@ -645,10 +644,7 @@ impl AuthClient {
         realm_id: &str,
         username: &str,
     ) -> AuthResult<UserPass> {
-        let path = format!(
-            "/realms/{}/userpass/{}?realm={}",
-            realm_id, username, realm_id
-        );
+        let path = format!("/realms/{}/userpass/{}", realm_id, username);
         self.get(&path).await
     }
 
@@ -659,10 +655,7 @@ impl AuthClient {
         username: &str,
         userpass: &UserPass,
     ) -> AuthResult<UserPass> {
-        let path = format!(
-            "/realms/{}/userpass/{}?realm={}",
-            realm_id, username, realm_id
-        );
+        let path = format!("/realms/{}/userpass/{}", realm_id, username);
         self.put(&path, userpass).await
     }
 
@@ -672,10 +665,7 @@ impl AuthClient {
         realm_id: &str,
         username: &str,
     ) -> AuthResult<()> {
-        let url = format!(
-            "{}/realms/{}/userpass/{}?realm={}",
-            self.base_url, realm_id, username, realm_id
-        );
+        let url = format!("{}/realms/{}/userpass/{}", self.base_url, realm_id, username);
         let request = self.client.delete(&url);
         let response = request
             .send()
@@ -699,7 +689,7 @@ impl AuthClient {
         &self,
         realm_id: &str,
     ) -> AuthResult<Vec<UserPass>> {
-        let path = format!("/realms/{}/userpass?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/userpass", realm_id);
         self.get(&path).await
     }
 
@@ -718,7 +708,7 @@ impl AuthClient {
         username: &str,
         issuer: Option<String>,
     ) -> AuthResult<TotpGenerateResponse> {
-        let path = format!("/realms/{}/totp/generate?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/totp/generate", realm_id);
         self.post(
             &path,
             &TotpGenerateRequest {
@@ -738,7 +728,7 @@ impl AuthClient {
         token: &str,
         issuer: Option<String>,
     ) -> AuthResult<()> {
-        let path = format!("/realms/{}/totp/verify?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/totp/verify", realm_id);
         let _: serde_json::Value = self
             .post(
                 &path,
@@ -755,10 +745,7 @@ impl AuthClient {
 
     /// Disable TOTP for a user, removing their stored secret.
     pub async fn disable_totp(&self, realm_id: &str, username: &str) -> AuthResult<()> {
-        let url = format!(
-            "{}/realms/{}/totp/{}?realm={}",
-            self.base_url, realm_id, username, realm_id
-        );
+        let url = format!("{}/realms/{}/totp/{}", self.base_url, realm_id, username);
         let request = self.client.delete(&url);
         let response = request
             .send()
