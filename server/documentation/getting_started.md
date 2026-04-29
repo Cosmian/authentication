@@ -131,7 +131,7 @@ With the admin session cookie:
 
 ```bash
 curl --cacert ca.cert.pem \
-     -X POST "https://localhost:8443/admin/realm" \
+     -X POST "https://localhost:8443/admins/realms" \
      -b cookies.txt \
      -H "Content-Type: application/json" \
      -d '{

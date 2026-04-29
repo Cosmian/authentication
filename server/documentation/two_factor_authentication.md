@@ -206,7 +206,7 @@ sequenceDiagram
     Admin->>EA: DELETE /realms/{realm}/totp/{username}?realm={realm}
     note over EA: totp_disable handler
     EA->>DB: disable_totp(realm, username)
-    note over DB: UPDATE user<br/>SET totp_enabled = 0,<br/>    totp_secret = NULL,<br/>    totp_auth_url = NULL<br/>WHERE id = username<br/>AND (userpass IS NOT NULL OR jwt IS NOT NULL)
+    note over DB: UPDATE admin<br/>SET totp_enabled = 0,<br/>    totp_secret = NULL,<br/>    totp_auth_url = NULL<br/>WHERE id = username<br/>AND (userpass IS NOT NULL OR jwt IS NOT NULL)
     DB-->>EA: OK
     EA-->>Admin: 204 No Content
 ```
@@ -236,7 +236,7 @@ POST /realms/{realm}/totp/verify?realm={realm}
       └── totps.validate_token(token)
           └── TOTP::check_current(token)      // ±1 step tolerance
       └── (on success) database.enable_totp(realm, username, secret_base32, issuer)
-          └── UPDATE user SET totp_enabled=1, totp_secret=?, totp_auth_url=?
+          └── UPDATE admin SET totp_enabled=1, totp_secret=?, totp_auth_url=?
               WHERE id=? AND (userpass IS NOT NULL OR jwt IS NOT NULL)
       └── 200 OK: {"status":"ok"}
 
@@ -245,7 +245,7 @@ POST /realms/{realm}/totp/verify?realm={realm}
 DELETE /realms/{realm}/totp/{username}?realm={realm}
   → totp_disable handler
       └── database.disable_totp(realm, username)
-          └── UPDATE user SET totp_enabled=0, totp_secret=NULL, totp_auth_url=NULL
+          └── UPDATE admin SET totp_enabled=0, totp_secret=NULL, totp_auth_url=NULL
               WHERE id=? AND (userpass IS NOT NULL OR jwt IS NOT NULL)
       └── 204 No Content
 

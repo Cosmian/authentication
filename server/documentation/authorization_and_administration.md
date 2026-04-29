@@ -69,15 +69,15 @@ flowchart TD
     B -- No --> Z[HTTP 401 Unauthorized]
     B -- Yes --> C{Endpoint category}
 
-    C -- "Super-admin-only\n/admin/realm POST|PUT|DELETE\n/admins GET\n/admin/userpass GET" --> D{is_super_admin?}
+    C -- "Super-admin-only\n/admins/realms POST|PUT|DELETE\n/admins GET\n/admins/userpass GET" --> D{is_super_admin?}
     D -- No --> E[HTTP 403 Forbidden]
     D -- Yes --> F[Proceed]
 
-    C -- "Realm-scoped\n/realms/{realm}/…\n/admin/realm/{id} GET\n/sessions/…" --> G{"can_administer_realm\n(realm)?"}
+    C -- "Realm-scoped\n/realms/{realm}/…\n/admins/realms/{id} GET\n/sessions/…" --> G{"can_administer_realm\n(realm)?"}
     G -- No --> E
     G -- Yes --> F
 
-    C -- "Admin CRUD\n/admins/admin POST|GET|PUT|DELETE" --> SA{is_super_admin?}
+    C -- "Admin CRUD\n/admins POST|GET|PUT|DELETE" --> SA{is_super_admin?}
     SA -- Yes --> F
     SA -- No --> OWN{"target.realms non-empty\nAND all realms in target\nadministered by requester?"}
     OWN -- No --> E
@@ -85,7 +85,7 @@ flowchart TD
     PUTCHECK -- No --> E
     PUTCHECK -- Yes --> F
 
-    C -- "GET /admin/realms" --> H{is_super_admin?}
+    C -- "GET /admins/realms" --> H{is_super_admin?}
     H -- Yes --> I[Return all realms]
     H -- No --> J["Return only realms in\nUser.realms list"]
 ```
@@ -98,23 +98,23 @@ flowchart TD
 
 | Method | Endpoint | Super Admin | Realm Admin |
 |--------|---------|:-----------:|:-----------:|
-| `POST` | `/admin/realm` | ✅ | ❌ |
-| `GET` | `/admin/realm/{id}` | ✅ | ✅ if `can_administer_realm(id)` |
-| `PUT` | `/admin/realm/{id}` | ✅ | ❌ |
-| `DELETE` | `/admin/realm/{id}` | ✅ | ❌ |
-| `GET` | `/admin/realms` | ✅ all | ✅ filtered |
+| `POST` | `/admins/realms` | ✅ | ❌ |
+| `GET` | `/admins/realms/{id}` | ✅ | ✅ if `can_administer_realm(id)` |
+| `PUT` | `/admins/realms/{id}` | ✅ | ❌ |
+| `DELETE` | `/admins/realms/{id}` | ✅ | ❌ |
+| `GET` | `/admins/realms` | ✅ all | ✅ filtered |
 
 ### Admin Management
 
 | Method | Endpoint | Super Admin | Realm Admin |
 |--------|---------|:-----------:|:-----------:|
-| `POST` | `/admins/admin` | ✅ | ✅ if owns all target realms |
-| `GET` | `/admins/admin/{id}` | ✅ | ✅ if owns all target realms |
-| `PUT` | `/admins/admin/{id}` | ✅ | ✅ if owns current AND new realms |
-| `DELETE` | `/admins/admin/{id}` | ✅ | ✅ if owns all target realms |
+| `POST` | `/admins` | ✅ | ✅ if owns all target realms |
+| `GET` | `/admins/{id}` | ✅ | ✅ if owns all target realms |
+| `PUT` | `/admins/{id}` | ✅ | ✅ if owns current AND new realms |
+| `DELETE` | `/admins/{id}` | ✅ | ✅ if owns all target realms |
 | `GET` | `/admins` | ✅ | ❌ |
-| `PUT` | `/admins/admin/{id}/realm/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
-| `DELETE` | `/admins/admin/{id}/realm/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
+| `PUT` | `/admins/{id}/realms/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
+| `DELETE` | `/admins/{id}/realms/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
 
 ### Credential Management
 
@@ -127,7 +127,7 @@ All `/realms/{realm}/userpass` endpoints require `can_administer_realm(realm)`.
 | `PUT` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
 | `DELETE` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
 | `GET` | `/realms/{realm}/userpass` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `GET` | `/admin/userpass` | ✅ all | ❌ |
+| `GET` | `/admins/userpass` | ✅ all | ❌ |
 
 ### Session Management
 
@@ -163,9 +163,7 @@ The intent is:
 - A realm admin cannot view or modify `Admin` records that span multiple realms from different admins.
 - A realm admin cannot delete a super admin (`Admin` records for super admins have `"_"` in their `realms` list, and realm admins cannot administer `"_"`).
 
-### Double-check on PUT
-
-`PUT /admins/admin/{id}` runs the rule **twice**:
+### `PUT /admins/{id}` runs the rule **twice**:
 
 ```
 Check 1 (current state): requester can own the user as it is now.
@@ -216,14 +214,14 @@ sequenceDiagram
     participant SA as Super Admin
     participant EA as Auth Server
 
-    SA->>EA: POST /admin/realm<br/>{"id":"my_realm","name":"My Realm",…}
+    SA->>EA: POST /admins/realms<br/>{"id":"my_realm","name":"My Realm",…}
     EA-->>SA: 201 Created
 
     SA->>EA: POST /realms/_/userpass<br/>{"realm":"_","username":"alice","password":"<hashed>","change_password":false}
     note over EA: Stores Argon2id hash of alice's password in realm _
     EA-->>SA: 201 Created
 
-    SA->>EA: POST /admins/admin<br/>{"id":"alice_user","realms":["my_realm"],"userpass":"alice"}
+    SA->>EA: POST /admins<br/>{"id":"alice_user","realms":["my_realm"],"userpass":"alice"}
     note over EA: Creates Admin record\nuserpass → foreign key into userpass table
     EA-->>SA: 201 Created
 
@@ -231,7 +229,7 @@ sequenceDiagram
     SA->>EA: POST /login?realm=_<br/>{"username":"alice","password":"<plain>"}
     EA-->>SA: 200 OK + Set-Cookie: _ea_=…<br/>{"next_step":"Authenticated","session_id":"…"}
 
-    SA->>EA: GET /admin/realm/my_realm<br/>Cookie: _ea_=…
+    SA->>EA: GET /admins/realms/my_realm<br/>Cookie: _ea_=…
     EA-->>SA: 200 OK — realm details
 ```
 
@@ -240,8 +238,8 @@ sequenceDiagram
 Alice's cookie (from `POST /login?realm=_`) authorises:
 
 - `GET/POST/PUT/DELETE /realms/_/userpass/*` (credential management **in `_`**)
-- `GET /admin/realm/my_realm`
-- `POST /admins/admin` with `realms: ["my_realm"]`
+- `GET /admins/realms/my_realm`
+- `POST /admins` with `realms: ["my_realm"]`
 - CRUD on any user whose `realms` is a subset of `["my_realm"]`
 
 Alice **cannot**:
@@ -258,7 +256,7 @@ Alice **cannot**:
 Only a super admin can promote another user to super admin. Assign `"_"` to the target user's `realms` list:
 
 ```http
-PUT /admins/admin/{alice_user_id}
+PUT /admins/{alice_user_id}
 Content-Type: application/json
 Cookie: _ea_=<super_admin_cookie>
 
@@ -277,7 +275,7 @@ Cookie: _ea_=<super_admin_cookie>
 
 The `Admin.userpass` field is a **username** (not a password) that acts as a foreign key into the `userpass` table. There can be multiple `UserPass` rows with the same username if the same person authenticates in multiple realms.
 
-When a `Admin` record is deleted, all associated `UserPass` credentials are **cascade-deleted** automatically (any orphaned credentials with the same username as `user.userpass` are removed from all realms).
+When a `Admin` record is deleted, all associated `UserPass` credentials are **cascade-deleted** automatically (any orphaned credentials with the same username as `admin.userpass` are removed from all realms).
 
 ---
 

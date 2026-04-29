@@ -60,7 +60,7 @@ stateDiagram-v2
     Active --> Expired : session_max_age_seconds\nelapsed since creation\n(absolute lifetime)
     Expired --> [*] : Stale-session collector\nremoves it
 
-    Active --> Invalidated : DELETE /sessions/session\n(explicit logout)
+    Active --> Invalidated : DELETE /sessions\n(explicit logout)
     Invalidated --> [*] : Immediately rejected\non next request
 ```
 
@@ -83,7 +83,7 @@ Client ──► Your API ──► Validate Session ──► Auth Server
 
 ### Strategy 1 — Auth Server Session Endpoint (recommended)
 
-Call `GET /sessions/session/{session_id}` on the auth server for every request. This is the most secure strategy: session revocations take effect immediately.
+Call `GET /sessions/{session_id}` on the auth server for every request. This is the most secure strategy: session revocations take effect immediately.
 
 **Pros:** Immediate invalidation. No local state. Simple implementation.  
 **Cons:** One additional HTTPS round-trip per request.

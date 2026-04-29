@@ -633,6 +633,7 @@ impl AuthClient {
         realm_id: &str,
         userpass: &UserPass,
     ) -> AuthResult<()> {
+        // TODO : Is this correct ? Did it break after changes to API endpoints ?
         let path = format!("/realms/{}/userpass?realm={}", realm_id, realm_id);
         let _: serde_json::Value = self.post(&path, userpass).await?;
         Ok(())

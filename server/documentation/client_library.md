@@ -125,7 +125,7 @@ match session {
 }
 ```
 
-`get_session` maps to `GET /sessions/session/{id}`. It returns `None` — not an error — when the session is not found.
+`get_session` maps to `GET /sessions/{session_id}`. It returns `None` — not an error — when the session is not found.
 
 ### `SessionData` fields
 
@@ -440,7 +440,7 @@ match client.get_session("bad-id").await {
 | Variant | Meaning |
 |---------|---------|
 | `AuthError::FailedHttpStatus(msg)` | Non-2xx response; `msg` contains status code and body |
-| `AuthError::SessionNotFound` | `GET /sessions/session/{id}` returned 404 |
+| `AuthError::SessionNotFound` | `GET /sessions/{id}` returned 404 |
 | `AuthError::Config(msg)` | Client misconfiguration (bad URL, certificate parse error, etc.) |
 | `AuthError::JWT(msg)` | JWT signing or validation failure |
 | `AuthError::Generic(msg)` | Network or serialization error |

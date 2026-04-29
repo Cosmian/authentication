@@ -62,7 +62,7 @@ sequenceDiagram
 
 Once a session has been validated on the Auth Server, the API can use that session to query all active sessions belonging to the same client identity — regardless of which authentication scheme was used to create them. This enables scenarios such as enforcing a single active session, detecting concurrent logins from unexpected locations, or explicitly logging a client out from all other devices and methods.
 
-The `POST /sessions/session/realms/{realm}/clients` endpoint accepts a list of `AuthenticatedClientScheme` entries — each combining a `username` with one of the supported authentication schemes (`up`, `jwt`, `cc`, `f2`, `dc`). It returns the matching session IDs across all those schemes. The API can then call `DELETE /sessions/session` with any subset of those IDs to selectively revoke them.
+The `POST /sessions/realms/{realm}/clients` endpoint accepts a list of `AuthenticatedClientScheme` entries — each combining a `username` with one of the supported authentication schemes (`up`, `jwt`, `cc`, `f2`, `dc`). It returns the matching session IDs across all those schemes. The API can then call `DELETE /sessions` with any subset of those IDs to selectively revoke them.
 
 ```mermaid
 sequenceDiagram
@@ -75,7 +75,7 @@ sequenceDiagram
     C->>API: GET /api/resource<br/>Cookie: _ea_=<encrypted_jwt>
     note over API: CookieAuthSameServer middleware<br/>validates cookie → ClientClaims{username, auth_scheme}
 
-    API->>EA: POST /sessions/session/realms/{realm}/clients<br/>[{username, auth_scheme: "up"},<br/> {username, auth_scheme: "cc"},<br/> {username, auth_scheme: "jwt"}]
+    API->>EA: POST /sessions/realms/{realm}/clients<br/>[{username, auth_scheme: "up"},<br/> {username, auth_scheme: "cc"},<br/> {username, auth_scheme: "jwt"}]
     note over EA: Query session store for all sessions<br/>matching any of the provided schemes
     EA->>SS: get_sessions_for_clients(realm, schemes)
     SS-->>EA: [session_id_A, session_id_B, session_id_C, …]
@@ -83,7 +83,7 @@ sequenceDiagram
 
     note over API: API decides which sessions to keep<br/>(e.g. keep the current one, revoke all others)
 
-    API->>EA: DELETE /sessions/session<br/>{"session_ids": ["session_id_B", "session_id_C"]}
+    API->>EA: DELETE /sessions<br/>{"session_ids": ["session_id_B", "session_id_C"]}
     note over EA: Immediately invalidates the listed sessions
     EA->>SS: delete_sessions([session_id_B, session_id_C])
     SS-->>EA: OK
@@ -106,7 +106,7 @@ The authentication server exposes a RESTful API.
 The API is separated into 3 sections:
 
 - the realm management API, open to super admins,
-- the user management API, open to realm admins,
+- the admin management API, open to realm admins,
 - and the authentication API, open to all clients.
 
 Administrator clients authenticate against the special `_` realm. The API endpoint to authenticate is `/login?realm={realm}`.

@@ -201,7 +201,7 @@ stateDiagram-v2
     [*] --> Active : POST /login (credentials valid)
     Active --> Active : Any authenticated request<br/>(resets stale timer)
     Active --> Expired : session_max_age_seconds elapsed
-    Active --> Revoked : DELETE /sessions/session (explicit logout)
+    Active --> Revoked : DELETE /sessions (explicit logout)
     Expired --> [*] : Stale-session collector removes it
     Revoked --> [*] : Immediately rejected by CookieAuthSameServer
 ```
@@ -220,7 +220,7 @@ Sessions are stored in the configured session backend (SQLite / PostgreSQL / MyS
 To invalidate a session:
 
 ```http
-DELETE /sessions/session
+DELETE /sessions
 Content-Type: application/json
 
 {"session_ids": ["<session_id>"]}
@@ -229,7 +229,7 @@ Content-Type: application/json
 Administratively, a super admin can revoke all sessions for a realm:
 
 ```http
-DELETE /sessions/session/realms/{realm_id}
+DELETE /sessions/realms/{realm_id}
 ```
 
 ---
@@ -249,16 +249,16 @@ DELETE /sessions/session/realms/{realm_id}
 
 | Method | Path | Description | Auth required |
 |--------|------|-------------|---------------|
-| `GET` | `/sessions/session/{id}` | Retrieve `SessionData` by session ID (`null` when not found) | — |
-| `POST` | `/sessions/session/{id}` | Retrieve `SessionData` and optionally apply a `SessionsAction` | — |
-| `POST` | `/sessions/session/realms/{realm}/admins` | Get `SessionData` list for a set of users | — |
-| `DELETE` | `/sessions/session` | Delete sessions by ID list (logout) | — |
-| `DELETE` | `/sessions/session/expired` | Purge all expired sessions | — |
-| `DELETE` | `/sessions/session/realms/{realm}` | Revoke all sessions for a realm | — |
+| `GET` | `/sessions/{id}` | Retrieve `SessionData` by session ID (`null` when not found) | — |
+| `POST` | `/sessions/{id}` | Retrieve `SessionData` and optionally apply a `SessionsAction` | — |
+| `POST` | `/sessions/realms/{realm}/clients` | Get session IDs for a set of clients | — |
+| `DELETE` | `/sessions` | Delete sessions by ID list (logout) | — |
+| `DELETE` | `/sessions/expired` | Purge all expired sessions | — |
+| `DELETE` | `/sessions/realms/{realm}` | Revoke all sessions for a realm | — |
 
 ---
 
-## Session Actions on `POST /sessions/session/{id}`
+## Session Actions on `POST /sessions/{id}`
 
 When fetching a session you can pass an optional `sessions_action` in the request body to perform a bulk logout as part of the same call. This is the recommended way to implement "log out everywhere else" and "log out everywhere" features.
 
@@ -294,7 +294,7 @@ sequenceDiagram
     participant EA as Auth Server
     participant SS as Session Store
 
-    U->>EA: POST /sessions/session/{session_a}<br/>{sessions_action: "LogoutOtherSessions", authenticated_clients: [...]}
+    U->>EA: POST /sessions/{session_a}<br/>{sessions_action: "LogoutOtherSessions", authenticated_clients: [...]}
     EA->>SS: get_session(session_a)
     SS-->>EA: SessionData for session_a
     EA->>SS: get_sessions_for_clients(authenticated_clients)
@@ -314,7 +314,7 @@ sequenceDiagram
     participant EA as Auth Server
     participant SS as Session Store
 
-    U->>EA: POST /sessions/session/{session_a}<br/>{sessions_action: "LogoutAllSessions", authenticated_clients: [...]}
+    U->>EA: POST /sessions/{session_a}<br/>{sessions_action: "LogoutAllSessions", authenticated_clients: [...]}
     EA->>SS: get_session(session_a)
     SS-->>EA: SessionData for session_a
     EA->>SS: get_sessions_for_clients(authenticated_clients)
