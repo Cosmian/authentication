@@ -33,7 +33,7 @@ const App: React.FC = () => {
                     <Routes>
                         <Route element={<MainLayout isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />}>
                             <Route index element={<DashboardPage />} />
-                            <Route path="users" element={<PlaceholderPage title="Users" />} />
+                            <Route path="admins" element={<PlaceholderPage title="Admins" />} />
                             <Route path="credentials" element={<PlaceholderPage title="Credentials" />} />
                             <Route path="sessions" element={<PlaceholderPage title="Sessions" />} />
                             <Route path="totp" element={<PlaceholderPage title="TOTP" />} />

@@ -10,7 +10,7 @@ test.describe("Navigation", () => {
     test("should navigate to each section via sidebar", async ({ page }) => {
         await page.goto("/");
 
-        for (const label of ["Users", "Credentials", "Sessions", "TOTP"]) {
+        for (const label of ["Admins", "Credentials", "Sessions", "TOTP"]) {
             await page.getByRole("menuitem", { name: label }).click();
             await expect(page.getByText(label)).toBeVisible();
             await expect(page.getByText(/coming soon/i)).toBeVisible();
@@ -31,7 +31,7 @@ test.describe("Navigation", () => {
     test("should show realm selector in header", async ({ page }) => {
         await page.goto("/");
         // The realm selector is an Ant Design Select; it shows the current realm label
-        await expect(page.getByText("Admin")).toBeVisible();
+        await expect(page.getByText("Super-Admin")).toBeVisible();
     });
 
     test("should toggle dark/light mode", async ({ page }) => {

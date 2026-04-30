@@ -12,7 +12,7 @@ describe("Sidebar", () => {
         );
 
         expect(screen.getByText("Dashboard")).toBeInTheDocument();
-        expect(screen.getByText("Users")).toBeInTheDocument();
+        expect(screen.getByText("Admins")).toBeInTheDocument();
         expect(screen.getByText("Credentials")).toBeInTheDocument();
         expect(screen.getByText("Sessions")).toBeInTheDocument();
         expect(screen.getByText("TOTP")).toBeInTheDocument();
@@ -20,14 +20,14 @@ describe("Sidebar", () => {
 
     it("should highlight the active route", () => {
         render(
-            <MemoryRouter initialEntries={["/users"]}>
+            <MemoryRouter initialEntries={["/admins"]}>
                 <Sidebar collapsed={false} onCollapse={() => {}} />
             </MemoryRouter>,
         );
 
         // Ant Design adds ant-menu-item-selected class to active items
-        const usersItem = screen.getByText("Users").closest("li");
-        expect(usersItem).toHaveClass("ant-menu-item-selected");
+        const adminsItem = screen.getByText("Admins").closest("li");
+        expect(adminsItem).toHaveClass("ant-menu-item-selected");
     });
 
     it("should call onCollapse when collapse is triggered", () => {

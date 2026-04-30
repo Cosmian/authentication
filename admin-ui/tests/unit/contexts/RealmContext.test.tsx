@@ -29,7 +29,7 @@ describe("RealmContext", () => {
         localStorage.clear();
     });
 
-    it("should default to the admin realm '_' displayed as 'Admin'", async () => {
+    it("should default to the admin realm '_' displayed as 'Super-Admin'", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
             new Response(JSON.stringify([{ id: "_" }, { id: "my-service" }]), { status: 200 }),
         );
@@ -43,8 +43,8 @@ describe("RealmContext", () => {
         });
 
         expect(screen.getByTestId("selected")).toHaveTextContent("_");
-        expect(screen.getByTestId("label")).toHaveTextContent("Admin");
-        expect(screen.getByTestId("realm-_")).toHaveTextContent("Admin");
+        expect(screen.getByTestId("label")).toHaveTextContent("Super-Admin");
+        expect(screen.getByTestId("realm-_")).toHaveTextContent("Super-Admin");
         expect(screen.getByTestId("realm-my-service")).toHaveTextContent("my-service");
     });
 
@@ -80,7 +80,7 @@ describe("RealmContext", () => {
         });
 
         expect(screen.getByTestId("selected")).toHaveTextContent("_");
-        expect(screen.getByTestId("label")).toHaveTextContent("Admin");
+        expect(screen.getByTestId("label")).toHaveTextContent("Super-Admin");
         expect(screen.getByTestId("count")).toHaveTextContent("1");
         expect(screen.getByTestId("error")).toHaveTextContent("Failed to load realms");
     });

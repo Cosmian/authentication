@@ -1,9 +1,9 @@
 import {
     ClockCircleOutlined,
+    CrownOutlined,
     DashboardOutlined,
     KeyOutlined,
     SafetyCertificateOutlined,
-    TeamOutlined,
 } from "@ant-design/icons";
 
 export interface MenuItem {
@@ -20,9 +20,9 @@ export const menuItems: MenuItem[] = [
         icon: <DashboardOutlined />,
     },
     {
-        key: "/users",
-        label: "Users",
-        icon: <TeamOutlined />,
+        key: "/admins",
+        label: "Admins",
+        icon: <CrownOutlined />,
     },
     {
         key: "/credentials",

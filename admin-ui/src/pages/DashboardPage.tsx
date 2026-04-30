@@ -1,12 +1,12 @@
 import { Alert, Card, Col, Row, Typography } from "antd";
-import { ClockCircleOutlined, KeyOutlined, SafetyCertificateOutlined, TeamOutlined } from "@ant-design/icons";
+import { ClockCircleOutlined, CrownOutlined, KeyOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 import { useRealm } from "../contexts/RealmContext";
 
 const { Title, Text } = Typography;
 
 const sections = [
-    { title: "Users", path: "/users", icon: <TeamOutlined style={{ fontSize: 24 }} />, description: "Manage administrator accounts" },
+    { title: "Admins", path: "/admins", icon: <CrownOutlined style={{ fontSize: 24 }} />, description: "Manage administrator accounts" },
     {
         title: "Credentials",
         path: "/credentials",

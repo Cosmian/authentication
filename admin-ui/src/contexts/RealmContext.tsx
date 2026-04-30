@@ -1,6 +1,6 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { message } from "antd";
-import { ADMIN_REALM_ID, ADMIN_REALM_LABEL, API_REALMS } from "../constants/apiPaths";
+import { SUPER_ADMIN_REALM_ID, SUPER_ADMIN_REALM_LABEL, API_REALMS } from "../constants/apiPaths";
 
 /* eslint-disable react-refresh/only-export-components */
 
@@ -16,26 +16,29 @@ interface RealmContextType {
     selectedRealm: string;
     setSelectedRealm: (realmId: string) => void;
     realmLabel: (realmId: string) => string;
+    isSuperAdmin: boolean;
     loading: boolean;
     error: string | null;
 }
 
-const ADMIN_ENTRY: RealmEntry = { id: ADMIN_REALM_ID, label: ADMIN_REALM_LABEL };
+const SUPER_ADMIN_ENTRY: RealmEntry = { id: SUPER_ADMIN_REALM_ID, label: SUPER_ADMIN_REALM_LABEL };
 
 const RealmContext = createContext<RealmContextType | undefined>(undefined);
 
 const toRealmEntry = (raw: { id: string }): RealmEntry => ({
     id: raw.id,
-    label: raw.id === ADMIN_REALM_ID ? ADMIN_REALM_LABEL : raw.id,
+    label: raw.id === SUPER_ADMIN_REALM_ID ? SUPER_ADMIN_REALM_LABEL : raw.id,
 });
 
 export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-    const [realms, setRealms] = useState<RealmEntry[]>([ADMIN_ENTRY]);
+    const [realms, setRealms] = useState<RealmEntry[]>([SUPER_ADMIN_ENTRY]);
     const [selectedRealm, setSelectedRealmState] = useState<string>(
-        () => localStorage.getItem(LS_SELECTED_REALM_KEY) ?? ADMIN_REALM_ID,
+        () => localStorage.getItem(LS_SELECTED_REALM_KEY) ?? SUPER_ADMIN_REALM_ID,
     );
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    const isSuperAdmin = selectedRealm === SUPER_ADMIN_REALM_ID;
 
     const setSelectedRealm = useCallback((realmId: string) => {
         setSelectedRealmState(realmId);
@@ -59,15 +62,15 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 const entries = data.map(toRealmEntry);
 
                 if (entries.length === 0) {
-                    setRealms([ADMIN_ENTRY]);
+                    setRealms([SUPER_ADMIN_ENTRY]);
                 } else {
-                    const hasAdmin = entries.some((e) => e.id === ADMIN_REALM_ID);
-                    setRealms(hasAdmin ? entries : [ADMIN_ENTRY, ...entries]);
+                    const hasAdmin = entries.some((e) => e.id === SUPER_ADMIN_REALM_ID);
+                    setRealms(hasAdmin ? entries : [SUPER_ADMIN_ENTRY, ...entries]);
                 }
                 setError(null);
             } catch {
                 message.error("Failed to load realms");
-                setRealms([ADMIN_ENTRY]);
+                setRealms([SUPER_ADMIN_ENTRY]);
                 setError("Failed to load realms");
             } finally {
                 setLoading(false);
@@ -78,7 +81,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }, []);
 
     return (
-        <RealmContext.Provider value={{ realms, selectedRealm, setSelectedRealm, realmLabel, loading, error }}>
+        <RealmContext.Provider value={{ realms, selectedRealm, setSelectedRealm, realmLabel, isSuperAdmin, loading, error }}>
             {children}
         </RealmContext.Provider>
     );
