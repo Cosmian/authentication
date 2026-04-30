@@ -256,7 +256,6 @@ Delete all expired sessions from the session store.
 
 Delete all sessions for a given realm (administrative bulk logout).
 
-# TODO : Check
 **Response — `204 No Content`** — empty body.
 
 ---

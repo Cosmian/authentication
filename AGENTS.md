@@ -110,11 +110,84 @@ Cargo.toml          — workspace manifest
 | Database trait & backends       | `server/src/database/`                       |
 | Session management              | `server/src/session/`                        |
 | TOTP support                    | `server/src/totp.rs`                         |
+| **OpenAPI schema**              | **`server/documentation/openapi.yaml`**      |
 | Nix derivation                  | `nix/auth-server.nix`                        |
 | Nix top-level                   | `default.nix`                                |
 | CI/packaging entrypoint         | `.github/scripts/nix.sh`                     |
 | Packaging scripts (DEB/RPM/DMG) | `.github/scripts/package/`                  |
 | Test scripts                    | `.github/scripts/test/`                      |
+
+---
+
+## 4a. API contract — keeping server, client and OpenAPI schema in sync
+
+`server/documentation/openapi.yaml` is the **authoritative API contract**. Every
+change that touches a route, request body, response body, or authentication
+requirement **must** be reflected in all three layers at the same time:
+
+```
+server/src/server/endpoints/   ←→   client/src/   ←→   server/documentation/openapi.yaml
+```
+
+### What must stay in sync
+
+| Layer | What to check |
+| ----- | ------------- |
+| **Server routes** (`server/src/server/endpoints/*.rs`) | HTTP method, URL path, path parameters, query parameters, request body type, response status codes |
+| **Server app** (`server/src/server/auth_server.rs`) | Scope prefix + middleware stack (which routes require `cookieAuth`) |
+| **Client DTOs** (`client/src/dto/`, `client/src/models/`) | Struct field names and types that are serialized/deserialized over the wire |
+| **Client methods** (`client/src/client/auth_client.rs`) | URL format strings, HTTP methods, request/response types |
+| **OpenAPI schema** (`server/documentation/openapi.yaml`) | Paths, parameter names, schema component field names, security requirements, examples |
+
+### Rules for agents
+
+1. **Route change** (add, rename, remove a path or HTTP method):
+   - Update the actix-web `#[get/post/put/delete("...")]` macro in the endpoint file.
+   - Update `auth_server.rs` scope registration if the path prefix changes.
+   - Update the matching URL format string in `auth_client.rs`.
+   - Add/rename/delete the corresponding path entry in `openapi.yaml`.
+
+2. **Request or response body change** (add, rename, or remove a field):
+   - Update the Rust struct in `client/src/dto/` or `client/src/models/`.
+   - Update the matching `components/schemas/` entry in `openapi.yaml`.
+   - Update any inline examples in `openapi.yaml` that use the changed field.
+
+3. **Authentication change** (a route gains or loses an auth requirement):
+   - Update the middleware wrap chain in `auth_server.rs`.
+   - Update the `security:` list on the corresponding path in `openapi.yaml`.
+
+4. **New endpoint**:
+   - Add the handler in the appropriate `*_endpoints.rs` file.
+   - Register it in `auth_server.rs`.
+   - Add the client method in `auth_client.rs`.
+   - Add the full path entry (summary, operationId, parameters, requestBody,
+     responses, security, example) in `openapi.yaml`.
+
+### Schema field naming conventions
+
+- Path parameter names in route macros (`/{realm_id}/`) must match the
+  `name:` of the corresponding `$ref: '#/components/parameters/...'` entry.
+- Rust struct field names are serialized as-is (no `#[serde(rename)]` unless
+  explicitly needed). OpenAPI `properties` keys must match exactly.
+- `password` in `UserPass` is always a `Vec<u8>` / integer array on the wire —
+  returned as `[]` on reads; never echoed back.
+
+### Verification checklist (run after any API change)
+
+```bash
+# 1. Build compiles cleanly
+cargo build --workspace
+
+# 2. All tests pass
+cargo test --workspace --lib
+
+# 3. No clippy warnings
+cargo clippy --workspace --all-targets -- -D warnings
+
+# 4. Manually cross-check openapi.yaml against the endpoint files:
+grep -r '#\[get\|#\[post\|#\[put\|#\[delete' server/src/server/endpoints/
+#    Every route macro must have a matching path in openapi.yaml.
+```
 
 ---
 
