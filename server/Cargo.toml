@@ -17,6 +17,8 @@ rustls = ["actix-web/rustls-0_23", "dep:rustls"]
 no_jwt_validation = []
 # Database support - all backends are available at runtime based on DatabaseParams
 database = ["dep:sqlx", "sqlx?/postgres", "sqlx?/sqlite", "sqlx?/mysql"]
+# Expose /public/swagger-ui and /public/openapi.yaml routes (dev/staging only)
+swagger-ui = []
 
 [dependencies]
 actix-cors = { workspace = true }

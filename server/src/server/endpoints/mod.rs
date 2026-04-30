@@ -17,6 +17,8 @@ pub use realms_endpoints::{
 
 mod client_endpoints;
 pub use client_endpoints::{login, version_endpoint, whoami};
+#[cfg(feature = "swagger-ui")]
+pub use client_endpoints::{openapi_yaml_endpoint, swagger_ui_endpoint};
 
 mod totp_endpoints;
 pub use totp_endpoints::{totp_disable, totp_generate, totp_verify};
