@@ -1,7 +1,8 @@
 import { Layout, Menu, MenuProps } from "antd";
-import React from "react";
+import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { menuItems } from "../../menuItems";
+import { useRealm } from "../../contexts/RealmContext";
 
 export interface SidebarProps {
     collapsed: boolean;
@@ -12,6 +13,15 @@ export interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse, isDarkMode }) => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { isSuperAdmin } = useRealm();
+
+    const filteredItems = useMemo(
+        () =>
+            menuItems
+                .filter((item) => !item.superAdminOnly || isSuperAdmin)
+                .map(({ superAdminOnly: _, ...rest }) => rest),
+        [isSuperAdmin],
+    );
 
     const selectedKey = location.pathname === "/" ? "/" : location.pathname;
 
@@ -27,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse, isDarkM
             <Menu
                 mode="inline"
                 selectedKeys={[selectedKey]}
-                items={menuItems as MenuProps["items"]}
+                items={filteredItems as MenuProps["items"]}
                 onClick={({ key }) => navigate(key)}
             />
         </Layout.Sider>

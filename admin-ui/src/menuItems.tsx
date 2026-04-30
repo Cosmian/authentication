@@ -1,4 +1,5 @@
 import {
+    AppstoreOutlined,
     ClockCircleOutlined,
     CrownOutlined,
     DashboardOutlined,
@@ -11,6 +12,7 @@ export interface MenuItem {
     label: string;
     icon?: React.ReactNode;
     children?: MenuItem[];
+    superAdminOnly?: boolean;
 }
 
 export const menuItems: MenuItem[] = [
@@ -18,6 +20,12 @@ export const menuItems: MenuItem[] = [
         key: "/",
         label: "Dashboard",
         icon: <DashboardOutlined />,
+    },
+    {
+        key: "/realms",
+        label: "Realms",
+        icon: <AppstoreOutlined />,
+        superAdminOnly: true,
     },
     {
         key: "/admins",

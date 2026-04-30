@@ -3,15 +3,28 @@ import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { Sidebar } from "../../../src/components/layout/Sidebar";
 
+vi.mock("../../../src/contexts/RealmContext", () => ({
+    useRealm: () => ({
+        realms: [{ id: "_", label: "Super-Admin" }],
+        selectedRealm: "_",
+        setSelectedRealm: vi.fn(),
+        realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
+        isSuperAdmin: true,
+        loading: false,
+        error: null,
+    }),
+}));
+
 describe("Sidebar", () => {
     it("should render all menu items", () => {
         render(
             <MemoryRouter initialEntries={["/"]}>
-                <Sidebar collapsed={false} onCollapse={() => {}} />
+                <Sidebar collapsed={false} onCollapse={() => {}} isDarkMode={false} />
             </MemoryRouter>,
         );
 
         expect(screen.getByText("Dashboard")).toBeInTheDocument();
+        expect(screen.getByText("Realms")).toBeInTheDocument();
         expect(screen.getByText("Admins")).toBeInTheDocument();
         expect(screen.getByText("Credentials")).toBeInTheDocument();
         expect(screen.getByText("Sessions")).toBeInTheDocument();
@@ -21,7 +34,7 @@ describe("Sidebar", () => {
     it("should highlight the active route", () => {
         render(
             <MemoryRouter initialEntries={["/admins"]}>
-                <Sidebar collapsed={false} onCollapse={() => {}} />
+                <Sidebar collapsed={false} onCollapse={() => {}} isDarkMode={false} />
             </MemoryRouter>,
         );
 
@@ -34,24 +47,20 @@ describe("Sidebar", () => {
         const onCollapse = vi.fn();
         render(
             <MemoryRouter initialEntries={["/"]}>
-                <Sidebar collapsed={false} onCollapse={onCollapse} />
+                <Sidebar collapsed={false} onCollapse={onCollapse} isDarkMode={false} />
             </MemoryRouter>,
         );
 
-        // The Sider component is rendered; collapse trigger is part of Ant Design's Sider
-        // Just verify the component renders without error in both states
         expect(screen.getByText("Dashboard")).toBeInTheDocument();
     });
 
     it("should render in collapsed state without labels", () => {
         render(
             <MemoryRouter initialEntries={["/"]}>
-                <Sidebar collapsed={true} onCollapse={() => {}} />
+                <Sidebar collapsed={true} onCollapse={() => {}} isDarkMode={false} />
             </MemoryRouter>,
         );
 
-        // In collapsed mode, Ant Design hides labels by default via CSS/inline collapse
-        // We verify the component doesn't crash
         expect(screen.getByRole("menu")).toBeInTheDocument();
     });
 });

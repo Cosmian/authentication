@@ -13,6 +13,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const resolveServerUrl = (): string => {
+    // In mock mode, use empty string so fetch paths are relative (same-origin)
+    // and MSW can intercept them.
+    if (import.meta.env.VITE_USE_MOCKS === "true") {
+        return "";
+    }
     const configured = import.meta.env.VITE_AUTH_URL as string | undefined;
     const trimmed = configured?.trim();
     return trimmed && trimmed.length > 0 ? trimmed : "https://localhost:8443";

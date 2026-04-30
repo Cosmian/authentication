@@ -1,11 +1,20 @@
 import { Alert, Card, Col, Row, Typography } from "antd";
-import { ClockCircleOutlined, CrownOutlined, KeyOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ClockCircleOutlined, CrownOutlined, KeyOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
 import { useRealm } from "../contexts/RealmContext";
 
 const { Title, Text } = Typography;
 
-const sections = [
+interface Section {
+    title: string;
+    path: string;
+    icon: React.ReactNode;
+    description: string;
+    superAdminOnly?: boolean;
+}
+
+const sections: Section[] = [
+    { title: "Realms", path: "/realms", icon: <AppstoreOutlined style={{ fontSize: 24 }} />, description: "Manage authentication realms", superAdminOnly: true },
     { title: "Admins", path: "/admins", icon: <CrownOutlined style={{ fontSize: 24 }} />, description: "Manage administrator accounts" },
     {
         title: "Credentials",
@@ -28,7 +37,9 @@ const sections = [
 ];
 
 const DashboardPage: React.FC = () => {
-    const { selectedRealm, realmLabel, error } = useRealm();
+    const { selectedRealm, realmLabel, isSuperAdmin, error } = useRealm();
+
+    const visibleSections = sections.filter((s) => !s.superAdminOnly || isSuperAdmin);
 
     return (
         <div>
@@ -40,7 +51,7 @@ const DashboardPage: React.FC = () => {
             {error && <Alert type="warning" message={error} showIcon className="mt-4 mb-4" />}
 
             <Row gutter={[16, 16]} className="mt-6">
-                {sections.map((section) => (
+                {visibleSections.map((section) => (
                     <Col xs={24} sm={12} lg={6} key={section.path}>
                         <Link to={section.path}>
                             <Card hoverable className="h-full">

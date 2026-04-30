@@ -38,10 +38,10 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ isDarkMode, setIsDarkMod
                 <Alert
                     banner
                     type="error"
-                    message="Super-Admin mode — changes affect all realms"
+                    message="Super-Admin mode — changes can affect all realms"
                     showIcon={false}
                     className="text-center font-semibold"
-                    style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 1100 }}
+                    style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 900 }}
                 />
             )}
             <Layout.Header

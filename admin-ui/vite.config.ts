@@ -10,8 +10,7 @@ const apiProxy: Record<string, { target: string; secure: boolean; changeOrigin: 
     "/whoami": proxyOpts,
     "/sessions": proxyOpts,
     "/realms": proxyOpts,
-    "/users": proxyOpts,
-    "/admin": proxyOpts,
+    "/admins": proxyOpts,
     "/public": proxyOpts,
 };
 

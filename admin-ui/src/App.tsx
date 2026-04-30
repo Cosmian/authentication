@@ -5,6 +5,7 @@ import { AuthProvider } from "./contexts/AuthContext";
 import { RealmProvider } from "./contexts/RealmContext";
 import { MainLayout } from "./components/layout/MainLayout";
 import DashboardPage from "./pages/DashboardPage";
+import RealmsPage from "./pages/RealmsPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import { darkTheme, lightTheme } from "./theme";
@@ -33,6 +34,7 @@ const App: React.FC = () => {
                     <Routes>
                         <Route element={<MainLayout isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />}>
                             <Route index element={<DashboardPage />} />
+                            <Route path="realms" element={<RealmsPage />} />
                             <Route path="admins" element={<PlaceholderPage title="Admins" />} />
                             <Route path="credentials" element={<PlaceholderPage title="Credentials" />} />
                             <Route path="sessions" element={<PlaceholderPage title="Sessions" />} />

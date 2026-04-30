@@ -7,10 +7,10 @@ export const startMockWorker = async (): Promise<void> => {
 
     await worker.start({
         onUnhandledRequest: "bypass",
-        // The app uses root-relative API paths such as /admin/realms.
-        // Register the worker at the origin root so it can intercept them in dev.
+        // Vite serves public/ assets under the base path (/admin-ui/).
+        // The service worker must be registered there to intercept fetch requests.
         serviceWorker: {
-            url: "/mockServiceWorker.js",
+            url: "/admin-ui/mockServiceWorker.js",
         },
     });
 };

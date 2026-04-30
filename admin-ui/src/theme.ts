@@ -36,6 +36,8 @@ export const darkTheme = {
         colorBorder: "#4d4b4b",
         colorSplit: "#4d4b4b",
         colorBorderSecondary: "#4d4b4b",
+        colorLink: "#9e6eff",
+        colorLinkHover: "#c4a8ff",
     },
     components: {
         Layout: {
