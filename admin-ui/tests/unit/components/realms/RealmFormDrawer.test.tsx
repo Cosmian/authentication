@@ -99,4 +99,85 @@ describe("RealmFormDrawer", () => {
 
         expect(screen.queryByText("Create Realm")).not.toBeInTheDocument();
     });
+
+    it("should show a validation error and not call onSuccess when Realm ID is empty", async () => {
+        const onSuccess = vi.fn();
+        await act(async () => {
+            render(
+                <RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />,
+            );
+        });
+
+        // Submit without filling in the Realm ID (field is empty in create mode).
+        // Ant Design Form's validateFields rejects when validation fails — this is expected.
+        const createBtn = screen.getAllByRole("button", { name: "Create" });
+        fireEvent.click(createBtn[createBtn.length - 1]);
+
+        // Ant Design Form renders the validation message inline.
+        await waitFor(() =>
+            expect(screen.getByText("Realm ID is required")).toBeInTheDocument(),
+        );
+        expect(onSuccess).not.toHaveBeenCalled();
+    });
+
+    it("should not call onSuccess when the API returns an error", async () => {
+        const onSuccess = vi.fn();
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+            new Response(JSON.stringify({ message: "Internal Server Error" }), { status: 500 }),
+        );
+
+        await act(async () => {
+            render(
+                <RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />,
+            );
+        });
+
+        // Fill required field.
+        const idInput = screen.getByLabelText("Realm ID");
+        fireEvent.change(idInput, { target: { value: "new-realm" } });
+
+        // Submit.
+        const createBtn = screen.getAllByRole("button", { name: "Create" });
+        await act(async () => {
+            fireEvent.click(createBtn[createBtn.length - 1]);
+        });
+
+        // Wait for the fetch to be called (form submitted and API was hit).
+        await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+
+        // The API failed, so onSuccess must NOT have been called.
+        expect(onSuccess).not.toHaveBeenCalled();
+    });
+
+    it("should call API with PUT and invoke onSuccess in edit mode", async () => {
+        const onSuccess = vi.fn();
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+            new Response(JSON.stringify(existingRealm), { status: 200 }),
+        );
+
+        await act(async () => {
+            render(
+                <RealmFormDrawer
+                    open={true}
+                    realm={existingRealm}
+                    onClose={vi.fn()}
+                    onSuccess={onSuccess}
+                />,
+            );
+        });
+
+        // Click the "Save" button (edit mode label).
+        const saveBtn = screen.getAllByRole("button", { name: "Save" });
+        await act(async () => {
+            fireEvent.click(saveBtn[saveBtn.length - 1]);
+        });
+
+        await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+
+        // The request must have used the PUT method.
+        expect(fetchSpy).toHaveBeenCalledWith(
+            expect.stringContaining(existingRealm.id),
+            expect.objectContaining({ method: "PUT" }),
+        );
+    });
 });

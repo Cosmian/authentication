@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { Sidebar } from "../../../src/components/layout/Sidebar";
@@ -43,15 +43,18 @@ describe("Sidebar", () => {
         expect(adminsItem).toHaveClass("ant-menu-item-selected");
     });
 
-    it("should call onCollapse when collapse is triggered", () => {
+    it("should call onCollapse when the sider trigger is clicked", () => {
         const onCollapse = vi.fn();
-        render(
+        const { container } = render(
             <MemoryRouter initialEntries={["/"]}>
                 <Sidebar collapsed={false} onCollapse={onCollapse} isDarkMode={false} />
             </MemoryRouter>,
         );
 
-        expect(screen.getByText("Dashboard")).toBeInTheDocument();
+        const trigger = container.querySelector(".ant-layout-sider-trigger");
+        expect(trigger).not.toBeNull();
+        fireEvent.click(trigger!);
+        expect(onCollapse).toHaveBeenCalled();
     });
 
     it("should render in collapsed state without labels", () => {

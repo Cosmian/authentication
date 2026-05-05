@@ -67,7 +67,14 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
     }, [open, realm, form]);
 
     const handleSubmit = async (): Promise<void> => {
-        const values = await form.validateFields();
+        let values: Awaited<ReturnType<typeof form.validateFields>>;
+        try {
+            values = await form.validateFields();
+        } catch {
+            // Ant Design rejects validateFields when validation fails — the inline
+            // error messages are already rendered by the form; nothing more to do.
+            return;
+        }
         setSubmitting(true);
 
         const authParams: RealmAuthParams = {

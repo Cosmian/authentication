@@ -12,6 +12,8 @@ pub use dummy_idp::{EcIdp, IdP, RsaIdp};
 mod endpoints;
 pub use endpoints::jwks_endpoint;
 
+pub mod helpers;
+
 mod jwt_tests;
 
 mod logging;

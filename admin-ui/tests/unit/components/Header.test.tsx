@@ -2,8 +2,10 @@ import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { Header } from "../../../src/components/layout/Header";
 
+import { useRealm } from "../../../src/contexts/RealmContext";
+
 vi.mock("../../../src/contexts/RealmContext", () => ({
-    useRealm: () => ({
+    useRealm: vi.fn(() => ({
         realms: [
             { id: "_", label: "Admin" },
             { id: "my-service", label: "my-service" },
@@ -13,7 +15,7 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
         realmLabel: (id: string) => (id === "_" ? "Admin" : id),
         loading: false,
         error: null,
-    }),
+    })),
 }));
 
 describe("Header", () => {
@@ -34,11 +36,21 @@ describe("Header", () => {
         expect(toggle).toHaveClass("w-20");
     });
 
-    it("should show loading state in realm selector when realms are loading", () => {
-        // The loading state test is covered by verifying the select renders
-        // with the loading prop. Since the mock already provides loading: false,
-        // we just verify the current label still displays correctly.
-        render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
-        expect(screen.getByText("Admin")).toBeInTheDocument();
+    it("should pass the loading prop to the realm selector when realms are loading", () => {
+        vi.mocked(useRealm).mockReturnValueOnce({
+            realms: [],
+            selectedRealm: "_",
+            setSelectedRealm: vi.fn(),
+            realmLabel: () => "Admin",
+            loading: true,
+            error: null,
+        });
+        const { container } = render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
+        // Ant Design Select sets aria-busy="true" on the combobox when loading
+        const combobox = container.querySelector(".ant-select-selector");
+        expect(combobox).not.toBeNull();
+        // The Select should be present; when loading=true Ant Design shows a spinner
+        const loadingSpinner = container.querySelector(".ant-select-arrow .anticon-loading");
+        expect(loadingSpinner).not.toBeNull();
     });
 });
