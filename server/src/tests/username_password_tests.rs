@@ -1,7 +1,9 @@
 use crate::{
     AuthResult, AuthScheme, AuthenticationNextStep, Realm, RealmAuthParams, UsernamePasswordParams,
     client::AuthClientScheme,
-    database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, hash_password_with_argon2},
+    database::{
+        APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, hash_password_with_argon2,
+    },
     models::{ADMIN_REALM, UserPass},
     tests::{init_test_logging, start_default_test_server},
 };
@@ -92,9 +94,15 @@ async fn test_invalid_username_returns_401() -> AuthResult<()> {
 
     let result = client.login(ADMIN_REALM, None, None).await;
 
-    assert!(result.is_err(), "Expected login to fail with an invalid username");
+    assert!(
+        result.is_err(),
+        "Expected login to fail with an invalid username"
+    );
     let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("401"), "Expected 401 in error message, got: {msg}");
+    assert!(
+        msg.contains("401"),
+        "Expected 401 in error message, got: {msg}"
+    );
     info!("Invalid username correctly rejected with 401");
 
     ctx.stop_server().await
@@ -113,9 +121,15 @@ async fn test_invalid_password_returns_401() -> AuthResult<()> {
 
     let result = client.login(ADMIN_REALM, None, None).await;
 
-    assert!(result.is_err(), "Expected login to fail with an invalid password");
+    assert!(
+        result.is_err(),
+        "Expected login to fail with an invalid password"
+    );
     let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("401"), "Expected 401 in error message, got: {msg}");
+    assert!(
+        msg.contains("401"),
+        "Expected 401 in error message, got: {msg}"
+    );
     info!("Invalid password correctly rejected with 401");
 
     ctx.stop_server().await
@@ -156,9 +170,15 @@ async fn test_empty_credentials_returns_401() -> AuthResult<()> {
 
     let result = client.login(ADMIN_REALM, None, None).await;
 
-    assert!(result.is_err(), "Expected login to fail with empty credentials");
+    assert!(
+        result.is_err(),
+        "Expected login to fail with empty credentials"
+    );
     let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("401"), "Expected 401 in error message, got: {msg}");
+    assert!(
+        msg.contains("401"),
+        "Expected 401 in error message, got: {msg}"
+    );
     info!("Empty credentials correctly rejected with 401");
 
     ctx.stop_server().await
@@ -189,7 +209,10 @@ async fn authenticate_as_admin_for_up_tests(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated after admin login"
     );
-    assert!(cookie.is_some(), "Expected session cookie after admin login");
+    assert!(
+        cookie.is_some(),
+        "Expected session cookie after admin login"
+    );
     Ok(client)
 }
 

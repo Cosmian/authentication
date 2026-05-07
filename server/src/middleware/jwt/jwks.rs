@@ -295,7 +295,7 @@ impl JwksManager {
             self.set_jwks(realm_id, refreshed_jwks)?;
 
             // Prevents repeating call when refreshing fails
-            return Ok(realm.find_jwk(kid).cloned())
+            return Ok(realm.find_jwk(kid).cloned());
         }
 
         Ok(None)

@@ -97,3 +97,12 @@ repos:
         args: [--branch, main]
       - id: trailing-whitespace
         exclude: nix/expected-hashes/
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        language: system
+        entry: cargo fmt --all -- --check
+        types: [rust]
+        pass_filenames: false

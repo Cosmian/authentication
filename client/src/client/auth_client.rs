@@ -570,8 +570,7 @@ impl AuthClient {
         admin_id: &str,
         admin: &Admin,
     ) -> AuthResult<Admin> {
-        self.put(&format!("/admins/{}", admin_id), admin)
-            .await
+        self.put(&format!("/admins/{}", admin_id), admin).await
     }
 
     /// Delete an admin by ID.
@@ -615,10 +614,7 @@ impl AuthClient {
         admin_id: &str,
         realm_id: &str,
     ) -> AuthResult<Admin> {
-        let url = format!(
-            "{}/admins/{}/realms/{}",
-            self.base_url, admin_id, realm_id
-        );
+        let url = format!("{}/admins/{}/realms/{}", self.base_url, admin_id, realm_id);
         let request = self.client.delete(&url);
         let response = request
             .send()
@@ -665,7 +661,10 @@ impl AuthClient {
         realm_id: &str,
         username: &str,
     ) -> AuthResult<()> {
-        let url = format!("{}/realms/{}/userpass/{}", self.base_url, realm_id, username);
+        let url = format!(
+            "{}/realms/{}/userpass/{}",
+            self.base_url, realm_id, username
+        );
         let request = self.client.delete(&url);
         let response = request
             .send()

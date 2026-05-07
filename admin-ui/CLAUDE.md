@@ -61,14 +61,14 @@ tests/
 ## Key Domain Concepts
 
 - **Realm `_`** = Admin realm, always present, displayed as "Admin"
-- **Super admin** = User with `"_"` in realms list
+- **Super admin** = Admin with `"_"` in realms list
 - **Session** = server-side, `_ea_` cookie is opaque lookup key
 - All realm-scoped API paths include `/realms/{realm_id}/...`
 
 ## Auth Server Proxy (dev)
 
 Target: `https://localhost:8443`
-Proxied paths: `/login`, `/whoami`, `/sessions`, `/realms`, `/users`, `/admin`, `/public`
+Proxied paths: `/login`, `/whoami`, `/sessions`, `/realms`, `/admins`, `/public`
 Options: `secure: false`, `changeOrigin: true`
 
 ## Test Regression Policy

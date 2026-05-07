@@ -12,8 +12,7 @@ use crate::{
     models::ADMIN_REALM,
     tests::{
         helpers::{
-            authenticate_as_admin, create_and_authenticate_realm_admin,
-            test_realm, create_userpass,
+            authenticate_as_admin, create_and_authenticate_realm_admin, create_userpass, test_realm,
         },
         init_test_logging, start_default_test_server,
     },
