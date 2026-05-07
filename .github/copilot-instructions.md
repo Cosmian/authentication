@@ -24,18 +24,18 @@ The HTTP layer is organized as Actix scopes with layered middleware, assembled i
 | `/login` | Credential authentication | `ExtractRealm` → `UsernamePasswordAuth` → `JwtAuth` → `EnsureAuth` |
 | `/whoami` | Session introspection | `ExtractRealm` → `CookieAuthSameServer` |
 | `/sessions` | Session validation/revocation API | `ExtractRealm` |
-| `/realms` | Realm-scoped credentials and TOTP | `ExtractRealm` → `CookieAuthSameServer` → `UserAuth` |
-| `/users` | Admin user CRUD | `InjectAdminRealm` → `CookieAuthSameServer` → `UserAuth` |
-| `/admin` | Realm management (super admin) | `InjectAdminRealm` → `CookieAuthSameServer` → `UserAuth` |
+| `/realms` | Realm-scoped credentials and TOTP | `ExtractRealm` → `CookieAuthSameServer` → `AdminAuth` |
+| `/admins` | Admin CRUD | `InjectAdminRealm` → `CookieAuthSameServer` → `AdminAuth` |
+| `/admins/realms` | Realm management (super admin) | `InjectAdminRealm` → `CookieAuthSameServer` → `AdminAuth` |
 
 Middleware runs bottom-to-top in each scope (last `.wrap()` runs first).
 
 ## Key Domain Concepts
 
 - **Realm** — isolated auth domain with its own allowed auth methods and session lifetime. The special `_` realm is the admin realm.
-- **User** — an *administrator* record, not a generic account. Every `User` has a `realms` list determining what they may administer.
-- **Super admin** — `User` with `"_"` in `realms`. Can administer everything.
-- **Realm admin** — `User` with specific realm IDs (not `"_"`). Scoped to those realms only.
+- **Admin** — an *administrator* record, not a generic account. Every `Admin` has a `realms` list determining what they may administer.
+- **Super admin** — `Admin` with `"_"` in `realms`. Can administer everything.
+- **Realm admin** — `Admin` with specific realm IDs (not `"_"`). Scoped to those realms only.
 - **Session** — server-side record. The `_ea_` cookie is an opaque lookup key, not a JWT. All session state is in the store.
 - **AuthenticatedClientScheme** — inserted into request extensions by auth middleware; carries `username` and `auth_scheme`.
 - **ClientClaims** — JWT claims extracted from the session cookie by `CookieAuthSameServer`.
@@ -53,9 +53,9 @@ Middleware runs bottom-to-top in each scope (last `.wrap()` runs first).
 
 Two-tier: super admin vs realm admin. Authorization is enforced in endpoint handlers, not middleware. Key rules:
 
-- `User::is_super_admin()` — `realms` contains `"_"`
-- `User::can_administer_realm(r)` — is super admin OR `realms` contains `r`
-- **Exclusive-ownership rule** — realm admin can only CRUD a `User` if *every* realm in that user's `realms` list is one they administer
+- `Admin::is_super_admin()` — `realms` contains `"_"`
+- `Admin::can_administer_realm(r)` — is super admin OR `realms` contains `r`
+- **Exclusive-ownership rule** — realm admin can only CRUD an `Admin` if *every* realm in that admin's `realms` list is one they administer
 - PUT endpoints run the ownership check twice: once on current state, once on incoming body (prevents privilege escalation)
 
 See `server/documentation/authorization_and_administration.md`.
