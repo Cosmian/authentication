@@ -4,7 +4,6 @@ import {
     CrownOutlined,
     DashboardOutlined,
     KeyOutlined,
-    SafetyCertificateOutlined,
 } from "@ant-design/icons";
 
 export interface MenuItem {
@@ -13,6 +12,8 @@ export interface MenuItem {
     icon?: React.ReactNode;
     children?: MenuItem[];
     superAdminOnly?: boolean;
+    /** When true, visible only if the user administers the selected realm */
+    requiresRealmOwnership?: boolean;
 }
 
 export const menuItems: MenuItem[] = [
@@ -31,6 +32,7 @@ export const menuItems: MenuItem[] = [
         key: "/admins",
         label: "Admins",
         icon: <CrownOutlined />,
+        requiresRealmOwnership: true,
     },
     {
         key: "/credentials",
@@ -41,10 +43,5 @@ export const menuItems: MenuItem[] = [
         key: "/sessions",
         label: "Sessions",
         icon: <ClockCircleOutlined />,
-    },
-    {
-        key: "/totp",
-        label: "TOTP",
-        icon: <SafetyCertificateOutlined />,
     },
 ];

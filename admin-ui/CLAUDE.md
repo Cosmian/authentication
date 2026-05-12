@@ -51,6 +51,7 @@ tests/
 - One component per file, props interface exported
 - Default exports for pages only; named exports for everything else
 - Import order: react → third-party → local absolute → relative
+- **Never use `useMemo`** — performance is not a concern for this app, and memoising async side-effects (e.g. `validateFields`) causes hard-to-diagnose stale-value bugs. Use plain variables or `useEffect` instead.
 
 ## Error Handling
 
@@ -90,3 +91,13 @@ Coverage target: statements ≥80%, branches ≥75%
 - Never use bare light-only Tailwind color utilities (e.g., `border-gray-300`, `bg-yellow-100`, `text-gray-500`) without providing a dark counterpart via a conditional className based on `isDarkMode`: e.g., `` `${isDarkMode ? "border-gray-600" : "border-gray-300"}` ``.
 - Prefer Ant Design theme tokens over Tailwind color utilities for any color that must adapt to the theme.
 - Do NOT use Tailwind's `dark:` prefix — the app does not add a `dark` class to `<html>`; theme is controlled via Ant Design's `ConfigProvider`.
+
+## Backlog / Technical Debt
+
+- **Remove remaining `useMemo` calls** — the following files still use `useMemo` for API factory instances and derived lists; replace with plain variable declarations on the next pass:
+  - `src/pages/RealmsPage.tsx` — `const api = useMemo(...)`
+  - `src/pages/AdminsPage.tsx` — `const api = useMemo(...)`
+  - `src/pages/CredentialsPage.tsx` — `const api = useMemo(...)`
+  - `src/pages/SessionsPage.tsx` — `const api = useMemo(...)`
+  - `src/components/realms/RealmFormDrawer.tsx` — `const api = useMemo(...)`
+  - `src/components/layout/Sidebar.tsx` — `const filteredItems = useMemo(...)`

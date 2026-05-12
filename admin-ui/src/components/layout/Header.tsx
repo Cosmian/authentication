@@ -1,7 +1,11 @@
-import { MoonOutlined, SunOutlined } from "@ant-design/icons";
-import { Select, Switch } from "antd";
+import { LogoutOutlined, MoonOutlined, SunOutlined, UserOutlined } from "@ant-design/icons";
+import { Button, Select, Switch, Typography } from "antd";
 import React from "react";
+import { useAuth } from "../../contexts/AuthContext";
 import { useRealm } from "../../contexts/RealmContext";
+import { SUPER_ADMIN_REALM_ID, SUPER_ADMIN_REALM_LABEL } from "../../constants/apiPaths";
+
+const { Text } = Typography;
 
 interface HeaderProps {
     isDarkMode: boolean;
@@ -9,6 +13,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
+    const { username, logout } = useAuth();
     const { realms, selectedRealm, setSelectedRealm, loading } = useRealm();
 
     return (
@@ -20,10 +25,18 @@ export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => 
                     onChange={setSelectedRealm}
                     loading={loading}
                     style={{ minWidth: 160 }}
-                    options={realms.map((r) => ({ value: r.id, label: r.label }))}
+                    options={realms.map((r) => ({
+                        value: r.id,
+                        label: r.id === SUPER_ADMIN_REALM_ID ? SUPER_ADMIN_REALM_LABEL : r.id,
+                    }))}
                 />
             </div>
             <div className="flex items-center gap-4">
+                {username && (
+                    <Text type="secondary">
+                        <UserOutlined /> {username}
+                    </Text>
+                )}
                 <Switch
                     className="w-20"
                     checked={isDarkMode}
@@ -31,6 +44,9 @@ export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => 
                     checkedChildren={<MoonOutlined />}
                     unCheckedChildren={<SunOutlined />}
                 />
+                <Button icon={<LogoutOutlined />} onClick={logout} size="small">
+                    Logout
+                </Button>
             </div>
         </div>
     );

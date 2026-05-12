@@ -25,7 +25,7 @@ const mockRealms: Realm[] = [
 
 // Mock contexts
 vi.mock("../../../src/contexts/AuthContext", () => ({
-    useAuth: () => ({ isAuthenticated: true, username: "admin", serverUrl: "", login: vi.fn(), logout: vi.fn() }),
+    useAuth: () => ({ isAuthenticated: true, username: "admin", serverUrl: "", loading: false, sessionId: null, exp: null, login: vi.fn(), logout: vi.fn() }),
 }));
 
 const mockRealmContext = {
@@ -34,6 +34,7 @@ const mockRealmContext = {
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
     isSuperAdmin: true,
+    isGlobalAdmin: true,
     loading: false,
     error: null,
 };
@@ -45,7 +46,7 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
 describe("RealmsPage", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
-        mockRealmContext.isSuperAdmin = true;
+        mockRealmContext.isGlobalAdmin = true;
     });
 
     it("should show loading state initially", async () => {
@@ -114,7 +115,7 @@ describe("RealmsPage", () => {
     });
 
     it("should show access denied when not super admin", async () => {
-        mockRealmContext.isSuperAdmin = false;
+        mockRealmContext.isGlobalAdmin = false;
 
         await act(async () => {
             render(
@@ -156,10 +157,10 @@ describe("RealmsPage", () => {
             );
         });
 
-        // The my-service realm has all three auth methods
-        const row = screen.getByText("my-service").closest("tr")!;
-        expect(within(row).getByText("Password")).toBeInTheDocument();
-        expect(within(row).getByText("JWT")).toBeInTheDocument();
-        expect(within(row).getByText("TOTP")).toBeInTheDocument();
+        // The my-service realm has all three auth methods shown as tags in its card
+        const card = screen.getByText("my-service").closest(".ant-card")!;
+        expect(within(card).getByText("Password")).toBeInTheDocument();
+        expect(within(card).getByText("JWT")).toBeInTheDocument();
+        expect(within(card).getByText("TOTP")).toBeInTheDocument();
     });
 });

@@ -1,45 +1,81 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { render, screen, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AuthProvider, useAuth } from "../../../src/contexts/AuthContext";
 
 const TestConsumer: React.FC = () => {
-    const { isAuthenticated, username, serverUrl } = useAuth();
+    const { isAuthenticated, username, serverUrl, loading } = useAuth();
     return (
         <div>
             <span data-testid="authed">{String(isAuthenticated)}</span>
             <span data-testid="user">{username ?? ""}</span>
             <span data-testid="url">{serverUrl}</span>
+            <span data-testid="loading">{String(loading)}</span>
         </div>
     );
 };
 
 describe("AuthContext", () => {
-    it("should provide isAuthenticated as true (stub)", () => {
-        render(
-            <AuthProvider>
-                <TestConsumer />
-            </AuthProvider>,
+    beforeEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it("should start unauthenticated and check session on mount", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+            new Response("Unauthorized", { status: 401 }),
         );
+
+        await act(async () => {
+            render(
+                <AuthProvider>
+                    <TestConsumer />
+                </AuthProvider>,
+            );
+        });
+
+        expect(screen.getByTestId("authed")).toHaveTextContent("false");
+        expect(screen.getByTestId("loading")).toHaveTextContent("false");
+    });
+
+    it("should authenticate when whoami returns valid claims", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    iss: "auth-server",
+                    sub: "alice",
+                    aud: ["_"],
+                    exp: Math.floor(Date.now() / 1000) + 3600,
+                    iat: Math.floor(Date.now() / 1000),
+                    as_as: "up",
+                    as_rid: "_",
+                }),
+                { status: 200 },
+            ),
+        );
+
+        await act(async () => {
+            render(
+                <AuthProvider>
+                    <TestConsumer />
+                </AuthProvider>,
+            );
+        });
 
         expect(screen.getByTestId("authed")).toHaveTextContent("true");
+        expect(screen.getByTestId("user")).toHaveTextContent("alice");
     });
 
-    it("should provide a default username", () => {
-        render(
-            <AuthProvider>
-                <TestConsumer />
-            </AuthProvider>,
+    it("should resolve serverUrl from default", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+            new Response("Unauthorized", { status: 401 }),
         );
 
-        expect(screen.getByTestId("user")).toHaveTextContent("admin");
-    });
-
-    it("should resolve serverUrl from default", () => {
-        render(
-            <AuthProvider>
-                <TestConsumer />
-            </AuthProvider>,
-        );
+        await act(async () => {
+            render(
+                <AuthProvider>
+                    <TestConsumer />
+                </AuthProvider>,
+            );
+        });
 
         expect(screen.getByTestId("url")).toHaveTextContent("https://localhost:8443");
     });

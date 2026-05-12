@@ -75,3 +75,71 @@ export interface SessionData {
     max_stale_age_seconds: number;
     created_at: number;
 }
+
+/** Authentication next step after login */
+export type AuthenticationNextStep = "Authenticated" | "TotpRequired" | "ChangePassword";
+
+/** Login request body */
+export interface LoginRequest {
+    public_key_pem?: string | null;
+    totp_code?: string | null;
+}
+
+/** Authentication result from POST /login */
+export interface AuthenticationResult {
+    next_step: AuthenticationNextStep;
+    session_id: string | null;
+}
+
+/** JWT claims from GET /whoami */
+export interface ClientClaims {
+    iss: string;
+    sub: string;
+    aud: string | string[];
+    exp: number;
+    iat: number;
+    as_as: string;
+    as_rid: string;
+}
+
+/** Delete sessions request body */
+export interface DeleteSessionsRequest {
+    session_ids: string[];
+}
+
+/** Sessions action for bulk session operations */
+export type SessionsAction = "LogoutOtherSessions" | "LogoutAllSessions";
+
+/** Request to get sessions for specific clients */
+export interface GetSessionsForClientsRequest {
+    authenticated_clients: AuthenticatedClientScheme[];
+}
+
+/** Authenticated client identification */
+export interface AuthenticatedClientScheme {
+    username: string;
+    auth_scheme: string;
+}
+
+/** Response from get sessions for clients */
+export interface GetSessionsForClientsResponse {
+    session_ids: string[];
+}
+
+/** TOTP generate request body */
+export interface TotpGenerateRequest {
+    username: string;
+    issuer?: string | null;
+}
+
+/** TOTP generate response */
+export interface TotpGenerateResponse {
+    secret_base32: string;
+    otpauth_url: string;
+}
+
+/** TOTP verify request body */
+export interface TotpVerifyRequest {
+    username: string;
+    code: string;
+}

@@ -263,6 +263,13 @@ components:
 
     SessionData:
       type: object
+      description: |
+        ⚠️  SECURITY NOTE: `cookie_string` contains the raw JWT stored in the session and
+        `session_id` is the opaque lookup key. These fields MUST NOT be returned by any
+        admin list endpoint — doing so would expose all active JWTs to any authenticated
+        admin, enabling session hijacking via Bearer token replay.
+        A future `SessionSummary` schema (see openapi TODO) must be defined for list
+        endpoints, omitting `cookie_string` and `session_id`.
       required: [session_id, realm_id, username, auth_scheme, cookie_string, max_age_seconds, max_stale_age_seconds, created_at]
       properties:
         session_id:

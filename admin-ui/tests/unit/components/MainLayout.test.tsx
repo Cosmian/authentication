@@ -3,12 +3,27 @@ import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { MainLayout } from "../../../src/components/layout/MainLayout";
 
+vi.mock("../../../src/contexts/AuthContext", () => ({
+    useAuth: () => ({
+        isAuthenticated: true,
+        username: "admin",
+        serverUrl: "",
+        loading: false,
+        sessionId: null,
+        exp: null,
+        login: vi.fn(),
+        logout: vi.fn(),
+    }),
+}));
+
 vi.mock("../../../src/contexts/RealmContext", () => ({
     useRealm: () => ({
-        realms: [{ id: "_", label: "Admin" }],
+        realms: [{ id: "_", auth_params: { username_password_params: null, jwt_params: null, totp_params: null }, session_max_age_seconds: 0, session_max_stale_age_seconds: 0 }],
         selectedRealm: "_",
         setSelectedRealm: vi.fn(),
         realmLabel: (id: string) => (id === "_" ? "Admin" : id),
+        isSuperAdmin: true,
+        isGlobalAdmin: true,
         loading: false,
         error: null,
     }),

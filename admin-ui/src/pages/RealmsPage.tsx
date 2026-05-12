@@ -1,5 +1,5 @@
-import { Alert, Button, message, Space, Table, Tag, Typography } from "antd";
-import { DeleteOutlined, EditOutlined } from "@ant-design/icons";
+import { Alert, Button, Card, Col, message, Row, Space, Tag, Typography } from "antd";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { Realm } from "../types/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -11,9 +11,17 @@ import { EmptyState } from "../components/common/EmptyState";
 import { ConfirmDeleteModal } from "../components/common/ConfirmDeleteModal";
 import { RealmFormDrawer } from "../components/realms/RealmFormDrawer";
 
+/** Format seconds into a human-readable duration */
+function formatDuration(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+    return `${Math.floor(seconds / 86400)}d`;
+}
+
 const RealmsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { isSuperAdmin } = useRealm();
+    const { isGlobalAdmin } = useRealm();
     const api = useMemo(() => createRealmsApi(serverUrl), [serverUrl]);
 
     const [realms, setRealms] = useState<Realm[]>([]);
@@ -81,13 +89,13 @@ const RealmsPage: React.FC = () => {
         }
     };
 
-    if (!isSuperAdmin) {
+    if (!isGlobalAdmin) {
         return (
             <Alert
                 type="error"
                 showIcon
                 message="Access Denied"
-                description="Realm management requires Super-Admin privileges. Switch to the Super-Admin realm to access this page."
+                description="Realm management requires Super-Admin privileges."
             />
         );
     }
@@ -97,60 +105,6 @@ const RealmsPage: React.FC = () => {
     if (error) {
         return <Alert type="error" showIcon message="Error" description={error} />;
     }
-
-    const columns = [
-        {
-            title: "ID",
-            dataIndex: "id",
-            key: "id",
-            render: (id: string, record: Realm) => (
-                <Typography.Link onClick={() => handleEdit(record)}>{id}</Typography.Link>
-            ),
-        },
-        {
-            title: "Auth Methods",
-            key: "auth_methods",
-            render: (_: unknown, record: Realm) => {
-                const methods: string[] = [];
-                if (record.auth_params.username_password_params) methods.push("Password");
-                if (record.auth_params.jwt_params) methods.push("JWT");
-                if (record.auth_params.totp_params) methods.push("TOTP");
-                return (
-                    <Space size={4}>
-                        {methods.map((m) => (
-                            <Tag key={m}>{m}</Tag>
-                        ))}
-                    </Space>
-                );
-            },
-        },
-        {
-            title: "Session Max Age",
-            dataIndex: "session_max_age_seconds",
-            key: "session_max_age_seconds",
-            render: (v: number) => `${v}s`,
-        },
-        {
-            title: "Stale Age",
-            dataIndex: "session_max_stale_age_seconds",
-            key: "session_max_stale_age_seconds",
-            render: (v: number) => `${v}s`,
-        },
-        {
-            title: "Actions",
-            key: "actions",
-            render: (_: unknown, record: Realm) => (
-                <Space>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-                        Edit
-                    </Button>
-                    <Button size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleteTarget(record)}>
-                        Delete
-                    </Button>
-                </Space>
-            ),
-        },
-    ];
 
     return (
         <div>
@@ -164,7 +118,72 @@ const RealmsPage: React.FC = () => {
             {realms.length === 0 ? (
                 <EmptyState description="No realms configured" actionLabel="Create Realm" onAction={handleCreate} />
             ) : (
-                <Table dataSource={realms} columns={columns} rowKey="id" pagination={false} />
+                <Row gutter={[16, 16]}>
+                    {realms.map((realm) => {
+                        const methods: string[] = [];
+                        if (realm.auth_params.username_password_params) methods.push("Password");
+                        if (realm.auth_params.jwt_params) methods.push("JWT");
+                        if (realm.auth_params.totp_params) methods.push("TOTP");
+
+                        return (
+                            <Col xs={24} sm={12} lg={8} key={realm.id}>
+                                <Card
+                                    title={realm.id}
+                                    actions={[
+                                        <Button
+                                            key="edit"
+                                            type="text"
+                                            icon={<EditOutlined />}
+                                            onClick={() => handleEdit(realm)}
+                                        >
+                                            Edit
+                                        </Button>,
+                                        <Button
+                                            key="delete"
+                                            type="text"
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => setDeleteTarget(realm)}
+                                        >
+                                            Delete
+                                        </Button>,
+                                    ]}
+                                >
+                                    <div className="flex flex-col gap-2">
+                                        <div>
+                                            <Typography.Text type="secondary">Session: </Typography.Text>
+                                            <Typography.Text>{formatDuration(realm.session_max_age_seconds)}</Typography.Text>
+                                            <Typography.Text type="secondary"> / Stale: </Typography.Text>
+                                            <Typography.Text>{formatDuration(realm.session_max_stale_age_seconds)}</Typography.Text>
+                                        </div>
+                                        <Space size={4} wrap>
+                                            {methods.map((m) => (
+                                                <Tag key={m}>{m}</Tag>
+                                            ))}
+                                            {methods.length === 0 && (
+                                                <Typography.Text type="secondary">No auth methods</Typography.Text>
+                                            )}
+                                        </Space>
+                                    </div>
+                                </Card>
+                            </Col>
+                        );
+                    })}
+                    {/* Add new realm card */}
+                    <Col xs={24} sm={12} lg={8}>
+                        <Card
+                            hoverable
+                            onClick={handleCreate}
+                            className="h-full flex items-center justify-center"
+                            style={{ minHeight: 160 }}
+                        >
+                            <div className="flex flex-col items-center gap-2 text-center">
+                                <PlusOutlined style={{ fontSize: 24 }} />
+                                <Typography.Text type="secondary">New Realm</Typography.Text>
+                            </div>
+                        </Card>
+                    </Col>
+                </Row>
             )}
 
             <RealmFormDrawer

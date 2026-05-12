@@ -1,6 +1,18 @@
 import { render, screen, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { RealmProvider, useRealm } from "../../../src/contexts/RealmContext";
+import type { Realm } from "../../../src/types/api";
+
+vi.mock("../../../src/contexts/AuthContext", () => ({
+    useAuth: () => ({ isAuthenticated: true, username: "admin", serverUrl: "", loading: false }),
+}));
+
+const makeRealm = (id: string): Realm => ({
+    id,
+    auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
+    session_max_age_seconds: 3600,
+    session_max_stale_age_seconds: 1800,
+});
 
 const TestConsumer: React.FC = () => {
     const { realms, selectedRealm, realmLabel, setSelectedRealm, loading, error } = useRealm();
@@ -14,7 +26,7 @@ const TestConsumer: React.FC = () => {
             <ul>
                 {realms.map((r) => (
                     <li key={r.id} data-testid={`realm-${r.id}`}>
-                        {r.label}
+                        {r.id}
                     </li>
                 ))}
             </ul>
@@ -31,7 +43,7 @@ describe("RealmContext", () => {
 
     it("should default to the admin realm '_' displayed as 'Super-Admin'", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify([{ id: "_" }, { id: "my-service" }]), { status: 200 }),
+            new Response(JSON.stringify([makeRealm("_"), makeRealm("my-service")]), { status: 200 }),
         );
 
         await act(async () => {
@@ -44,13 +56,13 @@ describe("RealmContext", () => {
 
         expect(screen.getByTestId("selected")).toHaveTextContent("_");
         expect(screen.getByTestId("label")).toHaveTextContent("Super-Admin");
-        expect(screen.getByTestId("realm-_")).toHaveTextContent("Super-Admin");
-        expect(screen.getByTestId("realm-my-service")).toHaveTextContent("my-service");
+        expect(screen.getByTestId("realm-_")).toBeInTheDocument();
+        expect(screen.getByTestId("realm-my-service")).toBeInTheDocument();
     });
 
     it("should update selectedRealm when setSelectedRealm is called", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify([{ id: "_" }, { id: "test-realm" }]), { status: 200 }),
+            new Response(JSON.stringify([makeRealm("_"), makeRealm("test-realm")]), { status: 200 }),
         );
 
         await act(async () => {
@@ -104,7 +116,7 @@ describe("RealmContext", () => {
         localStorage.setItem("admin-ui-selected-realm", "my-service");
 
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify([{ id: "_" }, { id: "my-service" }]), { status: 200 }),
+            new Response(JSON.stringify([makeRealm("_"), makeRealm("my-service")]), { status: 200 }),
         );
 
         await act(async () => {

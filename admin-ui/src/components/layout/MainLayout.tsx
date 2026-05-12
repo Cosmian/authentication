@@ -2,6 +2,7 @@ import { Alert, Layout } from "antd";
 import React, { useCallback, useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { API_VERSION } from "../../constants/apiPaths";
+import { useAuth } from "../../contexts/AuthContext";
 import { useRealm } from "../../contexts/RealmContext";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
@@ -15,18 +16,19 @@ interface MainLayoutProps {
 export const MainLayout: React.FC<MainLayoutProps> = ({ isDarkMode, setIsDarkMode }) => {
     const [collapsed, setCollapsed] = useState(false);
     const [serverVersion, setServerVersion] = useState("");
+    const { serverUrl } = useAuth();
     const { isSuperAdmin } = useRealm();
 
     const fetchVersion = useCallback(async () => {
         try {
-            const res = await fetch(API_VERSION);
+            const res = await fetch(`${serverUrl}${API_VERSION}`, { credentials: "include" });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data: unknown = await res.json();
             setServerVersion(typeof data === "string" ? data : String(data));
         } catch {
             setServerVersion("Unavailable");
         }
-    }, []);
+    }, [serverUrl]);
 
     useEffect(() => {
         fetchVersion();

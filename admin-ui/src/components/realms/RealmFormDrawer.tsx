@@ -8,9 +8,8 @@ import {
     InputNumber,
     message,
     Select,
-    Space,
 } from "antd";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Realm, RealmAuthParams, TotpAlgorithm } from "../../types/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { createRealmsApi } from "../../services/realmsApi";
@@ -34,6 +33,9 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
     const { serverUrl } = useAuth();
     const api = useMemo(() => createRealmsApi(serverUrl), [serverUrl]);
     const [submitting, setSubmitting] = useState(false);
+    const [canSubmit, setCanSubmit] = useState(false);
+    // Store original realm for dirty detection — ref so no extra re-render cycle
+    const originalRealmRef = useRef<Realm | null>(null);
 
     const isEdit = realm !== null;
 
@@ -42,10 +44,48 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
     const [jwtEnabled, setJwtEnabled] = useState(false);
     const [totpEnabled, setTotpEnabled] = useState(false);
 
+    // Re-validate whenever any field or toggle changes; in edit mode also require dirty
+    const watchedValues = Form.useWatch([], form);
+    useEffect(() => {
+        let cancelled = false;
+        form
+            .validateFields({ validateOnly: true })
+            .then(() => {
+                if (cancelled) return;
+                if (!isEdit) {
+                    setCanSubmit(true);
+                } else if (originalRealmRef.current !== null) {
+                    const cur = form.getFieldsValue();
+                    const orig = originalRealmRef.current;
+                    const toggleDirty =
+                        upEnabled !== (orig.auth_params.username_password_params !== null) ||
+                        jwtEnabled !== (orig.auth_params.jwt_params !== null) ||
+                        totpEnabled !== (orig.auth_params.totp_params !== null);
+                    const formDirty =
+                        cur.session_max_age_seconds !== orig.session_max_age_seconds ||
+                        cur.session_max_stale_age_seconds !== orig.session_max_stale_age_seconds ||
+                        (upEnabled && (cur.allow_expired_passwords ?? false) !==
+                            (orig.auth_params.username_password_params?.allow_expired_passwords ?? false)) ||
+                        (jwtEnabled && cur.smallest_refresh_interval_seconds !==
+                            (orig.auth_params.jwt_params?.smallest_refresh_interval_seconds ?? null)) ||
+                        (totpEnabled && (cur.totp_algorithm ?? "SHA1") !==
+                            (orig.auth_params.totp_params?.algorithm ?? "SHA1")) ||
+                        (totpEnabled && (cur.totp_step ?? 30) !==
+                            (orig.auth_params.totp_params?.step ?? 30));
+                    setCanSubmit(formDirty || toggleDirty);
+                }
+                // else: edit mode, original not yet stored — stay disabled
+            })
+            .catch(() => { if (!cancelled) setCanSubmit(false); });
+        return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [watchedValues, isEdit, upEnabled, jwtEnabled, totpEnabled]);
+
     useEffect(() => {
         if (!open) return;
         if (realm) {
-            form.setFieldsValue({
+            originalRealmRef.current = realm;
+            const values = {
                 id: realm.id,
                 session_max_age_seconds: realm.session_max_age_seconds,
                 session_max_stale_age_seconds: realm.session_max_stale_age_seconds,
@@ -54,11 +94,16 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                 smallest_refresh_interval_seconds: realm.auth_params.jwt_params?.smallest_refresh_interval_seconds ?? 300,
                 totp_algorithm: realm.auth_params.totp_params?.algorithm ?? "SHA1",
                 totp_step: realm.auth_params.totp_params?.step ?? 30,
-            });
-            setUpEnabled(realm.auth_params.username_password_params !== null);
-            setJwtEnabled(realm.auth_params.jwt_params !== null);
-            setTotpEnabled(realm.auth_params.totp_params !== null);
+            };
+            form.setFieldsValue(values);
+            const up = realm.auth_params.username_password_params !== null;
+            const jwt = realm.auth_params.jwt_params !== null;
+            const totp = realm.auth_params.totp_params !== null;
+            setUpEnabled(up);
+            setJwtEnabled(jwt);
+            setTotpEnabled(totp);
         } else {
+            originalRealmRef.current = null;
             form.resetFields();
             setUpEnabled(true);
             setJwtEnabled(false);
@@ -123,13 +168,16 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             onClose={onClose}
             width={520}
             destroyOnClose
-            extra={
-                <Space>
-                    <Button onClick={onClose}>Cancel</Button>
-                    <Button type="primary" loading={submitting} onClick={handleSubmit}>
-                        {isEdit ? "Save" : "Create"}
-                    </Button>
-                </Space>
+            footer={
+                <Button
+                    type="primary"
+                    block
+                    loading={submitting}
+                    disabled={!canSubmit}
+                    onClick={handleSubmit}
+                >
+                    {isEdit ? "Save" : "Create"}
+                </Button>
             }
         >
             <Form form={form} layout="vertical" initialValues={{ session_max_age_seconds: 3600, session_max_stale_age_seconds: 1800 }}>

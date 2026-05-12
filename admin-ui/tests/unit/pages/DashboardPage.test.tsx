@@ -8,15 +8,44 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
     useRealm: vi.fn(),
 }));
 
+vi.mock("../../../src/contexts/AuthContext", () => ({
+    useAuth: () => ({
+        isAuthenticated: true,
+        username: "admin",
+        serverUrl: "",
+        loading: false,
+        sessionId: null,
+        exp: null,
+        login: vi.fn(),
+        logout: vi.fn(),
+    }),
+}));
+
+const concreteRealm = {
+    id: "my-service",
+    auth_params: {
+        username_password_params: { allow_expired_passwords: false },
+        jwt_params: null,
+        totp_params: null,
+    },
+    session_max_age_seconds: 3600,
+    session_max_stale_age_seconds: 1800,
+};
+
+const superAdminRealm = {
+    id: "_",
+    auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
+    session_max_age_seconds: 0,
+    session_max_stale_age_seconds: 0,
+};
+
 const defaultRealmContext = {
-    realms: [
-        { id: "_", label: "Super-Admin" },
-        { id: "my-service", label: "my-service" },
-    ],
+    realms: [superAdminRealm, concreteRealm],
     selectedRealm: "_",
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
     isSuperAdmin: true,
+    isGlobalAdmin: true,
     loading: false,
     error: null,
 };
@@ -24,36 +53,41 @@ const defaultRealmContext = {
 describe("DashboardPage", () => {
     beforeEach(() => {
         vi.mocked(useRealm).mockReturnValue(defaultRealmContext);
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(
+            new Response(JSON.stringify("mock-0.1.0"), { status: 200 }),
+        );
     });
 
-    it("should render the welcome heading", () => {
+    it("should render the dashboard heading in established mode", () => {
         render(
             <MemoryRouter>
                 <DashboardPage />
             </MemoryRouter>,
         );
-        expect(screen.getByText(/Dashboard/i)).toBeInTheDocument();
+        expect(screen.getByText("Dashboard")).toBeInTheDocument();
     });
 
-    it("should render navigation cards for each section", () => {
+    it("should render realm cards in established mode", () => {
         render(
             <MemoryRouter>
                 <DashboardPage />
             </MemoryRouter>,
         );
-        expect(screen.getByText("Admins")).toBeInTheDocument();
-        expect(screen.getByText("Credentials")).toBeInTheDocument();
-        expect(screen.getByText("Sessions")).toBeInTheDocument();
-        expect(screen.getByText("TOTP")).toBeInTheDocument();
+        expect(screen.getByText("my-service")).toBeInTheDocument();
     });
 
-    it("should display the currently selected realm", () => {
+    it("should show onboarding mode when no concrete realms exist", () => {
+        vi.mocked(useRealm).mockReturnValue({
+            ...defaultRealmContext,
+            realms: [superAdminRealm],
+        });
         render(
             <MemoryRouter>
                 <DashboardPage />
             </MemoryRouter>,
         );
-        expect(screen.getByText(/Super-Admin/)).toBeInTheDocument();
+        expect(screen.getByText("Welcome")).toBeInTheDocument();
+        expect(screen.getByText("Create a realm")).toBeInTheDocument();
     });
 
     it("should show error alert when realm context has an error", () => {
