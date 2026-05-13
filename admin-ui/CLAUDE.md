@@ -51,7 +51,7 @@ tests/
 - One component per file, props interface exported
 - Default exports for pages only; named exports for everything else
 - Import order: react → third-party → local absolute → relative
-- **Never use `useMemo`** — performance is not a concern for this app, and memoising async side-effects (e.g. `validateFields`) causes hard-to-diagnose stale-value bugs. Use plain variables or `useEffect` instead.
+- **Avoid use of `useMemo`** — performance is not a concern for this app, and memoising async side-effects (e.g. `validateFields`) causes hard-to-diagnose stale-value bugs. Use plain variables or `useEffect` instead.
 
 ## Error Handling
 

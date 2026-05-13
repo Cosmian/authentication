@@ -158,7 +158,7 @@ describe("RealmsPage", () => {
         });
 
         // The my-service realm has all three auth methods shown as tags in its card
-        const card = screen.getByText("my-service").closest(".ant-card")!;
+        const card = screen.getByText("my-service").closest(".ant-card") as HTMLElement;
         expect(within(card).getByText("Password")).toBeInTheDocument();
         expect(within(card).getByText("JWT")).toBeInTheDocument();
         expect(within(card).getByText("TOTP")).toBeInTheDocument();

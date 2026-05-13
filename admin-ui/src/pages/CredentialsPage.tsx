@@ -14,21 +14,21 @@ import { ResetPasswordModal } from "../components/credentials/ResetPasswordModal
 
 /** Fetches and displays credentials for a single realm — used in the super-admin overview. */
 const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string }> = ({ realmId, serverUrl }) => {
-    const api = createCredentialsApi(serverUrl);
     const [credentials, setCredentials] = useState<UserPass[]>([]);
     const [loading, setLoading] = useState(true);
     const [resetTarget, setResetTarget] = useState<UserPass | null>(null);
 
     useEffect(() => {
+        const api = createCredentialsApi(serverUrl);
         api.list(realmId)
             .then(setCredentials)
             .catch(() => { /* shown inline below */ })
             .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [realmId]);
+    }, [realmId, serverUrl]);
 
     const handleResetPassword = async (password: number[]) => {
         if (!resetTarget) return;
+        const api = createCredentialsApi(serverUrl);
         await api.update(realmId, resetTarget.username, { ...resetTarget, password });
         message.success(`Password reset for "${resetTarget.username}"`);
         setResetTarget(null);
@@ -38,6 +38,7 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string }> = 
 
     const handleDelete = async (username: string) => {
         try {
+            const api = createCredentialsApi(serverUrl);
             await api.delete(realmId, username);
             message.success(`Credential "${username}" deleted`);
             const data = await api.list(realmId);
@@ -98,7 +99,6 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string }> = 
 const CredentialsPage: React.FC = () => {
     const { serverUrl } = useAuth();
     const { selectedRealm, realmLabel, realms } = useRealm();
-    const api = createCredentialsApi(serverUrl);
 
     const [credentials, setCredentials] = useState<UserPass[]>([]);
     const [loading, setLoading] = useState(false);
@@ -112,6 +112,7 @@ const CredentialsPage: React.FC = () => {
 
     const fetchCredentials = useCallback(async () => {
         if (selectedRealm === SUPER_ADMIN_REALM_ID) return;
+        const api = createCredentialsApi(serverUrl);
         setLoading(true);
         setError(null);
         try {
@@ -122,13 +123,14 @@ const CredentialsPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [api, selectedRealm]);
+    }, [serverUrl, selectedRealm]);
 
     useEffect(() => {
         fetchCredentials();
     }, [fetchCredentials]);
 
     const handleCreate = async (username: string, password: number[], changePassword: boolean) => {
+        const api = createCredentialsApi(serverUrl);
         const userpass: UserPass = {
             realm: selectedRealm,
             username,
@@ -143,6 +145,7 @@ const CredentialsPage: React.FC = () => {
 
     const handleResetPassword = async (password: number[]) => {
         if (!resetTarget) return;
+        const api = createCredentialsApi(serverUrl);
         const updated: UserPass = {
             ...resetTarget,
             password,
@@ -154,6 +157,7 @@ const CredentialsPage: React.FC = () => {
     };
 
     const handleToggleChangePassword = async (record: UserPass) => {
+        const api = createCredentialsApi(serverUrl);
         const updated: UserPass = {
             ...record,
             password: [],
@@ -170,6 +174,7 @@ const CredentialsPage: React.FC = () => {
 
     const handleDelete = async (username: string) => {
         try {
+            const api = createCredentialsApi(serverUrl);
             await api.delete(selectedRealm, username);
             message.success(`Credential "${username}" deleted`);
             fetchCredentials();

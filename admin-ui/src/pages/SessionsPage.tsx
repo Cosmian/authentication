@@ -50,13 +50,15 @@ const SessionsPage: React.FC = () => {
                     className="mb-4"
                 />
                 {isSuperAdmin && (
-                    <Button
-                        icon={<ClearOutlined />}
-                        onClick={handlePurgeExpired}
-                        loading={purging}
-                    >
-                        Purge Expired Sessions
-                    </Button>
+                    <div className="mt-4">
+                        <Button
+                            icon={<ClearOutlined />}
+                            onClick={handlePurgeExpired}
+                            loading={purging}
+                        >
+                            Purge Expired Sessions
+                        </Button>
+                    </div>
                 )}
             </div>
         );
