@@ -1,5 +1,5 @@
 import type { Admin } from "../types/api";
-import { apiDelete, apiGet, apiPost, apiPut } from "./api";
+import { apiDelete, apiDeleteJson, apiGet, apiPost, apiPut } from "./api";
 
 const ADMINS_PATH = "/admins";
 
@@ -21,10 +21,10 @@ export function createAdminsApi(baseUrl: string) {
         delete: (adminId: string): Promise<void> => apiDelete(baseUrl, adminPath(adminId)),
 
         addToRealm: (adminId: string, realmId: string): Promise<Admin> =>
-            apiPut<Admin>(baseUrl, adminRealmPath(adminId, realmId), undefined),
+            apiPut<Admin>(baseUrl, adminRealmPath(adminId, realmId), null),
 
         removeFromRealm: (adminId: string, realmId: string): Promise<Admin> =>
-            apiDelete(baseUrl, adminRealmPath(adminId, realmId)) as unknown as Promise<Admin>,
+            apiDeleteJson<Admin>(baseUrl, adminRealmPath(adminId, realmId)),
     };
 }
 

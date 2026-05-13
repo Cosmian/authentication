@@ -15,7 +15,7 @@ const makeRealm = (id: string): Realm => ({
 });
 
 const TestConsumer: React.FC = () => {
-    const { realms, selectedRealm, realmLabel, setSelectedRealm, loading, error } = useRealm();
+    const { realms, selectedRealm, realmLabel, setSelectedRealm, loading, error, refreshRealms } = useRealm();
     return (
         <div>
             <span data-testid="selected">{selectedRealm}</span>
@@ -31,6 +31,7 @@ const TestConsumer: React.FC = () => {
                 ))}
             </ul>
             <button onClick={() => setSelectedRealm("test-realm")}>switch</button>
+            <button onClick={() => refreshRealms()}>refresh</button>
         </div>
     );
 };
@@ -134,5 +135,33 @@ describe("RealmContext", () => {
         const spy = vi.spyOn(console, "error").mockImplementation(() => {});
         expect(() => render(<TestConsumer />)).toThrow("useRealm must be used within a RealmProvider");
         spy.mockRestore();
+    });
+
+    it("should re-fetch and update realms when refreshRealms is called", async () => {
+        vi.spyOn(globalThis, "fetch")
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify([makeRealm("_"), makeRealm("realm-a")]), { status: 200 }),
+            )
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify([makeRealm("_"), makeRealm("realm-a"), makeRealm("realm-b")]), { status: 200 }),
+            );
+
+        await act(async () => {
+            render(
+                <RealmProvider>
+                    <TestConsumer />
+                </RealmProvider>,
+            );
+        });
+
+        expect(screen.getByTestId("count")).toHaveTextContent("2");
+        expect(screen.queryByTestId("realm-realm-b")).not.toBeInTheDocument();
+
+        await act(async () => {
+            screen.getByText("refresh").click();
+        });
+
+        expect(screen.getByTestId("count")).toHaveTextContent("3");
+        expect(screen.getByTestId("realm-realm-b")).toBeInTheDocument();
     });
 });

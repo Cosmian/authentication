@@ -21,7 +21,7 @@ function formatDuration(seconds: number): string {
 
 const RealmsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { isGlobalAdmin } = useRealm();
+    const { isGlobalAdmin, refreshRealms } = useRealm();
     const api = useMemo(() => createRealmsApi(serverUrl), [serverUrl]);
 
     const [realms, setRealms] = useState<Realm[]>([]);
@@ -72,6 +72,7 @@ const RealmsPage: React.FC = () => {
         setDrawerOpen(false);
         setEditingRealm(null);
         fetchRealms();
+        refreshRealms();
     };
 
     const handleDelete = async (): Promise<void> => {
@@ -82,6 +83,7 @@ const RealmsPage: React.FC = () => {
             message.success(`Realm "${deleteTarget.id}" deleted`);
             setDeleteTarget(null);
             fetchRealms();
+            refreshRealms();
         } catch {
             message.error(`Failed to delete realm "${deleteTarget.id}"`);
         } finally {

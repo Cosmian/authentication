@@ -1,0 +1,41 @@
+# =============================================================================
+# Auth Server — Local Development Configuration
+# =============================================================================
+#
+# Minimal configuration for running the auth server locally alongside the
+# admin UI dev server.  Uses test certificates and an in-memory SQLite DB
+# so there is nothing to set up before running.
+#
+# Start the server from the workspace root:
+#
+#   cargo run -p auth_server -- server/auth_server.dev.toml
+#
+# On first start the DB is initialised automatically with:
+#   - Admin realm ("_") with username/password authentication enabled
+#   - Super-admin account: username "admin", password "change_me"
+#
+# All paths below are relative to the `server/` directory (the working
+# directory when you run the command above from the workspace root won't
+# matter — pass an absolute path if needed, or cd into server/ first).
+# =============================================================================
+
+host_name = "localhost"
+host_port = 8443
+
+# ---------------------------------------------------------------------------
+# TLS — uses the test EC P-256 certificates bundled with the source tree.
+# These are self-signed and must NOT be used in production.
+# ---------------------------------------------------------------------------
+[tls_params]
+server_private_key = "server/src/tests/certificates/ec/auth.server.key.pem"
+server_certificate = "server/src/tests/certificates/ec/auth.server.cert.pem"
+server_ca_chain    = "server/src/tests/certificates/ec/auth.ca.pem"
+
+# ---------------------------------------------------------------------------
+# Database — in-memory SQLite.  Data is lost when the server stops.
+# Change to sqlite://auth_server_dev.db for a persistent local DB.
+# ---------------------------------------------------------------------------
+[database_params]
+backend        = "sqlite"
+connection_url = "sqlite::memory:"
+auto_init_schema = true

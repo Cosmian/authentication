@@ -141,5 +141,9 @@ export interface TotpGenerateResponse {
 /** TOTP verify request body */
 export interface TotpVerifyRequest {
     username: string;
-    code: string;
+    /** The 6-digit TOTP code entered by the user */
+    token: string;
+    /** The base32 secret returned by the generate step */
+    secret: string;
+    issuer?: string | null;
 }

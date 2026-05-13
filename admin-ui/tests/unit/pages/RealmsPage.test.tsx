@@ -37,6 +37,7 @@ const mockRealmContext = {
     isGlobalAdmin: true,
     loading: false,
     error: null,
+    refreshRealms: vi.fn(),
 };
 
 vi.mock("../../../src/contexts/RealmContext", () => ({

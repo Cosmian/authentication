@@ -210,8 +210,8 @@ export const handlers = [
 
     http.post("/realms/:realmId/totp/verify", async ({ request }) => {
         const body = (await request.json()) as TotpVerifyRequest;
-        // In mock mode, any 6-digit code succeeds
-        if (body.code.length === 6) {
+        // In mock mode, any 6-digit token succeeds
+        if (body.token.length === 6) {
             // Toggle totp_enabled for the admin if found
             const admin = adminsStore.find((a) => a.id === body.username || a.userpass === body.username);
             if (admin) admin.totp_enabled = true;

@@ -49,10 +49,18 @@ export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({
             setError("Please enter a 6-digit code");
             return;
         }
+        if (!totpData) {
+            setError("Missing TOTP secret — please regenerate");
+            return;
+        }
         setLoading(true);
         setError(null);
         try {
-            await api.verify(realmId, { username: adminId, code });
+            await api.verify(realmId, {
+                username: adminId,
+                token: code,
+                secret: totpData.secret_base32,
+            });
             onSuccess();
             resetState();
         } catch {

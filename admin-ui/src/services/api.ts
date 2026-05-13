@@ -56,3 +56,12 @@ export async function apiDelete(baseUrl: string, path: string): Promise<void> {
     });
     await handleResponse<void>(response);
 }
+
+export async function apiDeleteJson<T>(baseUrl: string, path: string): Promise<T> {
+    const response = await fetch(`${baseUrl}${path}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+    });
+    return handleResponse<T>(response);
+}

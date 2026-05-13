@@ -19,6 +19,7 @@ interface RealmContextType {
     isGlobalAdmin: boolean;
     loading: boolean;
     error: string | null;
+    refreshRealms: () => void;
 }
 
 const SUPER_ADMIN_REALM: Realm = {
@@ -55,41 +56,41 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         [realms],
     );
 
-    useEffect(() => {
+    const fetchRealms = useCallback(async () => {
         if (!isAuthenticated) {
             setLoading(false);
             return;
         }
 
-        const fetchRealms = async () => {
-            try {
-                const res = await fetch(`${serverUrl}${API_REALMS}`, { credentials: "include" });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data: Realm[] = await res.json();
+        try {
+            const res = await fetch(`${serverUrl}${API_REALMS}`, { credentials: "include" });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data: Realm[] = await res.json();
 
-                if (data.length === 0) {
-                    setRealms([SUPER_ADMIN_REALM]);
-                    setIsGlobalAdmin(false);
-                } else {
-                    const hasAdmin = data.some((r) => r.id === SUPER_ADMIN_REALM_ID);
-                    setRealms(hasAdmin ? data : [SUPER_ADMIN_REALM, ...data]);
-                    setIsGlobalAdmin(hasAdmin);
-                }
-                setError(null);
-            } catch {
-                message.error("Failed to load realms");
+            if (data.length === 0) {
                 setRealms([SUPER_ADMIN_REALM]);
-                setError("Failed to load realms");
-            } finally {
-                setLoading(false);
+                setIsGlobalAdmin(false);
+            } else {
+                const hasAdmin = data.some((r) => r.id === SUPER_ADMIN_REALM_ID);
+                setRealms(hasAdmin ? data : [SUPER_ADMIN_REALM, ...data]);
+                setIsGlobalAdmin(hasAdmin);
             }
-        };
-
-        fetchRealms();
+            setError(null);
+        } catch {
+            message.error("Failed to load realms");
+            setRealms([SUPER_ADMIN_REALM]);
+            setError("Failed to load realms");
+        } finally {
+            setLoading(false);
+        }
     }, [isAuthenticated, serverUrl]);
 
+    useEffect(() => {
+        fetchRealms();
+    }, [fetchRealms]);
+
     return (
-        <RealmContext.Provider value={{ realms, selectedRealm, setSelectedRealm, realmLabel, isSuperAdmin, isGlobalAdmin, loading, error }}>
+        <RealmContext.Provider value={{ realms, selectedRealm, setSelectedRealm, realmLabel, isSuperAdmin, isGlobalAdmin, loading, error, refreshRealms: fetchRealms }}>
             {children}
         </RealmContext.Provider>
     );
