@@ -88,11 +88,6 @@ const AdminsPage: React.FC = () => {
     };
 
     // ── Realm-admin mode (specific realm selected) ──
-    // TODO: The page has two completely different UIs depending on isSuperAdmin (full table vs.
-    //       a bare create-only form), with no clear indication of context to the user. Revisit
-    //       this split: consider a unified layout that shows realm-scoped admins for realm-admins
-    //       and the full cross-realm table for super-admins, with consistent chrome (PageHeader,
-    //       empty states, loading states) in both cases.
     if (!isSuperAdmin) {
         if (!canAdministerSelected) {
             return <Result status="403" title="Access Denied" subTitle="You do not administer this realm." />;
@@ -182,7 +177,7 @@ const AdminsPage: React.FC = () => {
     return (
         <div>
             <PageHeader
-                title="Admins"
+                title="Admin Management"
                 description="Manage administrator accounts"
                 actionLabel="New Admin"
                 onAction={handleCreate}
@@ -255,7 +250,6 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
 
     return (
         <div>
-            <PageHeader title="Admins" description={`Create admin for realm: ${realmLabel(selectedRealm)}`} />
             <Alert
                 type="info"
                 showIcon
@@ -263,6 +257,7 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
                 description="You can create new admins scoped to this realm. Switch to Super-Admin mode to view and manage all admins."
                 className="mb-4"
             />
+            <PageHeader title="Create a new Admin" description={`Create admin for realm: ${realmLabel(selectedRealm)}`} />
             <div style={{ maxWidth: 480 }}>
                 <Form form={form} layout="vertical" autoComplete="off" onFinish={handleSubmit}>
                     <Form.Item

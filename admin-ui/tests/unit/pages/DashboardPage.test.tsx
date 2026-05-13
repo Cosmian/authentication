@@ -54,7 +54,7 @@ describe("DashboardPage", () => {
     beforeEach(() => {
         vi.mocked(useRealm).mockReturnValue(defaultRealmContext);
         vi.spyOn(globalThis, "fetch").mockResolvedValue(
-            new Response(JSON.stringify("mock-0.1.0"), { status: 200 }),
+            new Response(JSON.stringify({ version: "mock-0.1.0" }), { status: 200 }),
         );
     });
 

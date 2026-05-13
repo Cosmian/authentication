@@ -42,7 +42,7 @@ export const mockRealms: Realm[] = [
     },
 ];
 
-export const mockVersion = "mock-0.1.0";
+export const mockVersion = { version: "mock-0.1.0" };
 
 export const mockAdmins: Admin[] = [
     {

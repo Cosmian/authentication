@@ -4,6 +4,8 @@ import { Outlet } from "react-router-dom";
 import { API_VERSION } from "../../constants/apiPaths";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRealm } from "../../contexts/RealmContext";
+import { apiGet } from "../../services/api";
+import type { VersionResponse } from "../../types/api";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { Footer } from "./Footer";
@@ -21,10 +23,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ isDarkMode, setIsDarkMod
 
     const fetchVersion = useCallback(async () => {
         try {
-            const res = await fetch(`${serverUrl}${API_VERSION}`, { credentials: "include" });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data: unknown = await res.json();
-            setServerVersion(typeof data === "string" ? data : String(data));
+            const { version } = await apiGet<VersionResponse>(serverUrl, API_VERSION);
+            setServerVersion(version);
         } catch {
             setServerVersion("Unavailable");
         }
@@ -43,7 +43,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ isDarkMode, setIsDarkMod
                     message="Super-Admin mode — changes can affect all realms"
                     showIcon={false}
                     className="text-center font-semibold"
-                    style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 900 }}
+                    style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 900, backgroundColor: "#fff1f0", borderColor: "#ff675f" }}
                 />
             )}
             <Layout.Header

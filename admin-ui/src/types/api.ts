@@ -138,6 +138,11 @@ export interface TotpGenerateResponse {
     otpauth_url: string;
 }
 
+/** Server version response from GET /public/version */
+export interface VersionResponse {
+    version: string;
+}
+
 /** TOTP verify request body */
 export interface TotpVerifyRequest {
     username: string;

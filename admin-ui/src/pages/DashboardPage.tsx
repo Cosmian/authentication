@@ -1,11 +1,12 @@
 import { Alert, Badge, Card, Col, Row, Steps, Tag, Typography } from "antd";
-import { ArrowRightOutlined, CheckCircleFilled, CloseCircleFilled } from "@ant-design/icons";
+import { ArrowRightOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { API_VERSION, SUPER_ADMIN_REALM_ID } from "../constants/apiPaths";
 import { useAuth } from "../contexts/AuthContext";
 import { useRealm } from "../contexts/RealmContext";
-import type { Realm } from "../types/api";
+import { apiGet } from "../services/api";
+import type { Realm, VersionResponse } from "../types/api";
 
 const { Title, Text } = Typography;
 
@@ -27,7 +28,7 @@ function getAuthMethods(realm: Realm): string[] {
 
 const DashboardPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { realms, error } = useRealm();
+    const { realms, selectedRealm, isSuperAdmin, error } = useRealm();
     const navigate = useNavigate();
 
     const [serverVersion, setServerVersion] = useState<string | null>(null);
@@ -36,12 +37,15 @@ const DashboardPage: React.FC = () => {
     const concreteRealms = realms.filter((r) => r.id !== SUPER_ADMIN_REALM_ID);
     const isOnboarding = concreteRealms.length === 0;
 
+    // Show all realms when super-admin is selected, otherwise only the selected realm
+    const displayedRealms = isSuperAdmin
+        ? realms
+        : realms.filter((r) => r.id === selectedRealm);
+
     const fetchVersion = useCallback(async () => {
         try {
-            const res = await fetch(`${serverUrl}${API_VERSION}`, { credentials: "include" });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data: unknown = await res.json();
-            setServerVersion(typeof data === "string" ? data : String(data));
+            const { version } = await apiGet<VersionResponse>(serverUrl, API_VERSION);
+            setServerVersion(version);
             setServerOnline(true);
         } catch {
             setServerVersion(null);
@@ -122,7 +126,7 @@ const DashboardPage: React.FC = () => {
                     </span>
                     <span>
                         <Text type="secondary">Realms: </Text>
-                        <Text strong>{concreteRealms.length}</Text>
+                        <Text strong>{displayedRealms.length}</Text>
                     </span>
                 </div>
             </Card>
@@ -132,20 +136,16 @@ const DashboardPage: React.FC = () => {
                 Realms
             </Title>
             <Row gutter={[16, 16]}>
-                {concreteRealms.map((realm) => {
+                {displayedRealms.map((realm) => {
                     const methods = getAuthMethods(realm);
                     return (
                         <Col xs={24} sm={12} lg={8} key={realm.id}>
                             <Card
-                                title={realm.id}
-                                extra={
-                                    realm.auth_params.totp_params ? (
-                                        <CheckCircleFilled style={{ color: "#52c41a" }} title="TOTP enabled" />
-                                    ) : (
-                                        <CloseCircleFilled style={{ color: "#d9d9d9" }} title="TOTP disabled" />
-                                    )
-                                }
+                                title={realm.id === SUPER_ADMIN_REALM_ID ? "_ (Super-Admin)" : realm.id}
                                 hoverable
+                                onClick={() => {
+                                    navigate("/realms");
+                                }}
                             >
                                 <div className="flex flex-col gap-2">
                                     <div>

@@ -37,7 +37,7 @@ async function mockRealmsApi(page: Page, initialRealms: Realm[]): Promise<void> 
 
     // Also mock /public/version so the Footer doesn't hit a real server.
     await page.route("**/public/version", (route) =>
-        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify("test-version") }),
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test-version" }) }),
     );
 
     // LIST  GET /admins/realms
