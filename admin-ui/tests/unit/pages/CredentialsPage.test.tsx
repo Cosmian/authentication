@@ -84,6 +84,7 @@ const defaultRealmContext = {
     isGlobalAdmin: false,
     loading: false,
     error: null,
+    refreshRealms: vi.fn(),
 };
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

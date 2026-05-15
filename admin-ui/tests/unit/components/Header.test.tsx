@@ -61,6 +61,7 @@ describe("Header", () => {
             isGlobalAdmin: true,
             loading: true,
             error: null,
+            refreshRealms: vi.fn(),
         });
         const { container } = render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
         // Ant Design Select sets aria-busy="true" on the combobox when loading

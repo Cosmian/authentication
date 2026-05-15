@@ -23,6 +23,14 @@ host_name = "localhost"
 host_port = 8443
 
 # ---------------------------------------------------------------------------
+# Admin UI — serves the pre-built admin UI at /admin-ui.
+# Path is relative to the workspace root when running with:
+#   cargo run -p auth_server -- server/auth_server.dev.toml
+# Build the UI first: cd admin-ui && pnpm build
+# ---------------------------------------------------------------------------
+admin_ui_path = "admin-ui/dist"
+
+# ---------------------------------------------------------------------------
 # TLS — uses the test EC P-256 certificates bundled with the source tree.
 # These are self-signed and must NOT be used in production.
 # ---------------------------------------------------------------------------

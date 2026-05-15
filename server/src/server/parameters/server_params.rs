@@ -38,6 +38,11 @@ pub struct ServerParams {
     /// Optional development seed: creates a realm-admin account on first start.
     /// Intended only for `auth_server.dev.toml` — do not use in production.
     pub dev_seed: Option<DevSeedParams>,
+
+    /// Path to the pre-built admin UI `dist/` directory.
+    /// When set and the `admin-ui` feature is enabled, the server serves those
+    /// static files at `/admin-ui` with a SPA fallback for client-side routing.
+    pub admin_ui_path: Option<std::path::PathBuf>,
 }
 
 /// Parameters for seeding a realm-admin on first start in development mode.

@@ -19,9 +19,12 @@ no_jwt_validation = []
 database = ["dep:sqlx", "sqlx?/postgres", "sqlx?/sqlite", "sqlx?/mysql"]
 # Expose /public/swagger-ui and /public/openapi.yaml routes (dev/staging only)
 swagger-ui = []
+# Serve the pre-built admin UI static files at /admin-ui
+admin-ui = ["dep:actix-files"]
 
 [dependencies]
 actix-cors = { workspace = true }
+actix-files = { workspace = true, optional = true }
 actix-tls = { workspace = true }
 actix-web = { workspace = true, features = ["macros", "cookies"] }
 argon2 = { workspace = true }

@@ -48,6 +48,7 @@ const defaultRealmContext = {
     isGlobalAdmin: true,
     loading: false,
     error: null,
+    refreshRealms: vi.fn(),
 };
 
 describe("DashboardPage", () => {

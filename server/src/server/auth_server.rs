@@ -390,11 +390,42 @@ fn build_app(
         .service(add_admin_to_realm)
         .service(remove_admin_from_realm);
 
-    app.service(public_scope)
+    let app = app
+        .service(public_scope)
         .service(client_scope)
         .service(whoami_scope)
         .service(sessions_scope)
         .service(realms_crud_scope)
         .service(app_scope)
-        .service(admins_scope)
+        .service(admins_scope);
+
+    #[cfg(feature = "admin-ui")]
+    let app = {
+        if let Some(ref ui_path) = server_params.admin_ui_path {
+            use actix_files::{Files, NamedFile};
+            let abs_path = ui_path
+                .canonicalize()
+                .unwrap_or_else(|_| ui_path.to_path_buf());
+            info!("Serving admin UI from: {}", abs_path.display());
+            let index = abs_path.join("index.html");
+            let abs_path_clone = abs_path.clone();
+            app.service(
+                Files::new("/admin-ui", &abs_path_clone)
+                    .index_file("index.html")
+                    .default_handler(move |req: actix_web::dev::ServiceRequest| {
+                        let index = index.clone();
+                        async move {
+                            let (req, _payload) = req.into_parts();
+                            let file = NamedFile::open(&index)?;
+                            let res = file.into_response(&req);
+                            Ok(actix_web::dev::ServiceResponse::new(req, res))
+                        }
+                    }),
+            )
+        } else {
+            app
+        }
+    };
+
+    app
 }
