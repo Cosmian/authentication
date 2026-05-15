@@ -27,6 +27,15 @@ use std::sync::Arc;
 /// Super admins may create any admin.  Realm admins may create an admin only if
 /// the admin's `realms` list is non-empty and every realm it contains is
 /// administered by the requester.
+///
+/// # TODO — should we enforce `userpass` FK convention
+/// The `userpass` field is intended to reference a `UserPass` entry whose
+/// `username` matches `admin.id` in the `_` realm.  Currently the server
+/// accepts any arbitrary string (or `null`), which means a caller can point one
+/// admin at another admin's credentials.  This should be validated:
+///   - if `admin.userpass` is `Some`, assert `admin.userpass == admin.id`
+///   - ideally create/update the corresponding `_`-realm `UserPass` record
+///     atomically in the same request rather than requiring a separate call.
 #[post("")]
 pub async fn create_admin(
     req: HttpRequest,
@@ -102,6 +111,10 @@ pub async fn get_admin(
 ///
 /// The `id` path parameter is authoritative — the `id` field in the JSON body
 /// is overwritten to keep them consistent.
+///
+/// # TODO — enforce `userpass` FK convention
+/// See the same note on `create_admin`: `userpass` should equal `admin.id` when
+/// set, and the `_`-realm credential should be managed atomically.
 #[put("/{admin_id}")]
 pub async fn update_admin(
     req: HttpRequest,

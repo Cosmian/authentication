@@ -43,7 +43,16 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ isDarkMode, setIsDarkMod
                     message="Super-Admin mode — changes can affect all realms"
                     showIcon={false}
                     className="text-center font-semibold"
-                    style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 900, backgroundColor: "#fff1f0", borderColor: "#ff675f" }}
+                    style={{
+                        position: "fixed",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        zIndex: 900,
+                        backgroundColor: isDarkMode ? "#3b0a0a" : "#fff1f0",
+                        borderColor: isDarkMode ? "#ff4d4f" : "#ff675f",
+                        color: isDarkMode ? "#ffb3b0" : "#a8071a",
+                    }}
                 />
             )}
             <Layout.Header

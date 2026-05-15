@@ -28,7 +28,7 @@ function getAuthMethods(realm: Realm): string[] {
 
 const DashboardPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { realms, selectedRealm, isSuperAdmin, error } = useRealm();
+    const { realms, error } = useRealm();
     const navigate = useNavigate();
 
     const [serverVersion, setServerVersion] = useState<string | null>(null);
@@ -37,10 +37,7 @@ const DashboardPage: React.FC = () => {
     const concreteRealms = realms.filter((r) => r.id !== SUPER_ADMIN_REALM_ID);
     const isOnboarding = concreteRealms.length === 0;
 
-    // Show all realms when super-admin is selected, otherwise only the selected realm
-    const displayedRealms = isSuperAdmin
-        ? realms
-        : realms.filter((r) => r.id === selectedRealm);
+    const displayedRealms = realms;
 
     const fetchVersion = useCallback(async () => {
         try {
@@ -143,6 +140,7 @@ const DashboardPage: React.FC = () => {
                             <Card
                                 title={realm.id === SUPER_ADMIN_REALM_ID ? "_ (Super-Admin)" : realm.id}
                                 hoverable
+                                style={{ minHeight: 140 }}
                                 onClick={() => {
                                     navigate("/realms");
                                 }}
@@ -161,12 +159,12 @@ const DashboardPage: React.FC = () => {
                                     </div>
                                     <div className="flex gap-2 mt-2">
                                         <Typography.Link
-                                            onClick={() => navigate("/credentials")}
+                                            onClick={(e) => { e.stopPropagation(); navigate("/credentials"); }}
                                         >
                                             Credentials <ArrowRightOutlined />
                                         </Typography.Link>
                                         <Typography.Link
-                                            onClick={() => navigate("/sessions")}
+                                            onClick={(e) => { e.stopPropagation(); navigate("/sessions"); }}
                                         >
                                             Sessions <ArrowRightOutlined />
                                         </Typography.Link>

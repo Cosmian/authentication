@@ -32,11 +32,6 @@ export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => 
                 />
             </div>
             <div className="flex items-center gap-4">
-                {username && (
-                    <Text type="secondary">
-                        <UserOutlined /> {username}
-                    </Text>
-                )}
                 <Switch
                     className="w-20"
                     checked={isDarkMode}
@@ -44,6 +39,11 @@ export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => 
                     checkedChildren={<MoonOutlined />}
                     unCheckedChildren={<SunOutlined />}
                 />
+                {username && (
+                    <Text type="secondary">
+                        <UserOutlined /> {username}
+                    </Text>
+                )}
                 <Button icon={<LogoutOutlined />} onClick={logout} size="small">
                     Logout
                 </Button>

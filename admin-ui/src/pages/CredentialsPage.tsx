@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Collapse, message, Popconfirm, Space, Table, Typography } from "antd";
-import { DeleteOutlined, KeyOutlined, SwapOutlined } from "@ant-design/icons";
+import { DeleteOutlined, KeyOutlined, PlusOutlined, SwapOutlined } from "@ant-design/icons";
 import React, { useCallback, useEffect, useState } from "react";
 import type { UserPass } from "../types/api";
 import { SUPER_ADMIN_REALM_ID } from "../constants/apiPaths";
@@ -13,18 +13,19 @@ import { CreateCredentialModal } from "../components/credentials/CreateCredentia
 import { ResetPasswordModal } from "../components/credentials/ResetPasswordModal";
 
 /** Fetches and displays credentials for a single realm — used in the super-admin overview. */
-const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string }> = ({ realmId, serverUrl }) => {
+const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refreshKey?: number }> = ({ realmId, serverUrl, refreshKey = 0 }) => {
     const [credentials, setCredentials] = useState<UserPass[]>([]);
     const [loading, setLoading] = useState(true);
     const [resetTarget, setResetTarget] = useState<UserPass | null>(null);
 
     useEffect(() => {
+        setLoading(true);
         const api = createCredentialsApi(serverUrl);
         api.list(realmId)
             .then(setCredentials)
             .catch(() => { /* shown inline below */ })
             .finally(() => setLoading(false));
-    }, [realmId, serverUrl]);
+    }, [realmId, serverUrl, refreshKey]);
 
     const handleResetPassword = async (password: number[]) => {
         if (!resetTarget) return;
@@ -104,11 +105,15 @@ const CredentialsPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Create modal
+    // Create modal (single-realm mode)
     const [createOpen, setCreateOpen] = useState(false);
 
     // Reset password modal
     const [resetTarget, setResetTarget] = useState<UserPass | null>(null);
+
+    // Super-admin create modal
+    const [createTargetRealm, setCreateTargetRealm] = useState<string | null>(null);
+    const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({});
 
     const fetchCredentials = useCallback(async () => {
         if (selectedRealm === SUPER_ADMIN_REALM_ID) return;
@@ -183,10 +188,20 @@ const CredentialsPage: React.FC = () => {
         }
     };
 
+    const handleSuperAdminCreate = async (username: string, password: number[], changePassword: boolean) => {
+        if (!createTargetRealm) return;
+        const api = createCredentialsApi(serverUrl);
+        const userpass: UserPass = { realm: createTargetRealm, username, password, change_password: changePassword };
+        await api.create(createTargetRealm, userpass);
+        message.success(`Credential "${username}" created in "${createTargetRealm}"`);
+        setRefreshKeys((prev) => ({ ...prev, [createTargetRealm]: (prev[createTargetRealm] ?? 0) + 1 }));
+        setCreateTargetRealm(null);
+    };
+
     if (selectedRealm === SUPER_ADMIN_REALM_ID) {
         const concreteRealms = realms.filter((r) => r.id !== SUPER_ADMIN_REALM_ID);
         return (
-            <div>
+            <div style={{ maxWidth: 900 }}>
                 <PageHeader
                     title="Credentials"
                     description="All realms — select a realm in the header to manage a single realm"
@@ -204,11 +219,28 @@ const CredentialsPage: React.FC = () => {
                         defaultActiveKey={concreteRealms.map((r) => r.id)}
                         items={concreteRealms.map((r) => ({
                             key: r.id,
-                            label: <Typography.Text strong>{r.id}</Typography.Text>,
-                            children: <RealmCredentialsPanel realmId={r.id} serverUrl={serverUrl} />,
+                            label: (
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 8 }}>
+                                    <Typography.Text strong>{r.id}</Typography.Text>
+                                    <Button
+                                        size="small"
+                                        type="primary"
+                                        icon={<PlusOutlined />}
+                                        onClick={(e) => { e.stopPropagation(); setCreateTargetRealm(r.id); }}
+                                    >
+                                        New Credential
+                                    </Button>
+                                </div>
+                            ),
+                            children: <RealmCredentialsPanel realmId={r.id} serverUrl={serverUrl} refreshKey={refreshKeys[r.id] ?? 0} />,
                         }))}
                     />
                 )}
+                <CreateCredentialModal
+                    open={createTargetRealm !== null}
+                    onCancel={() => setCreateTargetRealm(null)}
+                    onSubmit={handleSuperAdminCreate}
+                />
             </div>
         );
     }
@@ -264,7 +296,7 @@ const CredentialsPage: React.FC = () => {
     ];
 
     return (
-        <div>
+        <div style={{ maxWidth: 900 }}>
             <PageHeader
                 title="Credentials"
                 description={`Realm: ${realmLabel(selectedRealm)}`}

@@ -1,5 +1,5 @@
 import { Button, Drawer, Form, Input, message, Select } from "antd";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { Admin } from "../../types/api";
 import { SUPER_ADMIN_REALM_ID } from "../../constants/apiPaths";
 import { useAuth } from "../../contexts/AuthContext";
@@ -24,32 +24,23 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
 
     const isEdit = admin !== null;
 
-    // Re-validate whenever any field changes; in edit mode also require dirty
-    const watchedValues = Form.useWatch([], form);
-    useEffect(() => {
-        let cancelled = false;
-        form
-            .validateFields({ validateOnly: true })
+    const checkCanSubmit = useCallback(() => {
+        form.validateFields({ validateOnly: true })
             .then(() => {
-                if (cancelled) return;
                 if (!isEdit) {
                     setCanSubmit(true);
                 } else if (originalAdminRef.current !== null) {
                     const cur = form.getFieldsValue();
                     const orig = originalAdminRef.current;
                     const isDirty =
-                        (cur.userpass ?? "") !== (orig.userpass ?? "") ||
                         (cur.jwt ?? "") !== (orig.jwt ?? "") ||
                         JSON.stringify([...(cur.realms ?? [])].sort()) !==
                             JSON.stringify([...orig.realms].sort());
                     setCanSubmit(isDirty);
                 }
-                // else: edit mode, original not yet stored — stay disabled
             })
-            .catch(() => { if (!cancelled) setCanSubmit(false); });
-        return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [watchedValues, isEdit]);
+            .catch(() => setCanSubmit(false));
+    }, [form, isEdit]);
 
     // Fields silently preserved on PUT
     const [preservedFields, setPreservedFields] = useState<Partial<Admin>>({});
@@ -65,7 +56,6 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             const values = {
                 id: admin.id,
                 realms: admin.realms,
-                userpass: admin.userpass ?? "",
                 jwt: admin.jwt ?? "",
             };
             form.setFieldsValue(values);
@@ -88,12 +78,13 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
         try {
             const values = await form.validateFields();
             setLoading(true);
-            const api = createAdminsApi(serverUrl);
+            const adminsApi = createAdminsApi(serverUrl);
+            const adminId: string = isEdit ? admin!.id : values.id;
 
             const payload: Admin = {
-                id: values.id,
+                id: adminId,
                 realms: values.realms,
-                userpass: values.userpass || null,
+                userpass: isEdit ? (admin!.userpass ?? null) : null,
                 jwt: values.jwt || null,
                 fido2: preservedFields.fido2 ?? null,
                 digital_credentials: preservedFields.digital_credentials ?? null,
@@ -104,11 +95,11 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             };
 
             if (isEdit) {
-                await api.update(admin!.id, payload);
+                await adminsApi.update(admin!.id, payload);
                 message.success(`Admin "${admin!.id}" updated`);
             } else {
-                await api.create(payload);
-                message.success(`Admin "${values.id}" created`);
+                await adminsApi.create(payload);
+                message.success(`Admin "${adminId}" created`);
             }
             onSuccess();
         } catch {
@@ -137,7 +128,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             }
             destroyOnClose
         >
-            <Form form={form} layout="vertical" autoComplete="off">
+            <Form form={form} layout="vertical" autoComplete="off" onValuesChange={checkCanSubmit}>
                 <Form.Item
                     name="id"
                     label="Admin ID"
@@ -152,9 +143,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                 >
                     <Select mode="multiple" options={realmOptions} placeholder="Select realms" />
                 </Form.Item>
-                <Form.Item name="userpass" label="Userpass">
-                    <Input placeholder="Username/password reference" />
-                </Form.Item>
+
                 <Form.Item name="jwt" label="JWT">
                     <Input placeholder="JWT identifier" />
                 </Form.Item>

@@ -22,18 +22,11 @@ interface RealmContextType {
     refreshRealms: () => void;
 }
 
-const SUPER_ADMIN_REALM: Realm = {
-    id: SUPER_ADMIN_REALM_ID,
-    auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
-    session_max_age_seconds: 0,
-    session_max_stale_age_seconds: 0,
-};
-
 const RealmContext = createContext<RealmContextType | undefined>(undefined);
 
 export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { serverUrl, isAuthenticated } = useAuth();
-    const [realms, setRealms] = useState<Realm[]>([SUPER_ADMIN_REALM]);
+    const [realms, setRealms] = useState<Realm[]>([]);
     const [selectedRealm, setSelectedRealmState] = useState<string>(
         () => localStorage.getItem(LS_SELECTED_REALM_KEY) ?? SUPER_ADMIN_REALM_ID,
     );
@@ -67,18 +60,21 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data: Realm[] = await res.json();
 
-            if (data.length === 0) {
-                setRealms([SUPER_ADMIN_REALM]);
-                setIsGlobalAdmin(false);
-            } else {
-                const hasAdmin = data.some((r) => r.id === SUPER_ADMIN_REALM_ID);
-                setRealms(hasAdmin ? data : [SUPER_ADMIN_REALM, ...data]);
-                setIsGlobalAdmin(hasAdmin);
-            }
+            const hasAdmin = data.some((r) => r.id === SUPER_ADMIN_REALM_ID);
+            // Trust the server response — only show realms the admin can actually access.
+            // Do not artificially inject SUPER_ADMIN_REALM for non-super-admins.
+            setRealms(data);
+            setIsGlobalAdmin(hasAdmin);
+            // If the previously selected realm is no longer accessible, fall back to
+            // the first realm in the list (or SUPER_ADMIN_REALM_ID as a safe default).
+            setSelectedRealmState((prev) => {
+                if (data.some((r) => r.id === prev)) return prev;
+                return data[0]?.id ?? SUPER_ADMIN_REALM_ID;
+            });
             setError(null);
         } catch {
             message.error("Failed to load realms");
-            setRealms([SUPER_ADMIN_REALM]);
+            setRealms([]);
             setError("Failed to load realms");
         } finally {
             setLoading(false);

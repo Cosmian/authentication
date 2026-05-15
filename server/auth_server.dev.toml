@@ -39,3 +39,18 @@ server_ca_chain    = "server/src/tests/certificates/ec/auth.ca.pem"
 backend        = "sqlite"
 connection_url = "sqlite::memory:"
 auto_init_schema = true
+
+# ---------------------------------------------------------------------------
+# Dev seed — creates a realm and a realm-admin account on first start.
+# This is for development/testing only; remove this section in production.
+#
+# On first start this creates:
+#   - Realm:      "dev-realm"
+#   - Admin:      username "realm-admin", password "change_me"
+#                 (change_password: true — you will be prompted on first login)
+#   - The admin is scoped to "dev-realm" only (not a super-admin).
+# ---------------------------------------------------------------------------
+[dev_seed]
+realm_id       = "dev-realm"
+admin_username = "realm-admin"
+admin_password = "change_me"
