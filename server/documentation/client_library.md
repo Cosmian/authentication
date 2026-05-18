@@ -17,7 +17,7 @@ The `auth_client` crate provides an HTTP client and shared types for interacting
 - [Session Actions — Log Out Everywhere](#session-actions--log-out-everywhere)
 - [Logging In](#logging-in)
 - [Realm Management](#realm-management)
-- [User Management](#user-management)
+- [Admin Management](#admin-management)
 - [Credential Management](#credential-management)
 - [TOTP Management](#totp-management)
 - [Public Endpoints](#public-endpoints)
@@ -125,7 +125,7 @@ match session {
 }
 ```
 
-`get_session` maps to `GET /sessions/session/{id}`. It returns `None` — not an error — when the session is not found.
+`get_session` maps to `GET /sessions/{session_id}`. It returns `None` — not an error — when the session is not found.
 
 ### `SessionData` fields
 
@@ -290,13 +290,13 @@ admin.delete_realm_as_super_admin("my-service").await?;
 
 ---
 
-## User Management
+## Admin Management
 
 ```rust
-use auth_client::User;
+use auth_client::Admin;
 
 // Create a realm admin (can manage "my-service" and "other-service")
-let user = User {
+let user = Admin {
     id: "bob".to_string(),
     realms: vec!["my-service".to_string(), "other-service".to_string()],
     userpass: Some("bob".to_string()),
@@ -308,21 +308,21 @@ let user = User {
     totp_secret: None,
     totp_auth_url: None,
 };
-let created: User = admin.create_user_as_super_admin(&user).await?;
+let created: Admin = admin.create_admin_as_super_admin(&user).await?;
 
 // Check admin roles
 assert!(created.can_administer_realm("my-service"));
 assert!(!created.is_super_admin());
 
 // List all users
-let all: Vec<User> = admin.list_users_as_super_admin().await?;
+let all: Vec<Admin> = admin.list_admins_as_super_admin().await?;
 
 // Add / remove realm from user
-admin.add_user_to_realm_as_admin("bob", "another-realm").await?;
-admin.remove_user_from_realm_as_admin("bob", "another-realm").await?;
+admin.add_admin_to_realm("bob", "another-realm").await?;
+admin.remove_admin_from_realm("bob", "another-realm").await?;
 
 // Delete
-admin.delete_user_as_super_admin("bob").await?;
+admin.delete_admin_as_super_admin("bob").await?;
 ```
 
 ---
@@ -335,7 +335,7 @@ Passwords are hashed with **Argon2id** server-side. Pass the plaintext password 
 use auth_client::UserPass;
 
 // Create credentials
-admin.create_user_credentials_in_realm(
+admin.create_admin_credentials_in_realm(
     "my-service",
     &UserPass {
         realm: "my-service".to_string(),
@@ -346,11 +346,11 @@ admin.create_user_credentials_in_realm(
 ).await?;
 
 // Read back — password is always empty
-let stored: UserPass = admin.get_user_credentials_in_realm("my-service", "alice").await?;
+let stored: UserPass = admin.get_admin_credentials_in_realm("my-service", "alice").await?;
 assert!(stored.password.is_empty());
 
 // Force password change on next login
-admin.update_user_credentials_in_realm(
+admin.update_admin_credentials_in_realm(
     "my-service",
     "alice",
     &UserPass {
@@ -362,10 +362,10 @@ admin.update_user_credentials_in_realm(
 ).await?;
 
 // List all credentials in a realm
-let all: Vec<UserPass> = admin.list_user_credentials_in_realm("my-service").await?;
+let all: Vec<UserPass> = admin.list_admin_credentials_in_realm("my-service").await?;
 
 // Delete
-admin.delete_user_credentials_in_realm("my-service", "alice").await?;
+admin.delete_admin_credentials_in_realm("my-service", "alice").await?;
 ```
 
 ---
@@ -440,7 +440,7 @@ match client.get_session("bad-id").await {
 | Variant | Meaning |
 |---------|---------|
 | `AuthError::FailedHttpStatus(msg)` | Non-2xx response; `msg` contains status code and body |
-| `AuthError::SessionNotFound` | `GET /sessions/session/{id}` returned 404 |
+| `AuthError::SessionNotFound` | `GET /sessions/{id}` returned 404 |
 | `AuthError::Config(msg)` | Client misconfiguration (bad URL, certificate parse error, etc.) |
 | `AuthError::JWT(msg)` | JWT signing or validation failure |
 | `AuthError::Generic(msg)` | Network or serialization error |

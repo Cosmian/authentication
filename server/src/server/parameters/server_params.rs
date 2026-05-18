@@ -34,6 +34,26 @@ pub struct ServerParams {
     /// Only applicable to SQL-based session stores (SQLite, PostgreSQL, MySQL);
     /// Redis handles expiration automatically via TTL.
     pub stale_session_collector_config: Option<StaleSessionCollectorConfig>,
+
+    /// Optional development seed: creates a realm-admin account on first start.
+    /// Intended only for `auth_server.dev.toml` — do not use in production.
+    pub dev_seed: Option<DevSeedParams>,
+
+    /// Path to the pre-built admin UI `dist/` directory.
+    /// When set and the `admin-ui` feature is enabled, the server serves those
+    /// static files at `/admin-ui` with a SPA fallback for client-side routing.
+    pub admin_ui_path: Option<std::path::PathBuf>,
+}
+
+/// Parameters for seeding a realm-admin on first start in development mode.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct DevSeedParams {
+    /// ID of the realm to create (if it does not already exist).
+    pub realm_id: String,
+    /// Username for the realm-admin account.
+    pub admin_username: String,
+    /// Plain-text password for the realm-admin account.
+    pub admin_password: String,
 }
 
 impl ServerParams {

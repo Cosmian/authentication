@@ -1,0 +1,23 @@
+{
+    "title": "Auth Admin",
+    "faviconUrl": "",
+    "logoAlt": "Authentication Server",
+    "logoLightUrl": "",
+    "logoDarkUrl": "",
+    "loginTitle": "Auth Admin",
+    "loginSubtitle": "",
+    "backgroundImageUrl": "",
+    "loginCardColor": "",
+    "menuTheme": "light",
+    "tokens": {
+        "light": {
+            "colorPrimary": "#e34319",
+            "colorText": "#292f52"
+        },
+        "dark": {
+            "colorPrimary": "#9e6eff",
+            "colorText": "#e4dddd",
+            "colorBgBase": "#2a2d30"
+        }
+    }
+}

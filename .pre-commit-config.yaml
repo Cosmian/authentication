@@ -1,0 +1,108 @@
+---
+# Pre-requisites:
+# pip install pre-commit conventional-pre-commit
+# pre-commit install
+# pre-commit install --install-hooks -t commit-msg
+# pre-commit autoupdate
+
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+fail_fast: true
+exclude: .pre-commit-config.yaml|target/
+repos:
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.0.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: []
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint-fix
+        args:
+          [
+            --disable=MD013,
+            --disable=MD033,
+            --disable=MD041,
+            --disable=MD046,
+            --fix,
+          ]
+
+  - repo: https://github.com/jumanjihouse/pre-commit-hook-yamlfmt
+    rev: 0.2.3
+    hooks:
+      - id: yamlfmt
+        args: [--mapping, "2", --sequence, "4", --offset, "2"]
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.31.1
+    hooks:
+      - id: typos
+        exclude: nix/signing-keys/|nix/expected-hashes/
+
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.5
+    hooks:
+      - id: remove-crlf
+      - id: forbid-crlf
+      - id: remove-tabs
+        exclude: ^.git/
+      - id: forbid-tabs
+        exclude: ^.git/
+
+  - repo: https://github.com/sirosen/texthooks
+    rev: 0.6.8
+    hooks:
+      - id: fix-smartquotes
+      - id: fix-ligatures
+      - id: fix-spaces
+      - id: forbid-bidi-controls
+      - id: macro-expand
+
+  - repo: https://github.com/jumanjihouse/pre-commit-hooks
+    rev: 3.0.0
+    hooks:
+      - id: shellcheck
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-ast
+      - id: check-byte-order-marker
+      - id: check-builtin-literals
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-vcs-permalinks
+      - id: check-xml
+      - id: check-yaml
+      - id: debug-statements
+      - id: destroyed-symlinks
+      - id: detect-private-key
+        exclude: server/tests/|nix/signing-keys/
+
+      - id: double-quote-string-fixer
+      - id: end-of-file-fixer
+        exclude: nix/expected-hashes/
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        exclude: nix/expected-hashes/
+      - id: no-commit-to-branch
+        args: [--branch, main]
+      - id: trailing-whitespace
+        exclude: nix/expected-hashes/
+
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        language: system
+        entry: cargo fmt --all -- --check
+        types: [rust]
+        pass_filenames: false

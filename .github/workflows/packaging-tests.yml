@@ -1,0 +1,173 @@
+---
+name: Packaging - Tests
+
+on:
+  workflow_call:
+    inputs:
+      toolchain:
+        required: true
+        type: string
+        default: stable
+  workflow_dispatch:
+    inputs:
+      toolchain:
+        description: Rust toolchain to use (e.g., stable, 1.86.0)
+        required: true
+        type: string
+        default: stable
+
+jobs:
+  packages-test:
+    name: In Docker ${{ matrix.container }}-${{ matrix.link }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        container:
+          # Ubuntu LTS releases
+          - ubuntu:25.04
+          - ubuntu:24.04
+          - ubuntu:22.04
+          # Debian stable
+          - debian:trixie-slim
+          - debian:bookworm-slim
+          # Rocky Linux releases
+          - rockylinux/rockylinux:10
+          - rockylinux/rockylinux:9
+        link: [static, dynamic]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.link }}_${{ matrix.runner }}-release
+
+      - name: List downloaded artifacts
+        run: find .
+
+      - name: Install package
+        shell: bash
+        run: |
+          set -ex
+          if [[ "${{ matrix.container }}" == rockylinux* ]]; then
+            for pkg in ./result-rpm-${{ matrix.link }}/*.rpm; do
+              rpm -qpl "$pkg"
+            done
+            rpm -i ./result-rpm-${{ matrix.link }}/*.rpm --nodeps
+          else
+            for pkg in ./result-deb-${{ matrix.link }}/*.deb; do
+              dpkg --contents "$pkg"
+            done
+            if [ "${{ matrix.link }}" = "dynamic" ]; then
+              dpkg -i ./result-deb-${{ matrix.link }}/*.deb || true
+              apt-get update -qq && apt-get install -f -y
+            else
+              dpkg -i ./result-deb-${{ matrix.link }}/*.deb
+            fi
+          fi
+
+      - name: Check server binary
+        shell: bash
+        run: |
+          set -ex
+          BIN="/usr/sbin/auth_server"
+          if [ ! -x "$BIN" ]; then
+            BIN=$(find /usr -name 'auth_server' -type f 2>/dev/null | head -1)
+          fi
+          [ -x "$BIN" ] || { echo "ERROR: auth_server not found"; exit 1; }
+          ldd "$BIN" || true
+          "$BIN" --version || "$BIN" --help || true
+
+      - name: Verify GLIBC compatibility
+        shell: bash
+        run: |
+          set -ex
+          BIN=$(find /usr -name 'auth_server' -type f 2>/dev/null | head -1)
+          if command -v readelf >/dev/null 2>&1 && [ -n "$BIN" ]; then
+            MAX_GLIBC=$(readelf -sW "$BIN" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -n1 || true)
+            echo "Max GLIBC: ${MAX_GLIBC:-none}"
+            if [ -n "$MAX_GLIBC" ]; then
+              if [ "$(printf '%s\n' "$MAX_GLIBC" "2.34" | sort -V | tail -n1)" != "2.34" ]; then
+                echo "ERROR: GLIBC $MAX_GLIBC > 2.34 — not Rocky Linux 9 compatible" && exit 1
+              fi
+              echo "GLIBC check PASSED ($MAX_GLIBC <= 2.34)"
+            fi
+          fi
+
+      - name: Run executable file
+        shell: bash
+        run: |
+          set -ex
+          BIN="/usr/sbin/auth_server"
+          if [ ! -x "$BIN" ]; then
+            BIN=$(find /usr -name 'auth_server' -type f 2>/dev/null | head -1)
+          fi
+          # auth_server requires a config file; running without one must exit
+          # with a meaningful error — not a linker/runtime crash.
+          output=$("$BIN" 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -qiE 'failed to read|auth_server\.toml|configuration' \
+            || { echo "ERROR: unexpected output from auth_server"; exit 1; }
+
+  systemd-packages-test:
+    name: Use GH runners ${{ matrix.link }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        link: [static, dynamic]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.link }}_${{ matrix.runner }}-release
+
+      - name: List downloaded artifacts
+        run: find .
+
+      - name: Install package
+        shell: bash
+        run: |
+          set -ex
+          # DEB-based (Ubuntu/Debian); systemd tests run on Ubuntu GH runners only
+          for pkg in ./result-deb-${{ matrix.link }}/*.deb; do
+            dpkg --contents "$pkg"
+          done
+          if [ "${{ matrix.link }}" = "dynamic" ]; then
+            # Dynamic builds depend on system libs; fix with apt after attempt
+            sudo dpkg -i ./result-deb-${{ matrix.link }}/*.deb || true
+            sudo apt-get update -qq && sudo apt-get install -f -y
+          else
+            sudo dpkg -i ./result-deb-${{ matrix.link }}/*.deb
+          fi
+
+      - name: Pre-check server binary
+        shell: bash
+        run: |
+          set -ex
+          BIN="/usr/sbin/auth_server"
+          if [ ! -f "$BIN" ]; then
+            BIN=$(find /usr/sbin /usr/bin /usr/local/bin -name 'auth_server' -type f 2>/dev/null | head -1)
+          fi
+          [ -f "$BIN" ] || { echo "ERROR: auth_server not found"; exit 1; }
+          sudo ldd "$BIN" || true
+          # Verify the binary executes and exits with a config error (not a crash)
+          # Binary is installed root-only (-r-x------); run via sudo
+          output=$(sudo "$BIN" 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -qiE 'failed to read|auth_server\.toml|configuration' \
+            || { echo "ERROR: unexpected output from auth_server"; exit 1; }
+
+      - name: systemd-analyze security auth_server.service
+        shell: bash
+        run: |
+          set -ex
+          systemd-analyze security auth_server.service

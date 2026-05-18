@@ -1,0 +1,24 @@
+[Unit]
+Description=Cosmian Authentication Server
+Documentation=https://docs.cosmian.com
+After=network.target
+
+[Service]
+Type=simple
+User=cosmian
+Group=cosmian
+ExecStart=/usr/sbin/auth_server /etc/cosmian/auth_server.toml
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auth_server
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cosmian-auth
+
+[Install]
+WantedBy=multi-user.target

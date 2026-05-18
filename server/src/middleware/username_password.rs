@@ -132,6 +132,7 @@ where
                             "UsernamePassword: No realm found in request extensions; cannot authenticate"
                         );
                         let res = service.call(req).await?;
+                        // TODO : Should exit instead of passing through if realm is required for authentication
                         return Ok(res.map_into_left_body());
                     };
 
@@ -150,6 +151,7 @@ where
                         .await
                     {
                         Ok(true) => {
+                            // TODO : Instead of using parameter defined allow_expired_passwords, never set change_password in the db
                             if params.allow_expired_passwords {
                                 debug!(
                                     "UsernamePassword: successfully authenticated client: {username}"
@@ -232,6 +234,7 @@ fn extract_basic_auth_credentials(req: &ServiceRequest) -> Option<(String, Strin
     // Split on the first colon (password may contain colons)
     let colon_pos = credentials_str.find(':')?;
     let username = credentials_str[..colon_pos].to_string();
+    // TODO : Check that this doesn't panic in case 'basic ' and nothing else / Base64 of empty string
     let password = credentials_str[colon_pos + 1..].to_string();
 
     // Username must not be empty

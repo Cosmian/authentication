@@ -1,0 +1,24 @@
+#!/bin/bash
+# Debian post-install script for auth_server
+set -e
+
+# Create cosmian user/group if they don't already exist
+if ! getent group cosmian >/dev/null 2>&1; then
+  groupadd --system cosmian
+fi
+if ! getent passwd cosmian >/dev/null 2>&1; then
+  useradd --system --no-create-home --shell /usr/sbin/nologin --gid cosmian cosmian
+fi
+
+# Create data directory
+mkdir -p /var/lib/cosmian-auth
+chown cosmian:cosmian /var/lib/cosmian-auth
+chmod 750 /var/lib/cosmian-auth
+
+# Protect config file
+if [ -f /etc/cosmian/auth_server.toml ]; then
+  chmod 400 /etc/cosmian/auth_server.toml
+  chown root:cosmian /etc/cosmian/auth_server.toml
+fi
+
+#DEBHELPER#

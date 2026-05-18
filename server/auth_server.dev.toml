@@ -1,0 +1,64 @@
+# =============================================================================
+# Auth Server — Local Development Configuration
+# =============================================================================
+#
+# Minimal configuration for running the auth server locally alongside the
+# admin UI dev server.  Uses test certificates and an in-memory SQLite DB
+# so there is nothing to set up before running.
+#
+# Start the server from the workspace root:
+#
+#   cargo run -p auth_server -- server/auth_server.dev.toml
+#
+# On first start the DB is initialised automatically with:
+#   - Admin realm ("_") with username/password authentication enabled
+#   - Super-admin account: username "admin", password "change_me"
+#
+# All paths below are relative to the `server/` directory (the working
+# directory when you run the command above from the workspace root won't
+# matter — pass an absolute path if needed, or cd into server/ first).
+# =============================================================================
+
+host_name = "localhost"
+host_port = 8443
+
+# ---------------------------------------------------------------------------
+# Admin UI — serves the pre-built admin UI at /admin-ui.
+# Path is relative to the workspace root when running with:
+#   cargo run -p auth_server -- server/auth_server.dev.toml
+# Build the UI first: cd admin-ui && pnpm build
+# ---------------------------------------------------------------------------
+admin_ui_path = "admin-ui/dist"
+
+# ---------------------------------------------------------------------------
+# TLS — uses the test EC P-256 certificates bundled with the source tree.
+# These are self-signed and must NOT be used in production.
+# ---------------------------------------------------------------------------
+[tls_params]
+server_private_key = "server/src/tests/certificates/ec/auth.server.key.pem"
+server_certificate = "server/src/tests/certificates/ec/auth.server.cert.pem"
+server_ca_chain    = "server/src/tests/certificates/ec/auth.ca.pem"
+
+# ---------------------------------------------------------------------------
+# Database — in-memory SQLite.  Data is lost when the server stops.
+# Change to sqlite://auth_server_dev.db for a persistent local DB.
+# ---------------------------------------------------------------------------
+[database_params]
+backend        = "sqlite"
+connection_url = "sqlite::memory:"
+auto_init_schema = true
+
+# ---------------------------------------------------------------------------
+# Dev seed — creates a realm and a realm-admin account on first start.
+# This is for development/testing only; remove this section in production.
+#
+# On first start this creates:
+#   - Realm:      "dev-realm"
+#   - Admin:      username "realm-admin", password "change_me"
+#                 (change_password: true — you will be prompted on first login)
+#   - The admin is scoped to "dev-realm" only (not a super-admin).
+# ---------------------------------------------------------------------------
+[dev_seed]
+realm_id       = "dev-realm"
+admin_username = "realm-admin"
+admin_password = "change_me"

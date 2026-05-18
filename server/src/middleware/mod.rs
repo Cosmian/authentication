@@ -16,8 +16,8 @@ pub use jwt::{JwksManager, JwtAuth};
 mod totp;
 pub use totp::TotpMiddleware;
 
-mod user_auth;
-pub use user_auth::UserAuth;
+mod admin_auth;
+pub use admin_auth::AdminAuth;
 
 mod username_password;
 pub use username_password::UsernamePasswordAuth;
