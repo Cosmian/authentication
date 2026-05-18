@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { RealmProvider } from "./contexts/RealmContext";
+import { useBranding } from "./contexts/useBranding";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ProtectedRoute } from "./components/common/ProtectedRoute";
 import AdminsPage from "./pages/AdminsPage";
@@ -19,19 +20,24 @@ const LS_DARKMODE_KEY = "admin-ui-darkMode";
 
 const App: React.FC = () => {
     const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem(LS_DARKMODE_KEY) === "true");
+    const branding = useBranding();
 
     useEffect(() => {
         localStorage.setItem(LS_DARKMODE_KEY, String(isDarkMode));
     }, [isDarkMode]);
 
     const activeTheme = isDarkMode ? darkTheme : lightTheme;
+    const brandingTokens = isDarkMode ? branding.tokens?.dark : branding.tokens?.light;
 
     return (
         <ConfigProvider
             theme={{
                 ...theme.defaultConfig,
                 ...activeTheme,
-                token: activeTheme.token,
+                token: {
+                    ...activeTheme.token,
+                    ...brandingTokens,
+                },
             }}
         >
             <AuthProvider>

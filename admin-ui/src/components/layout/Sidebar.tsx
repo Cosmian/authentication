@@ -3,6 +3,7 @@ import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { menuItems } from "../../menuItems";
 import { useRealm } from "../../contexts/RealmContext";
+import { useBranding } from "../../contexts/useBranding";
 import { SUPER_ADMIN_REALM_ID } from "../../constants/apiPaths";
 
 export interface SidebarProps {
@@ -15,6 +16,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse, isDarkM
     const navigate = useNavigate();
     const location = useLocation();
     const { isGlobalAdmin, realms, selectedRealm } = useRealm();
+    const branding = useBranding();
 
     const filteredItems = useMemo(() => {
         // The user administers the selected realm if they are a global super-admin
@@ -43,7 +45,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse, isDarkM
             collapsible
             collapsed={collapsed}
             onCollapse={onCollapse}
-            theme={isDarkMode ? "dark" : "light"}
+            theme={branding.menuTheme ?? (isDarkMode ? "dark" : "light")}
             className="overflow-auto"
             style={{ height: "calc(100vh - 64px)" }}
         >

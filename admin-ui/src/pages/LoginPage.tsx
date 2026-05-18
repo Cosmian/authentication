@@ -4,12 +4,14 @@ import React, { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import type { LoginResult } from "../contexts/AuthContext";
+import { useBranding } from "../contexts/useBranding";
 
 const { Title } = Typography;
 
 const LoginPage: React.FC = () => {
     const { isAuthenticated, loading, login } = useAuth();
     const location = useLocation();
+    const branding = useBranding();
 
     const [submitting, setSubmitting] = useState(false);
     const [totpStep, setTotpStep] = useState(false);
@@ -66,13 +68,24 @@ const LoginPage: React.FC = () => {
         }
     };
 
+    const outerStyle: React.CSSProperties = branding.backgroundImageUrl
+        ? { backgroundImage: `url('${branding.backgroundImageUrl}')`, backgroundSize: "cover", backgroundPosition: "center" }
+        : { background: "#f0f2f5" };
+    const cardWrapperStyle: React.CSSProperties = branding.loginCardColor
+        ? { backgroundColor: branding.loginCardColor, borderRadius: 8, padding: 8 }
+        : {};
+
     return (
-        <div className="flex items-center justify-center min-h-screen" style={{ background: "#f0f2f5" }}>
+        <div className="flex items-center justify-center min-h-screen" style={outerStyle}>
+            <div style={cardWrapperStyle}>
             <Card style={{ width: 400 }}>
                 <div className="text-center mb-6">
                     <Title level={3} className="m-0">
-                        Auth Admin
+                        {branding.loginTitle}
                     </Title>
+                    {branding.loginSubtitle && (
+                        <p className="text-sm mt-1 mb-0">{branding.loginSubtitle}</p>
+                    )}
                 </div>
 
                 {error && <Alert type="error" message={error} showIcon className="mb-4" closable onClose={() => setError(null)} />}
@@ -135,6 +148,7 @@ const LoginPage: React.FC = () => {
                     </Form>
                 )}
             </Card>
+            </div>
         </div>
     );
 };

@@ -3,6 +3,7 @@ import { Button, Select, Switch, Typography } from "antd";
 import React from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRealm } from "../../contexts/RealmContext";
+import { useBranding } from "../../contexts/useBranding";
 import { SUPER_ADMIN_REALM_ID, SUPER_ADMIN_REALM_LABEL } from "../../constants/apiPaths";
 
 const { Text } = Typography;
@@ -15,11 +16,17 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
     const { username, logout } = useAuth();
     const { realms, selectedRealm, setSelectedRealm, loading } = useRealm();
+    const branding = useBranding();
+    const logoUrl = isDarkMode ? branding.logoDarkUrl : branding.logoLightUrl;
 
     return (
         <div className="flex items-center justify-between w-full h-full px-4">
             <div className="flex items-center gap-4">
-                <h1 className="text-xl font-bold m-0 whitespace-nowrap">Auth Admin</h1>
+                {logoUrl ? (
+                    <img src={logoUrl} alt={branding.logoAlt} className="h-8" />
+                ) : (
+                    <h1 className="text-xl font-bold m-0 whitespace-nowrap">{branding.logoAlt}</h1>
+                )}
                 <Select
                     value={selectedRealm}
                     onChange={setSelectedRealm}
