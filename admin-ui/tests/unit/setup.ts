@@ -51,8 +51,8 @@ if (typeof window.ResizeObserver === "undefined") {
 // jsdom doesn't implement getComputedStyle with pseudoElt; rc-util calls it with pseudo elements.
 {
     const originalGetComputedStyle = window.getComputedStyle.bind(window);
-    window.getComputedStyle = ((elt: Element, _pseudoElt?: string | null) => {
-        // eslint-disable-line @typescript-eslint/no-unused-vars
+    window.getComputedStyle = ((elt: Element, pseudoElt?: string | null) => {
+        void pseudoElt;
         return originalGetComputedStyle(elt);
     }) as typeof window.getComputedStyle;
 }
