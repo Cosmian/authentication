@@ -60,7 +60,10 @@ async fn seed_dev_realm_admin(
             session_max_stale_age_seconds: 3600,
         };
         db.create_realm(&realm).await.map_err(|e| {
-            crate::AuthError::Init(format!("dev_seed: failed to create realm '{}': {e}", seed.realm_id))
+            crate::AuthError::Init(format!(
+                "dev_seed: failed to create realm '{}': {e}",
+                seed.realm_id
+            ))
         })?;
         info!("dev_seed: created realm '{}'", seed.realm_id);
     }
