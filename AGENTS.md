@@ -302,7 +302,35 @@ GH_PAGER=cat gh run view <run-id> --repo Cosmian/authentication --log-failed
 
 ---
 
-## 9. Coding rules
+## 9. Changelog & formatting (mandatory after every change)
+
+### Changelog
+
+Every agent-driven change **must** be recorded in a new file under `CHANGELOG/`.
+
+- **File name**: `CHANGELOG/<short_slug>.md` — use a brief kebab-case description of the change (e.g. `remove-admin-ui-mocks.md`).
+- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`, `## CI`, `## Docs`) with bullet points beneath. See `CHANGELOG/ci_add_packaging.md` as a reference.
+- Each bullet must be a single complete sentence summarising **what** changed and **why**, sufficient for a human to understand without reading the diff.
+- Do not add a changelog entry for pure formatting/linting-only commits.
+
+```
+CHANGELOG/<short_slug>.md
+```
+
+### Formatting (Rust)
+
+After every edit to `.rs` files, run:
+
+```bash
+cargo fmt --all
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
+Fix all clippy warnings before considering the task complete.
+
+---
+
+## 10. Coding rules
 
 - **Function length**: keep functions under 100 lines; extract helpers for longer ones.
 - **Imports**: Rust `use` statements go at the top of each file, never inline.

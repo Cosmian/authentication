@@ -14,19 +14,16 @@ const apiProxy: Record<string, { target: string; secure: boolean; changeOrigin: 
     "/public": proxyOpts,
 };
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
     base: "/admin-ui",
     plugins: [react(), tailwindcss()],
     build: {
         chunkSizeWarningLimit: 1600,
     },
     server: {
-        // In mock mode the browser-side MSW worker intercepts all API requests,
-        // so the Vite proxy must be disabled to prevent connection attempts to the
-        // real auth server before MSW can handle them.
-        proxy: mode === "mock" ? {} : apiProxy,
+        proxy: apiProxy,
     },
     preview: {
-        proxy: mode === "mock" ? {} : apiProxy,
+        proxy: apiProxy,
     },
 }));

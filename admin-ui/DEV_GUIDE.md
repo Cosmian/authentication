@@ -7,10 +7,10 @@ and testing against a real backend.
 
 ## Prerequisites
 
-| Tool | How to get it |
-|------|---------------|
+| Tool           | How to get it                                                                                               |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
 | Rust toolchain | Managed by `rust-toolchain.toml` at the workspace root — `rustup` installs the pinned version automatically |
-| pnpm | `npm install -g pnpm` or see [pnpm.io](https://pnpm.io/installation) |
+| pnpm           | `npm install -g pnpm` or see [pnpm.io](https://pnpm.io/installation)                                        |
 
 ---
 
@@ -33,6 +33,7 @@ cargo run -p auth_server -- server/auth_server.dev.toml
 ```
 
 `server/auth_server.dev.toml` is a minimal development configuration that:
+
 - Binds to `https://localhost:8443`
 - Uses the self-signed test TLS certificates bundled with the source tree
 - Uses an **in-memory SQLite database** (data is lost when the server stops)
@@ -67,9 +68,9 @@ Vite starts at `http://localhost:5173/admin-ui`.
 
 Open `http://localhost:5173/admin-ui` in your browser.
 
-| Field | Value |
-|-------|-------|
-| Username | `admin` |
+| Field    | Value       |
+| -------- | ----------- |
+| Username | `admin`     |
 | Password | `change_me` |
 
 The initial `admin` account is a super-admin seeded automatically by the
@@ -95,18 +96,15 @@ The Vite dev server proxies all API paths to the auth server (`secure: false`
 so the self-signed certificate is accepted). The browser only ever talks to
 `localhost:5173`, so there are no cross-origin cookie issues.
 
-The proxy is configured in [vite.config.ts](vite.config.ts) and is active in
-the default (`development`) mode. It is disabled in `mock` mode, where MSW
-intercepts requests in the browser instead.
+The proxy is configured in [vite.config.ts](vite.config.ts).
 
 ---
 
 ## Switching modes
 
-| Command | What it does |
-|---------|-------------|
+| Command                       | What it does                                          |
+| ----------------------------- | ----------------------------------------------------- |
 | `pnpm dev` or `pnpm dev:real` | Proxy to real auth server at `https://localhost:8443` |
-| `pnpm dev:mock` | MSW intercepts all requests in-browser; no server needed |
 
 The target URL is set in `.env.development` (`VITE_AUTH_URL`). Override it
 for a non-default server address:

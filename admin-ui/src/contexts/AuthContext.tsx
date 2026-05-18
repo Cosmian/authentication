@@ -28,15 +28,10 @@ interface AuthContextType extends AuthState {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const resolveServerUrl = (): string => {
-    if (import.meta.env.VITE_USE_MOCKS === "true") {
-        return "";
-    }
     const configured = import.meta.env.VITE_AUTH_URL as string | undefined;
     const trimmed = configured?.trim();
     return trimmed && trimmed.length > 0 ? trimmed : "https://localhost:8443";
 };
-
-const isMockMode = (): boolean => import.meta.env.VITE_USE_MOCKS === "true";
 
 const INITIAL_STATE: AuthState = {
     isAuthenticated: false,
@@ -45,17 +40,10 @@ const INITIAL_STATE: AuthState = {
     exp: null,
 };
 
-const MOCK_STATE: AuthState = {
-    isAuthenticated: true,
-    username: "admin",
-    sessionId: "dev-session-id",
-    exp: Math.floor(Date.now() / 1000) + 86400,
-};
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const serverUrl = resolveServerUrl();
-    const [state, setState] = useState<AuthState>(isMockMode() ? MOCK_STATE : INITIAL_STATE);
-    const [loading, setLoading] = useState(!isMockMode());
+    const [state, setState] = useState<AuthState>(INITIAL_STATE);
+    const [loading, setLoading] = useState(true);
     const expiryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const clearExpiryTimer = useCallback(() => {
@@ -82,8 +70,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     // Check existing session on mount via GET /whoami
     useEffect(() => {
-        if (isMockMode()) return;
-
         const checkSession = async () => {
             try {
                 const res = await fetch(`${serverUrl}${API_WHOAMI}?realm=${SUPER_ADMIN_REALM_ID}`, {
@@ -118,18 +104,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             };
 
             try {
-                const res = await fetch(
-                    `${serverUrl}${API_LOGIN}?realm=${SUPER_ADMIN_REALM_ID}`,
-                    {
-                        method: "POST",
-                        credentials: "include",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Basic ${btoa(`${username}:${password}`)}`,
-                        },
-                        body: JSON.stringify(body),
+                const res = await fetch(`${serverUrl}${API_LOGIN}?realm=${SUPER_ADMIN_REALM_ID}`, {
+                    method: "POST",
+                    credentials: "include",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Basic ${btoa(`${username}:${password}`)}`,
                     },
-                );
+                    body: JSON.stringify(body),
+                });
 
                 if (!res.ok) {
                     const text = await res.text().catch(() => "Authentication failed");
@@ -150,10 +133,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
                     case "Authenticated": {
                         // Fetch claims to get exp and username
-                        const whoamiRes = await fetch(
-                            `${serverUrl}${API_WHOAMI}?realm=${SUPER_ADMIN_REALM_ID}`,
-                            { credentials: "include" },
-                        );
+                        const whoamiRes = await fetch(`${serverUrl}${API_WHOAMI}?realm=${SUPER_ADMIN_REALM_ID}`, {
+                            credentials: "include",
+                        });
                         let exp = Math.floor(Date.now() / 1000) + 3600; // fallback 1h
                         let sub = username;
                         if (whoamiRes.ok) {
