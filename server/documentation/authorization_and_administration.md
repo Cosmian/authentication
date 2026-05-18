@@ -17,17 +17,17 @@ The two tiers are:
 
 ```mermaid
 graph TD
-    SA["Super Admin<br/>realms: [\"_\"]"]
-    RA1["Realm Admin A<br/>realms: [\"finance\"]"]
-    RA2["Realm Admin B<br/>realms: [\"hr\",\"payroll\"]"]
+    SA["Super Admin<br/>realms: [#quot;_#quot;]"]
+    RA1["Realm Admin A<br/>realms: [#quot;finance#quot;]"]
+    RA2["Realm Admin B<br/>realms: [#quot;hr#quot;, #quot;payroll#quot;]"]
 
-    SA -->|"can_administer_realm(\"_\")"| ADMIN_REALM["Realm: _"]
-    SA -->|"can_administer_realm(any)"| FINANCE["Realm: finance"]
-    SA -->|"can_administer_realm(any)"| HR["Realm: hr"]
-    SA -->|"can_administer_realm(any)"| PAYROLL["Realm: payroll"]
-    RA1 -->|"can_administer_realm(\"finance\")"| FINANCE
-    RA2 -->|"can_administer_realm(\"hr\")"| HR
-    RA2 -->|"can_administer_realm(\"payroll\")"| PAYROLL
+    SA -->|can_administer_realm #quot;_#quot;| ADMIN_REALM["Realm: _"]
+    SA -->|can_administer_realm any| FINANCE["Realm: finance"]
+    SA -->|can_administer_realm any| HR["Realm: hr"]
+    SA -->|can_administer_realm any| PAYROLL["Realm: payroll"]
+    RA1 -->|can_administer_realm #quot;finance#quot;| FINANCE
+    RA2 -->|can_administer_realm #quot;hr#quot;| HR
+    RA2 -->|can_administer_realm #quot;payroll#quot;| PAYROLL
 ```
 
 ---
