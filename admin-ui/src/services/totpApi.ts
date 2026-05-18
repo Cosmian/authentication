@@ -11,11 +11,9 @@ export function createTotpApi(baseUrl: string) {
         generate: (realmId: string, request: TotpGenerateRequest): Promise<TotpGenerateResponse> =>
             apiPost<TotpGenerateResponse>(baseUrl, generatePath(realmId), request),
 
-        verify: (realmId: string, request: TotpVerifyRequest): Promise<void> =>
-            apiPost<void>(baseUrl, verifyPath(realmId), request),
+        verify: (realmId: string, request: TotpVerifyRequest): Promise<void> => apiPost<void>(baseUrl, verifyPath(realmId), request),
 
-        disable: (realmId: string, username: string): Promise<void> =>
-            apiDelete(baseUrl, disablePath(realmId, username)),
+        disable: (realmId: string, username: string): Promise<void> => apiDelete(baseUrl, disablePath(realmId, username)),
     };
 }
 

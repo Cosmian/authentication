@@ -67,7 +67,9 @@ async function fillRequiredFields() {
         fireEvent.mouseDown(combobox);
     });
     const option = await screen.findByTitle("realm-a");
-    await act(async () => { fireEvent.click(option); });
+    await act(async () => {
+        fireEvent.click(option);
+    });
 }
 
 describe("AdminFormDrawer — submit button state", () => {
@@ -149,13 +151,17 @@ describe("AdminFormDrawer — submit button state", () => {
         });
         await fillRequiredFields();
 
-        await act(async () => { fireEvent.click(screen.getByRole("switch")); });
+        await act(async () => {
+            fireEvent.click(screen.getByRole("switch"));
+        });
         await act(async () => {
             fireEvent.change(screen.getByPlaceholderText("Enter password"), { target: { value: "secret123" } });
         });
 
         // Toggle off — password field gone, button should remain enabled
-        await act(async () => { fireEvent.click(screen.getByRole("switch")); });
+        await act(async () => {
+            fireEvent.click(screen.getByRole("switch"));
+        });
         const btn = getSubmitButton("Create");
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
@@ -186,7 +192,9 @@ describe("AdminFormDrawer — submit button state", () => {
             render(<AdminFormDrawer open={true} admin={existingAdmin} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
         // existingAdmin has userpass set → switch starts ON; toggling off is a change
-        await act(async () => { fireEvent.click(screen.getByRole("switch")); });
+        await act(async () => {
+            fireEvent.click(screen.getByRole("switch"));
+        });
         const btn = getSubmitButton("Save");
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
@@ -196,7 +204,9 @@ describe("AdminFormDrawer — submit button state", () => {
             render(<AdminFormDrawer open={true} admin={adminNoPassword} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
         // Toggle on — now requires a password
-        await act(async () => { fireEvent.click(screen.getByRole("switch")); });
+        await act(async () => {
+            fireEvent.click(screen.getByRole("switch"));
+        });
         const btn = getSubmitButton("Save");
         await waitFor(() => expect(btn).toBeDisabled());
 
@@ -207,4 +217,3 @@ describe("AdminFormDrawer — submit button state", () => {
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
 });
-

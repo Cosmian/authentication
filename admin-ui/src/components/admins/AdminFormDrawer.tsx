@@ -34,8 +34,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                     const orig = originalAdminRef.current;
                     const isDirty =
                         (cur.jwt ?? "") !== (orig.jwt ?? "") ||
-                        JSON.stringify([...(cur.realms ?? [])].sort()) !==
-                            JSON.stringify([...orig.realms].sort());
+                        JSON.stringify([...(cur.realms ?? [])].sort()) !== JSON.stringify([...orig.realms].sort());
                     setCanSubmit(isDirty);
                 }
             })
@@ -116,31 +115,17 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             onClose={onClose}
             width={480}
             footer={
-                <Button
-                    type="primary"
-                    block
-                    loading={loading}
-                    disabled={!canSubmit}
-                    onClick={handleSubmit}
-                >
+                <Button type="primary" block loading={loading} disabled={!canSubmit} onClick={handleSubmit}>
                     {isEdit ? "Save" : "Create"}
                 </Button>
             }
             destroyOnClose
         >
             <Form form={form} layout="vertical" autoComplete="off" onValuesChange={checkCanSubmit}>
-                <Form.Item
-                    name="id"
-                    label="Admin ID"
-                    rules={[{ required: true, message: "Admin ID is required" }]}
-                >
+                <Form.Item name="id" label="Admin ID" rules={[{ required: true, message: "Admin ID is required" }]}>
                     <Input disabled={isEdit} placeholder="e.g. alice" />
                 </Form.Item>
-                <Form.Item
-                    name="realms"
-                    label="Realms"
-                    rules={[{ required: true, message: "At least one realm is required" }]}
-                >
+                <Form.Item name="realms" label="Realms" rules={[{ required: true, message: "At least one realm is required" }]}>
                     <Select mode="multiple" options={realmOptions} placeholder="Select realms" />
                 </Form.Item>
 

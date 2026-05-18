@@ -101,8 +101,7 @@ export function applyBrandingToDocument(branding: Branding): void {
     }
 
     if (branding.faviconUrl) {
-        const link =
-            document.querySelector<HTMLLinkElement>("link[rel='icon']") ?? document.createElement("link");
+        const link = document.querySelector<HTMLLinkElement>("link[rel='icon']") ?? document.createElement("link");
         link.rel = "icon";
         link.href = branding.faviconUrl;
         document.head.appendChild(link);

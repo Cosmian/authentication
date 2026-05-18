@@ -1,10 +1,4 @@
-import {
-    AppstoreOutlined,
-    ClockCircleOutlined,
-    CrownOutlined,
-    DashboardOutlined,
-    KeyOutlined,
-} from "@ant-design/icons";
+import { AppstoreOutlined, ClockCircleOutlined, CrownOutlined, DashboardOutlined, KeyOutlined } from "@ant-design/icons";
 
 export interface MenuItem {
     key: string;

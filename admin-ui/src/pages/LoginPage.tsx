@@ -78,76 +78,68 @@ const LoginPage: React.FC = () => {
     return (
         <div className="flex items-center justify-center min-h-screen" style={outerStyle}>
             <div style={cardWrapperStyle}>
-            <Card style={{ width: 400 }}>
-                <div className="text-center mb-6">
-                    <Title level={3} className="m-0">
-                        {branding.loginTitle}
-                    </Title>
-                    {branding.loginSubtitle && (
-                        <p className="text-sm mt-1 mb-0">{branding.loginSubtitle}</p>
-                    )}
-                </div>
+                <Card style={{ width: 400 }}>
+                    <div className="text-center mb-6">
+                        <Title level={3} className="m-0">
+                            {branding.loginTitle}
+                        </Title>
+                        {branding.loginSubtitle && <p className="text-sm mt-1 mb-0">{branding.loginSubtitle}</p>}
+                    </div>
 
-                {error && <Alert type="error" message={error} showIcon className="mb-4" closable onClose={() => setError(null)} />}
+                    {error && <Alert type="error" message={error} showIcon className="mb-4" closable onClose={() => setError(null)} />}
 
-                {!totpStep ? (
-                    <Form onFinish={handleLogin} layout="vertical" autoComplete="off">
-                        <Form.Item name="username" rules={[{ required: true, message: "Username is required" }]}>
-                            <Input prefix={<UserOutlined />} placeholder="Username" size="large" autoFocus />
-                        </Form.Item>
-                        <Form.Item name="password" rules={[{ required: true, message: "Password is required" }]}>
-                            <Input.Password prefix={<LockOutlined />} placeholder="Password" size="large" />
-                        </Form.Item>
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit" block size="large" loading={submitting}>
-                                Login
-                            </Button>
-                        </Form.Item>
-                    </Form>
-                ) : (
-                    <Form onFinish={handleTotp} layout="vertical" autoComplete="off">
-                        <Alert
-                            type="info"
-                            message="Two-factor authentication required"
-                            description="Enter the 6-digit code from your authenticator app."
-                            showIcon
-                            className="mb-4"
-                        />
-                        <Form.Item
-                            name="totp_code"
-                            rules={[
-                                { required: true, message: "TOTP code is required" },
-                                { len: 6, message: "Code must be 6 digits" },
-                                { pattern: /^\d{6}$/, message: "Code must be 6 digits" },
-                            ]}
-                        >
-                            <Input
-                                prefix={<SafetyCertificateOutlined />}
-                                placeholder="000000"
-                                size="large"
-                                maxLength={6}
-                                autoFocus
+                    {!totpStep ? (
+                        <Form onFinish={handleLogin} layout="vertical" autoComplete="off">
+                            <Form.Item name="username" rules={[{ required: true, message: "Username is required" }]}>
+                                <Input prefix={<UserOutlined />} placeholder="Username" size="large" autoFocus />
+                            </Form.Item>
+                            <Form.Item name="password" rules={[{ required: true, message: "Password is required" }]}>
+                                <Input.Password prefix={<LockOutlined />} placeholder="Password" size="large" />
+                            </Form.Item>
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" block size="large" loading={submitting}>
+                                    Login
+                                </Button>
+                            </Form.Item>
+                        </Form>
+                    ) : (
+                        <Form onFinish={handleTotp} layout="vertical" autoComplete="off">
+                            <Alert
+                                type="info"
+                                message="Two-factor authentication required"
+                                description="Enter the 6-digit code from your authenticator app."
+                                showIcon
+                                className="mb-4"
                             />
-                        </Form.Item>
-                        <Form.Item>
-                            <Button type="primary" htmlType="submit" block size="large" loading={submitting}>
-                                Verify
+                            <Form.Item
+                                name="totp_code"
+                                rules={[
+                                    { required: true, message: "TOTP code is required" },
+                                    { len: 6, message: "Code must be 6 digits" },
+                                    { pattern: /^\d{6}$/, message: "Code must be 6 digits" },
+                                ]}
+                            >
+                                <Input prefix={<SafetyCertificateOutlined />} placeholder="000000" size="large" maxLength={6} autoFocus />
+                            </Form.Item>
+                            <Form.Item>
+                                <Button type="primary" htmlType="submit" block size="large" loading={submitting}>
+                                    Verify
+                                </Button>
+                            </Form.Item>
+                            <Button
+                                type="link"
+                                block
+                                onClick={() => {
+                                    setTotpStep(false);
+                                    setCredentials(null);
+                                    setError(null);
+                                }}
+                            >
+                                Back to login
                             </Button>
-                        </Form.Item>
-                        <Button
-                            type="link"
-                            block
-                            onClick={() => {
-                                setTotpStep(false);
-                                setCredentials(null);
-                                setError(null);
-                            }}
-                        >
-                            Back to login
-                        </Button>
-                    </Form>
-                )}
-            </Card>
+                        </Form>
+                    )}
+                </Card>
             </div>
         </div>
     );

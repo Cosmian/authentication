@@ -20,9 +20,7 @@ describe("AuthContext", () => {
     });
 
     it("should start unauthenticated and check session on mount", async () => {
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response("Unauthorized", { status: 401 }),
-        );
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
 
         await act(async () => {
             render(
@@ -65,9 +63,7 @@ describe("AuthContext", () => {
     });
 
     it("should resolve serverUrl from default", async () => {
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response("Unauthorized", { status: 401 }),
-        );
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
 
         await act(async () => {
             render(

@@ -105,9 +105,7 @@ const AdminsPage: React.FC = () => {
             title: "ID",
             dataIndex: "id",
             key: "id",
-            render: (id: string, record: Admin) => (
-                <Typography.Link onClick={() => handleEdit(record)}>{id}</Typography.Link>
-            ),
+            render: (id: string, record: Admin) => <Typography.Link onClick={() => handleEdit(record)}>{id}</Typography.Link>,
         },
         {
             title: "Realms",
@@ -139,8 +137,7 @@ const AdminsPage: React.FC = () => {
             title: "TOTP",
             dataIndex: "totp_enabled",
             key: "totp_enabled",
-            render: (v: boolean | null) =>
-                v ? <Badge status="success" text="Enabled" /> : <Badge status="default" text="Disabled" />,
+            render: (v: boolean | null) => (v ? <Badge status="success" text="Enabled" /> : <Badge status="default" text="Disabled" />),
         },
         {
             title: "Actions",
@@ -150,11 +147,7 @@ const AdminsPage: React.FC = () => {
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
                         Edit
                     </Button>
-                    <Button
-                        size="small"
-                        icon={<SafetyCertificateOutlined />}
-                        onClick={() => setTotpTarget(record)}
-                    >
+                    <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => setTotpTarget(record)}>
                         TOTP
                     </Button>
                     {!record.realms.includes(SUPER_ADMIN_REALM_ID) && (
@@ -189,12 +182,7 @@ const AdminsPage: React.FC = () => {
                 <Table dataSource={admins} columns={columns} rowKey="id" pagination={false} />
             )}
 
-            <AdminFormDrawer
-                open={drawerOpen}
-                admin={editingAdmin}
-                onClose={handleDrawerClose}
-                onSuccess={handleDrawerSuccess}
-            />
+            <AdminFormDrawer open={drawerOpen} admin={editingAdmin} onClose={handleDrawerClose} onSuccess={handleDrawerSuccess} />
 
             {totpTarget && (
                 <TotpManagementModal
@@ -260,11 +248,7 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
             <PageHeader title="Create a new Admin" description={`Create admin for realm: ${realmLabel(selectedRealm)}`} />
             <div style={{ maxWidth: 480 }}>
                 <Form form={form} layout="vertical" autoComplete="off" onFinish={handleSubmit}>
-                    <Form.Item
-                        name="id"
-                        label="Admin ID"
-                        rules={[{ required: true, message: "Admin ID is required" }]}
-                    >
+                    <Form.Item name="id" label="Admin ID" rules={[{ required: true, message: "Admin ID is required" }]}>
                         <Input placeholder="e.g. alice" />
                     </Form.Item>
                     <Form.Item name="userpass" label="Userpass">

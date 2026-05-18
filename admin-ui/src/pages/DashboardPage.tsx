@@ -72,8 +72,7 @@ const DashboardPage: React.FC = () => {
                                 title: "Create a realm",
                                 description: (
                                     <span>
-                                        Define an authentication domain.{" "}
-                                        <Link to="/realms">Go &rarr;</Link>
+                                        Define an authentication domain. <Link to="/realms">Go &rarr;</Link>
                                     </span>
                                 ),
                             },
@@ -81,8 +80,7 @@ const DashboardPage: React.FC = () => {
                                 title: "Add credentials",
                                 description: (
                                     <span>
-                                        Create username/password entries for your realm.{" "}
-                                        <Link to="/credentials">Go &rarr;</Link>
+                                        Create username/password entries for your realm. <Link to="/credentials">Go &rarr;</Link>
                                     </span>
                                 ),
                             },
@@ -90,8 +88,7 @@ const DashboardPage: React.FC = () => {
                                 title: "Enable TOTP (optional)",
                                 description: (
                                     <span>
-                                        Set up two-factor authentication.{" "}
-                                        <Link to="/admins">Go &rarr;</Link>
+                                        Set up two-factor authentication. <Link to="/admins">Go &rarr;</Link>
                                     </span>
                                 ),
                             },
@@ -111,11 +108,7 @@ const DashboardPage: React.FC = () => {
                 <div className="flex items-center gap-6 flex-wrap">
                     <span>
                         <Text type="secondary">Status: </Text>
-                        {serverOnline ? (
-                            <Badge status="success" text="Online" />
-                        ) : (
-                            <Badge status="error" text="Unreachable" />
-                        )}
+                        {serverOnline ? <Badge status="success" text="Online" /> : <Badge status="error" text="Unreachable" />}
                     </span>
                     <span>
                         <Text type="secondary">Version: </Text>
@@ -159,12 +152,18 @@ const DashboardPage: React.FC = () => {
                                     </div>
                                     <div className="flex gap-2 mt-2">
                                         <Typography.Link
-                                            onClick={(e) => { e.stopPropagation(); navigate("/credentials"); }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate("/credentials");
+                                            }}
                                         >
                                             Credentials <ArrowRightOutlined />
                                         </Typography.Link>
                                         <Typography.Link
-                                            onClick={(e) => { e.stopPropagation(); navigate("/sessions"); }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate("/sessions");
+                                            }}
                                         >
                                             Sessions <ArrowRightOutlined />
                                         </Typography.Link>

@@ -13,14 +13,7 @@ interface TotpManagementModalProps {
     onSuccess: () => void;
 }
 
-export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({
-    open,
-    adminId,
-    realmId,
-    totpEnabled,
-    onClose,
-    onSuccess,
-}) => {
+export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({ open, adminId, realmId, totpEnabled, onClose, onSuccess }) => {
     const { serverUrl } = useAuth();
     const [step, setStep] = useState<"idle" | "generated" | "verifying">("idle");
     const [totpData, setTotpData] = useState<TotpGenerateResponse | null>(null);
@@ -97,13 +90,7 @@ export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({
     };
 
     return (
-        <Modal
-            title={`TOTP for "${adminId}"`}
-            open={open}
-            onCancel={handleClose}
-            footer={null}
-            destroyOnClose
-        >
+        <Modal title={`TOTP for "${adminId}"`} open={open} onCancel={handleClose} footer={null} destroyOnClose>
             {error && <Alert type="error" message={error} showIcon className="mb-4" />}
 
             {totpEnabled ? (
@@ -124,11 +111,7 @@ export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({
                 </div>
             ) : (
                 <div>
-                    <Alert
-                        type="info"
-                        message="Scan the QR code or enter the secret manually"
-                        className="mb-4"
-                    />
+                    <Alert type="info" message="Scan the QR code or enter the secret manually" className="mb-4" />
                     {totpData && (
                         <Space direction="vertical" className="w-full mb-4">
                             <div className="p-4 bg-white rounded text-center">
@@ -139,9 +122,7 @@ export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({
                                     height={200}
                                 />
                             </div>
-                            <Typography.Text copyable>
-                                {totpData.secret_base32}
-                            </Typography.Text>
+                            <Typography.Text copyable>{totpData.secret_base32}</Typography.Text>
                         </Space>
                     )}
                     <Space.Compact className="w-full">

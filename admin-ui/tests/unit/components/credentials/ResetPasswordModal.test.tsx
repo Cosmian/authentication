@@ -9,14 +9,7 @@ describe("ResetPasswordModal — submit button state", () => {
 
     it("button is disabled initially (empty form)", async () => {
         await act(async () => {
-            render(
-                <ResetPasswordModal
-                    open={true}
-                    username="alice"
-                    onCancel={vi.fn()}
-                    onSubmit={vi.fn()}
-                />,
-            );
+            render(<ResetPasswordModal open={true} username="alice" onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         const btn = screen.getByRole("button", { name: "Reset Password" });
@@ -25,14 +18,7 @@ describe("ResetPasswordModal — submit button state", () => {
 
     it("button is disabled when only the new password is filled", async () => {
         await act(async () => {
-            render(
-                <ResetPasswordModal
-                    open={true}
-                    username="alice"
-                    onCancel={vi.fn()}
-                    onSubmit={vi.fn()}
-                />,
-            );
+            render(<ResetPasswordModal open={true} username="alice" onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         await act(async () => {
@@ -47,14 +33,7 @@ describe("ResetPasswordModal — submit button state", () => {
 
     it("button is disabled when passwords don't match", async () => {
         await act(async () => {
-            render(
-                <ResetPasswordModal
-                    open={true}
-                    username="alice"
-                    onCancel={vi.fn()}
-                    onSubmit={vi.fn()}
-                />,
-            );
+            render(<ResetPasswordModal open={true} username="alice" onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         await act(async () => {
@@ -72,14 +51,7 @@ describe("ResetPasswordModal — submit button state", () => {
 
     it("button is enabled when both passwords are filled and match", async () => {
         await act(async () => {
-            render(
-                <ResetPasswordModal
-                    open={true}
-                    username="alice"
-                    onCancel={vi.fn()}
-                    onSubmit={vi.fn()}
-                />,
-            );
+            render(<ResetPasswordModal open={true} username="alice" onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         await act(async () => {

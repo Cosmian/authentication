@@ -51,11 +51,7 @@ const SessionsPage: React.FC = () => {
                 />
                 {isSuperAdmin && (
                     <div className="mt-4">
-                        <Button
-                            icon={<ClearOutlined />}
-                            onClick={handlePurgeExpired}
-                            loading={purging}
-                        >
+                        <Button icon={<ClearOutlined />} onClick={handlePurgeExpired} loading={purging}>
                             Purge Expired Sessions
                         </Button>
                     </div>
@@ -77,12 +73,7 @@ const SessionsPage: React.FC = () => {
             />
 
             <div className="mt-6">
-                <Button
-                    danger
-                    type="primary"
-                    icon={<DeleteOutlined />}
-                    onClick={() => setRevokeModalOpen(true)}
-                >
+                <Button danger type="primary" icon={<DeleteOutlined />} onClick={() => setRevokeModalOpen(true)}>
                     Revoke All Sessions
                 </Button>
             </div>

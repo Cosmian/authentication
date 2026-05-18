@@ -5,22 +5,22 @@ Each question includes a recommended answer. Answer each one before the next is 
 
 ## Status
 
-| Q | Topic | Status |
-|---|-------|--------|
-| Q0 | API design conflict: high-volume vs admin-UI endpoints | ⏸ Skipped — revisit when missing endpoints are prioritised |
-| Q1 | Primary persona | ✅ Answered |
-| Q2 | Typical realm count in production | ✅ Answered |
-| Q3 | Realm selector scope and visibility | ✅ Answered |
-| Q4 | Admins page: two modes | ✅ Answered |
-| Q5 | Dashboard content | ✅ Answered |
-| Q6 | Dashboard purpose | ✅ Answered |
-| Q7 | Realms management page layout | ✅ Answered |
-| Q8 | Credentials page | ✅ Answered |
-| Q9 | Sessions page | ✅ Answered — placeholder until `GET /sessions/realms/{id}` safe list endpoint added |
-| Q10 | TOTP page | ✅ Answered — placeholder until API reworked |
-| Q11 | Login page and AuthContext | ✅ Answered |
-| Q12 | Admin form fields | ✅ Answered |
-| Q13 | Route guards | ✅ Answered |
+| Q   | Topic                                                  | Status                                                                               |
+| --- | ------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Q0  | API design conflict: high-volume vs admin-UI endpoints | ⏸ Skipped — revisit when missing endpoints are prioritised                           |
+| Q1  | Primary persona                                        | ✅ Answered                                                                          |
+| Q2  | Typical realm count in production                      | ✅ Answered                                                                          |
+| Q3  | Realm selector scope and visibility                    | ✅ Answered                                                                          |
+| Q4  | Admins page: two modes                                 | ✅ Answered                                                                          |
+| Q5  | Dashboard content                                      | ✅ Answered                                                                          |
+| Q6  | Dashboard purpose                                      | ✅ Answered                                                                          |
+| Q7  | Realms management page layout                          | ✅ Answered                                                                          |
+| Q8  | Credentials page                                       | ✅ Answered                                                                          |
+| Q9  | Sessions page                                          | ✅ Answered — placeholder until `GET /sessions/realms/{id}` safe list endpoint added |
+| Q10 | TOTP page                                              | ✅ Answered — placeholder until API reworked                                         |
+| Q11 | Login page and AuthContext                             | ✅ Answered                                                                          |
+| Q12 | Admin form fields                                      | ✅ Answered                                                                          |
+| Q13 | Route guards                                           | ✅ Answered                                                                          |
 
 **Next action:** Answer Q12 (`fido2`/`digital_credentials`/`client_certificate` — Advanced section or omit?), then Q13 (route guards), then the interview is complete.
 
@@ -31,11 +31,13 @@ Each question includes a recommended answer. Answer each one before the next is 
 This is a foundational architectural tension that underlies every page in this UI.
 
 The current server API was designed primarily for **server-to-server use** at high volume:
+
 - Session lookup and validation must be sub-millisecond under load
 - Credential hash verification must resist timing attacks
 - No expensive cross-table aggregations at authentication time
 
 Admin UI endpoints have **opposite requirements**:
+
 - Low frequency (human-speed interactions, not per-request)
 - Read-heavy aggregated views: "all sessions for realm X", "all users with TOTP enabled"
 - Safe schemas that strip sensitive fields (`cookie_string`, raw session keys)
@@ -43,10 +45,10 @@ Admin UI endpoints have **opposite requirements**:
 
 The conflict surfaces concretely in three places already identified in this interview:
 
-| Gap | Blocked UI | Required endpoint |
-|-----|-----------|-------------------|
-| No session list | Sessions page | `GET /sessions/realms/{realm_id}` returning `SessionSummary[]` |
-| No TOTP status on userpass | TOTP page | `totp_enabled` on `UserPass` or `GET /realms/{realm_id}/clients` |
+| Gap                                         | Blocked UI            | Required endpoint                                                  |
+| ------------------------------------------- | --------------------- | ------------------------------------------------------------------ |
+| No session list                             | Sessions page         | `GET /sessions/realms/{realm_id}` returning `SessionSummary[]`     |
+| No TOTP status on userpass                  | TOTP page             | `totp_enabled` on `UserPass` or `GET /realms/{realm_id}/clients`   |
 | Admin's own 2FA mixed with realm management | Admins page TOTP flow | Possibly split `Admin.totp_enabled` concern from realm-client TOTP |
 
 **The fundamental decision:** should admin-UI endpoints live in the same server binary
@@ -76,7 +78,7 @@ This "ambient filter" pattern is functional but creates a classic confusion risk
 on the wrong realm without noticing.
 
 Classic IdPs like Keycloak resolve this by making the realm the **primary navigation axis** —
-you select a realm first, and the entire sub-navigation is scoped to it. Realm *management*
+you select a realm first, and the entire sub-navigation is scoped to it. Realm _management_
 (CRUD) lives separately at the global level.
 
 Whether that's the right call here depends heavily on who is sitting in front of this UI.
@@ -221,6 +223,7 @@ Three open questions arise from the decisions made in Q3 and Q4:
    Sessions, TOTP)?
 
 **Recommendation:**
+
 1. Keep shortcuts only — no stats. The API cost is too high for a landing page.
 2. Yes — the Admins card should follow the same exclusive-ownership visibility rule as the
    sidebar item for consistency.
@@ -231,6 +234,7 @@ Three open questions arise from the decisions made in Q3 and Q4:
 card and super-admin warning banner follow the same rules established in Q3/Q4?
 
 **Answer:**
+
 1. No stats for now — the required endpoints don't exist and are not currently planned.
    The shortcut grid is sufficient. Stats may be revisited if aggregate endpoints are added.
 2. Yes — the Admins card follows the same exclusive-ownership visibility rule as the
@@ -402,14 +406,14 @@ prevent accidental empty-password submissions — the admin must explicitly type
 The Sessions API is primarily designed for server-to-server use. Before deciding on layout,
 it is important to understand what the admin UI can actually do:
 
-| What | Endpoint | Notes |
-|------|----------|-------|
-| List all sessions for a realm | — | **Does not exist.** No browsable session list. |
-| Look up a session by ID | `GET /sessions/{session_id}` | Requires knowing the ID. |
-| Look up sessions by username | `POST /sessions/realms/{realm_id}/clients` | Returns IDs for given usernames. |
-| Revoke sessions by ID | `DELETE /sessions` | Requires knowing the IDs. |
-| Bulk revoke all sessions for a realm | `DELETE /sessions/realms/{realm_id}` | Destructive. |
-| Purge all expired sessions globally | `DELETE /sessions/expired` | No realm scope. Super-admin action. |
+| What                                 | Endpoint                                   | Notes                                          |
+| ------------------------------------ | ------------------------------------------ | ---------------------------------------------- |
+| List all sessions for a realm        | —                                          | **Does not exist.** No browsable session list. |
+| Look up a session by ID              | `GET /sessions/{session_id}`               | Requires knowing the ID.                       |
+| Look up sessions by username         | `POST /sessions/realms/{realm_id}/clients` | Returns IDs for given usernames.               |
+| Revoke sessions by ID                | `DELETE /sessions`                         | Requires knowing the IDs.                      |
+| Bulk revoke all sessions for a realm | `DELETE /sessions/realms/{realm_id}`       | Destructive.                                   |
+| Purge all expired sessions globally  | `DELETE /sessions/expired`                 | No realm scope. Super-admin action.            |
 
 The Sessions page therefore **cannot be a browsable list** — it is an administrative
 action page. The meaningful actions available are:
@@ -422,6 +426,7 @@ action page. The meaningful actions available are:
 3. **Purge expired sessions** — global cleanup button (super-admin only, no realm scope).
 
 **Recommendation:** The page renders as an action panel, not a data table. Three sections:
+
 - A prominent "Revoke all sessions" danger button (with confirmation) for the selected realm.
 - A username lookup form → results list with revoke buttons per session.
 - A "Purge expired sessions" button visible only in super-admin mode (`_` selected).
@@ -448,9 +453,9 @@ Requirements for the server-side list endpoint:
    long session tables. Ant Design Table pagination maps directly to server-side params.
 4. **Redis backend:** requires a secondary index (e.g. a Redis Set per realm tracking
    session keys) to avoid an O(N) `SCAN` against the full keyspace.
-   > ⚠️ **Do not implement the Redis secondary index yet.** Design it alongside the
-   > endpoint when the Sessions page is prioritised. SQL backends (SQLite, PostgreSQL,
-   > MySQL) can implement the endpoint with a simple indexed `SELECT` immediately.
+    > ⚠️ **Do not implement the Redis secondary index yet.** Design it alongside the
+    > endpoint when the Sessions page is prioritised. SQL backends (SQLite, PostgreSQL,
+    > MySQL) can implement the endpoint with a simple indexed `SELECT` immediately.
 
 ---
 
@@ -466,13 +471,14 @@ realm users. The Admin schema includes:
 The TOTP endpoints are realm-scoped operations for admins who authenticate via
 `userpass` in that realm. Three operations per realm:
 
-| Operation | Endpoint | Trigger |
-|-----------|----------|---------|
-| Generate | `POST /realms/{realm_id}/totp/generate` | Admin initiates TOTP enrollment for themselves |
-| Verify + enable | `POST /realms/{realm_id}/totp/verify` | Admin confirms they scanned the QR code |
-| Disable | `DELETE /realms/{realm_id}/totp/{username}` | Admin removes their own 2FA (or another admin they administer removes it) |
+| Operation       | Endpoint                                    | Trigger                                                                   |
+| --------------- | ------------------------------------------- | ------------------------------------------------------------------------- |
+| Generate        | `POST /realms/{realm_id}/totp/generate`     | Admin initiates TOTP enrollment for themselves                            |
+| Verify + enable | `POST /realms/{realm_id}/totp/verify`       | Admin confirms they scanned the QR code                                   |
+| Disable         | `DELETE /realms/{realm_id}/totp/{username}` | Admin removes their own 2FA (or another admin they administer removes it) |
 
 Key constraints:
+
 1. **No list endpoint.** No way to browse who has TOTP enabled. Status is only visible on
    the Admins page as a badge/indicator on the admin row.
 2. **Two-step enrollment.** Generate returns secret + URL. Verify requires a TOTP code.
@@ -519,10 +525,10 @@ The authentication flow against the server is:
 
 1. `POST /login?realm=_` with `Authorization: Basic <base64(username:password)>`
 2. Response is `AuthenticationResult` with `next_step`:
-   - `Authenticated` — session cookie `_ea_` is set, `session_id` present. Done.
-   - `TotpRequired` — re-submit the same request with `totp_code` filled in.
-   - `ChangePassword` — login succeeded but password has expired. Admin must change it
-     before proceeding (no dedicated change-password endpoint currently exists — see note).
+    - `Authenticated` — session cookie `_ea_` is set, `session_id` present. Done.
+    - `TotpRequired` — re-submit the same request with `totp_code` filled in.
+    - `ChangePassword` — login succeeded but password has expired. Admin must change it
+      before proceeding (no dedicated change-password endpoint currently exists — see note).
 3. Session is stored server-side. The `_ea_` cookie is HttpOnly/Secure/SameSite=Strict —
    the UI never sees its value. Logout is handled by revoking the session server-side.
 
@@ -550,10 +556,10 @@ Key UX decisions:
    state and redirect to `/login`. The `session_id` is returned in `AuthenticationResult`
    on login and must be stored in `AuthContext` state.
 
-   > **`session_id` is safe to store in JS:** it is `hex(SHA-256(cookie_value))` — a hash
-   > of the JWT, not the JWT itself. It cannot be replayed as a Bearer token. It is purely
-   > a lookup handle for the session store. XSS reading it from memory is the only residual
-   > risk, which is unavoidable for any JS state.
+    > **`session_id` is safe to store in JS:** it is `hex(SHA-256(cookie_value))` — a hash
+    > of the JWT, not the JWT itself. It cannot be replayed as a Bearer token. It is purely
+    > a lookup handle for the session store. XSS reading it from memory is the only residual
+    > risk, which is unavoidable for any JS state.
 
 6. **Session expiry tracking** — `GET /whoami?realm=_` returns JWT claims including `exp`
    (Unix timestamp). Store `exp` in `AuthContext` on login/mount. A client-side timer can
@@ -561,6 +567,7 @@ Key UX decisions:
    caught by 401 responses from any subsequent API call — no polling needed.
 
 **Recommendation:**
+
 - Add a `/login` page with username + password fields, an inline TOTP code step, and an
   error state for invalid credentials.
 - `AuthContext` stores `{ isAuthenticated, username, sessionId }`. Populated from
@@ -591,6 +598,7 @@ pointing the admin to the Credentials page. Full-page route for `/login` (not a 
 > ```
 >
 > This allows testing:
+>
 > - Super-admin mode (`_` selected): full admin list, Realms management, unfiltered sessions
 > - Realm-admin mode (`my-realm` selected): Admins create form, Credentials, TOTP placeholder
 > - Exclusive-ownership rule satisfied for `my-realm`: Admins item visible in realm-admin mode
@@ -604,18 +612,18 @@ pointing the admin to the Credentials page. Full-page route for `/login` (not a 
 
 The `Admin` schema has the following fields:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | `string` | Immutable after creation |
-| `realms` | `string[]` | Realms this admin manages; `["_"]` = super admin |
-| `userpass` | `string \| null` | FK into userpass table (username, not password) |
-| `jwt` | `string \| null` | JWT subject claim for JWT auth |
-| `fido2` | `string \| null` | FIDO2 credential identifier |
-| `digital_credentials` | `object \| null` | Map of credential identifiers |
-| `client_certificate` | `string \| null` | mTLS certificate fingerprint |
-| `totp_enabled` | `boolean \| null` | Whether TOTP 2FA is active |
-| `totp_secret` | `string \| null` | Read-only; base32 secret |
-| `totp_auth_url` | `string \| null` | Read-only; otpauth:// URL |
+| Field                 | Type              | Notes                                            |
+| --------------------- | ----------------- | ------------------------------------------------ |
+| `id`                  | `string`          | Immutable after creation                         |
+| `realms`              | `string[]`        | Realms this admin manages; `["_"]` = super admin |
+| `userpass`            | `string \| null`  | FK into userpass table (username, not password)  |
+| `jwt`                 | `string \| null`  | JWT subject claim for JWT auth                   |
+| `fido2`               | `string \| null`  | FIDO2 credential identifier                      |
+| `digital_credentials` | `object \| null`  | Map of credential identifiers                    |
+| `client_certificate`  | `string \| null`  | mTLS certificate fingerprint                     |
+| `totp_enabled`        | `boolean \| null` | Whether TOTP 2FA is active                       |
+| `totp_secret`         | `string \| null`  | Read-only; base32 secret                         |
+| `totp_auth_url`       | `string \| null`  | Read-only; otpauth:// URL                        |
 
 **Key questions for the create/edit form:**
 
@@ -634,6 +642,7 @@ The `Admin` schema has the following fields:
    Never editable directly.
 
 **Recommendation:**
+
 - **Create form:** `id` (text), `realms` (multi-select), `userpass` (text, optional),
   `jwt` (text, optional). `fido2`, `digital_credentials`, `client_certificate` hidden
   behind an "Advanced" expandable section — present but not prominent.
@@ -668,10 +677,11 @@ Three access scenarios require handling:
 
 **Option A — Silent redirect** to `/` or `/login`. No explanation.
 **Option B — Inline 403 result page** using Ant Design `<Result status="403" />` with a
-   message and a back button. URL stays unchanged.
+message and a back button. URL stays unchanged.
 **Option C — Redirect with toast notification** explaining why access was denied.
 
 **Recommendation:**
+
 - Unauthenticated → silent redirect to `/login` (A). Standard, expected behaviour.
 - Authenticated but unauthorized → inline `<Result status="403" />` (B). URL remains
   meaningful, message is clear, no redirect logic needed to guess a destination.
@@ -680,6 +690,7 @@ Three access scenarios require handling:
 page (B), or redirect with toast (C)?
 
 **Answer:** Split approach:
+
 - **Unauthenticated:** redirect to `/login` (A).
 - **Authenticated but unauthorized:** render inline `<Result status="403" />` (B) —
   the URL stays, the reason is explicit, and no destination-guessing logic is needed.

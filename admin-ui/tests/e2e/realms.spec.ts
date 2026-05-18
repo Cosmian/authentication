@@ -142,7 +142,10 @@ test.describe("Realms page", () => {
         await expect(page.getByText("my-service")).toBeVisible();
 
         // Click the Edit button on the my-service row.
-        await page.getByRole("row", { name: /my-service/ }).getByRole("button", { name: "Edit" }).click();
+        await page
+            .getByRole("row", { name: /my-service/ })
+            .getByRole("button", { name: "Edit" })
+            .click();
 
         // The drawer heading should reflect the realm being edited.
         await expect(page.getByText("Edit Realm: my-service")).toBeVisible();
@@ -159,7 +162,10 @@ test.describe("Realms page", () => {
         await expect(page.getByText("my-service")).toBeVisible();
 
         // Click the Delete button.
-        await page.getByRole("row", { name: /my-service/ }).getByRole("button", { name: "Delete" }).click();
+        await page
+            .getByRole("row", { name: /my-service/ })
+            .getByRole("button", { name: "Delete" })
+            .click();
 
         // Confirm delete modal should appear.
         await expect(page.getByText(/Delete "my-service"/)).toBeVisible();

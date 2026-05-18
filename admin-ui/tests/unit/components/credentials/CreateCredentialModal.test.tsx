@@ -9,9 +9,7 @@ describe("CreateCredentialModal — submit button state", () => {
 
     it("button is disabled initially (empty form)", async () => {
         await act(async () => {
-            render(
-                <CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />,
-            );
+            render(<CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         const btn = screen.getByRole("button", { name: "Create" });
@@ -20,9 +18,7 @@ describe("CreateCredentialModal — submit button state", () => {
 
     it("button is disabled when only username is filled", async () => {
         await act(async () => {
-            render(
-                <CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />,
-            );
+            render(<CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         await act(async () => {
@@ -35,9 +31,7 @@ describe("CreateCredentialModal — submit button state", () => {
 
     it("button is disabled when password and confirm are missing", async () => {
         await act(async () => {
-            render(
-                <CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />,
-            );
+            render(<CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         await act(async () => {
@@ -51,9 +45,7 @@ describe("CreateCredentialModal — submit button state", () => {
 
     it("button is disabled when passwords don't match", async () => {
         await act(async () => {
-            render(
-                <CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />,
-            );
+            render(<CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         await act(async () => {
@@ -70,9 +62,7 @@ describe("CreateCredentialModal — submit button state", () => {
 
     it("button is enabled when all fields are valid (passwords match)", async () => {
         await act(async () => {
-            render(
-                <CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />,
-            );
+            render(<CreateCredentialModal open={true} onCancel={vi.fn()} onSubmit={vi.fn()} />);
         });
 
         await act(async () => {

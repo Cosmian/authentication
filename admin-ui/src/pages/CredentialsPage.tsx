@@ -13,7 +13,11 @@ import { CreateCredentialModal } from "../components/credentials/CreateCredentia
 import { ResetPasswordModal } from "../components/credentials/ResetPasswordModal";
 
 /** Fetches and displays credentials for a single realm — used in the super-admin overview. */
-const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refreshKey?: number }> = ({ realmId, serverUrl, refreshKey = 0 }) => {
+const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refreshKey?: number }> = ({
+    realmId,
+    serverUrl,
+    refreshKey = 0,
+}) => {
     const [credentials, setCredentials] = useState<UserPass[]>([]);
     const [loading, setLoading] = useState(true);
     const [resetTarget, setResetTarget] = useState<UserPass | null>(null);
@@ -23,7 +27,9 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
         const api = createCredentialsApi(serverUrl);
         api.list(realmId)
             .then(setCredentials)
-            .catch(() => { /* shown inline below */ })
+            .catch(() => {
+                /* shown inline below */
+            })
             .finally(() => setLoading(false));
     }, [realmId, serverUrl, refreshKey]);
 
@@ -59,8 +65,7 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
             dataIndex: "change_password",
             key: "change_password",
             width: "25%",
-            render: (val: boolean) =>
-                val ? <Badge status="warning" text="Pending change" /> : <Badge status="success" text="Active" />,
+            render: (val: boolean) => (val ? <Badge status="warning" text="Pending change" /> : <Badge status="success" text="Active" />),
         },
         {
             title: "Actions",
@@ -77,7 +82,9 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
                         okText="Delete"
                         okType="danger"
                     >
-                        <Button size="small" danger icon={<DeleteOutlined />}>Delete</Button>
+                        <Button size="small" danger icon={<DeleteOutlined />}>
+                            Delete
+                        </Button>
                     </Popconfirm>
                 </Space>
             ),
@@ -202,17 +209,9 @@ const CredentialsPage: React.FC = () => {
         const concreteRealms = realms.filter((r) => r.id !== SUPER_ADMIN_REALM_ID);
         return (
             <div style={{ maxWidth: 900 }}>
-                <PageHeader
-                    title="Credentials"
-                    description="All realms — select a realm in the header to manage a single realm"
-                />
+                <PageHeader title="Credentials" description="All realms — select a realm in the header to manage a single realm" />
                 {concreteRealms.length === 0 ? (
-                    <Alert
-                        type="info"
-                        showIcon
-                        message="No realms yet"
-                        description="Create a realm first to manage credentials."
-                    />
+                    <Alert type="info" showIcon message="No realms yet" description="Create a realm first to manage credentials." />
                 ) : (
                     <Collapse
                         accordion={false}
@@ -226,7 +225,10 @@ const CredentialsPage: React.FC = () => {
                                         size="small"
                                         type="primary"
                                         icon={<PlusOutlined />}
-                                        onClick={(e) => { e.stopPropagation(); setCreateTargetRealm(r.id); }}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCreateTargetRealm(r.id);
+                                        }}
                                     >
                                         New Credential
                                     </Button>
@@ -258,12 +260,7 @@ const CredentialsPage: React.FC = () => {
             title: "Status",
             dataIndex: "change_password",
             key: "change_password",
-            render: (val: boolean) =>
-                val ? (
-                    <Badge status="warning" text="Pending change" />
-                ) : (
-                    <Badge status="success" text="Active" />
-                ),
+            render: (val: boolean) => (val ? <Badge status="warning" text="Pending change" /> : <Badge status="success" text="Active" />),
         },
         {
             title: "Actions",
@@ -273,11 +270,7 @@ const CredentialsPage: React.FC = () => {
                     <Button size="small" icon={<KeyOutlined />} onClick={() => setResetTarget(record)}>
                         Reset Password
                     </Button>
-                    <Button
-                        size="small"
-                        icon={<SwapOutlined />}
-                        onClick={() => handleToggleChangePassword(record)}
-                    >
+                    <Button size="small" icon={<SwapOutlined />} onClick={() => handleToggleChangePassword(record)}>
                         Toggle Change
                     </Button>
                     <Popconfirm
@@ -305,20 +298,12 @@ const CredentialsPage: React.FC = () => {
             />
 
             {credentials.length === 0 ? (
-                <EmptyState
-                    description="No credentials in this realm"
-                    actionLabel="New Credential"
-                    onAction={() => setCreateOpen(true)}
-                />
+                <EmptyState description="No credentials in this realm" actionLabel="New Credential" onAction={() => setCreateOpen(true)} />
             ) : (
                 <Table dataSource={credentials} columns={columns} rowKey="username" pagination={false} />
             )}
 
-            <CreateCredentialModal
-                open={createOpen}
-                onCancel={() => setCreateOpen(false)}
-                onSubmit={handleCreate}
-            />
+            <CreateCredentialModal open={createOpen} onCancel={() => setCreateOpen(false)} onSubmit={handleCreate} />
 
             <ResetPasswordModal
                 open={resetTarget !== null}

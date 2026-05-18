@@ -4,7 +4,16 @@ import { RealmFormDrawer } from "../../../../src/components/realms/RealmFormDraw
 import type { Realm } from "../../../../src/types/api";
 
 vi.mock("../../../../src/contexts/AuthContext", () => ({
-    useAuth: () => ({ isAuthenticated: true, username: "admin", serverUrl: "", loading: false, sessionId: null, exp: null, login: vi.fn(), logout: vi.fn() }),
+    useAuth: () => ({
+        isAuthenticated: true,
+        username: "admin",
+        serverUrl: "",
+        loading: false,
+        sessionId: null,
+        exp: null,
+        login: vi.fn(),
+        logout: vi.fn(),
+    }),
 }));
 
 const existingRealm: Realm = {
@@ -25,9 +34,7 @@ describe("RealmFormDrawer", () => {
 
     it("should render create mode when realm is null", async () => {
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={vi.fn()} />,
-            );
+            render(<RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
 
         expect(screen.getByText("Create Realm")).toBeInTheDocument();
@@ -36,9 +43,7 @@ describe("RealmFormDrawer", () => {
 
     it("should render edit mode with realm data", async () => {
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />,
-            );
+            render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
 
         expect(screen.getByText("Edit Realm: test-realm")).toBeInTheDocument();
@@ -47,9 +52,7 @@ describe("RealmFormDrawer", () => {
 
     it("should show auth method checkboxes", async () => {
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={vi.fn()} />,
-            );
+            render(<RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
 
         expect(screen.getByText("Username / Password")).toBeInTheDocument();
@@ -60,9 +63,7 @@ describe("RealmFormDrawer", () => {
     it("should call onClose when the drawer close icon is clicked", async () => {
         const onClose = vi.fn();
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={null} onClose={onClose} onSuccess={vi.fn()} />,
-            );
+            render(<RealmFormDrawer open={true} realm={null} onClose={onClose} onSuccess={vi.fn()} />);
         });
 
         // The Cancel button was removed; drawer is closed via the Ant Design close icon.
@@ -72,14 +73,10 @@ describe("RealmFormDrawer", () => {
 
     it("should call API and onSuccess on valid create submission", async () => {
         const onSuccess = vi.fn();
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify({ id: "new-realm" }), { status: 201 }),
-        );
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ id: "new-realm" }), { status: 201 }));
 
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />,
-            );
+            render(<RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />);
         });
 
         // Fill required field — this triggers form validation and enables the submit button.
@@ -97,9 +94,7 @@ describe("RealmFormDrawer", () => {
     });
 
     it("should not render when open is false", () => {
-        render(
-            <RealmFormDrawer open={false} realm={null} onClose={vi.fn()} onSuccess={vi.fn()} />,
-        );
+        render(<RealmFormDrawer open={false} realm={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
 
         expect(screen.queryByText("Create Realm")).not.toBeInTheDocument();
     });
@@ -107,9 +102,7 @@ describe("RealmFormDrawer", () => {
     it("should disable the submit button when Realm ID is empty", async () => {
         const onSuccess = vi.fn();
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />,
-            );
+            render(<RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />);
         });
 
         // Button starts disabled when the required Realm ID field is empty.
@@ -121,14 +114,12 @@ describe("RealmFormDrawer", () => {
 
     it("should not call onSuccess when the API returns an error", async () => {
         const onSuccess = vi.fn();
-        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify({ message: "Internal Server Error" }), { status: 500 }),
-        );
+        const fetchSpy = vi
+            .spyOn(globalThis, "fetch")
+            .mockResolvedValueOnce(new Response(JSON.stringify({ message: "Internal Server Error" }), { status: 500 }));
 
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />,
-            );
+            render(<RealmFormDrawer open={true} realm={null} onClose={vi.fn()} onSuccess={onSuccess} />);
         });
 
         // Fill required field.
@@ -154,19 +145,10 @@ describe("RealmFormDrawer", () => {
 
     it("should call API with PUT and invoke onSuccess in edit mode", async () => {
         const onSuccess = vi.fn();
-        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify(existingRealm), { status: 200 }),
-        );
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(existingRealm), { status: 200 }));
 
         await act(async () => {
-            render(
-                <RealmFormDrawer
-                    open={true}
-                    realm={existingRealm}
-                    onClose={vi.fn()}
-                    onSuccess={onSuccess}
-                />,
-            );
+            render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={onSuccess} />);
         });
 
         // Trigger a change so the form becomes dirty and Save is enabled.
@@ -186,17 +168,12 @@ describe("RealmFormDrawer", () => {
         await waitFor(() => expect(onSuccess).toHaveBeenCalled());
 
         // The request must have used the PUT method.
-        expect(fetchSpy).toHaveBeenCalledWith(
-            expect.stringContaining(existingRealm.id),
-            expect.objectContaining({ method: "PUT" }),
-        );
+        expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining(existingRealm.id), expect.objectContaining({ method: "PUT" }));
     });
 
     it("edit mode: button is disabled initially (form matches original)", async () => {
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />,
-            );
+            render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
 
         const saveBtn = screen.getAllByRole("button", { name: "Save" });
@@ -207,9 +184,7 @@ describe("RealmFormDrawer", () => {
 
     it("edit mode: button is enabled after changing a field", async () => {
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />,
-            );
+            render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
 
         // Change the session lifetime field
@@ -226,9 +201,7 @@ describe("RealmFormDrawer", () => {
 
     it("edit mode: button is disabled again after reverting change", async () => {
         await act(async () => {
-            render(
-                <RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />,
-            );
+            render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
 
         const sessionInput = screen.getByLabelText("Session Max Age (seconds)");

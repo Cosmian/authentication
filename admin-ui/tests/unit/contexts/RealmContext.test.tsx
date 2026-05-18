@@ -139,9 +139,7 @@ describe("RealmContext", () => {
 
     it("should re-fetch and update realms when refreshRealms is called", async () => {
         vi.spyOn(globalThis, "fetch")
-            .mockResolvedValueOnce(
-                new Response(JSON.stringify([makeRealm("_"), makeRealm("realm-a")]), { status: 200 }),
-            )
+            .mockResolvedValueOnce(new Response(JSON.stringify([makeRealm("_"), makeRealm("realm-a")]), { status: 200 }))
             .mockResolvedValueOnce(
                 new Response(JSON.stringify([makeRealm("_"), makeRealm("realm-a"), makeRealm("realm-b")]), { status: 200 }),
             );

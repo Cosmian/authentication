@@ -15,7 +15,10 @@ const mockRealms: Realm[] = [
         id: "my-service",
         auth_params: {
             username_password_params: { allow_expired_passwords: false },
-            jwt_params: { idp_params: [{ jwks_url: "https://example.com/jwks", jwt_audience: null }], smallest_refresh_interval_seconds: 300 },
+            jwt_params: {
+                idp_params: [{ jwks_url: "https://example.com/jwks", jwt_audience: null }],
+                smallest_refresh_interval_seconds: 300,
+            },
             totp_params: { algorithm: "SHA1", step: 30 },
         },
         session_max_age_seconds: 3600,
@@ -25,7 +28,16 @@ const mockRealms: Realm[] = [
 
 // Mock contexts
 vi.mock("../../../src/contexts/AuthContext", () => ({
-    useAuth: () => ({ isAuthenticated: true, username: "admin", serverUrl: "", loading: false, sessionId: null, exp: null, login: vi.fn(), logout: vi.fn() }),
+    useAuth: () => ({
+        isAuthenticated: true,
+        username: "admin",
+        serverUrl: "",
+        loading: false,
+        sessionId: null,
+        exp: null,
+        login: vi.fn(),
+        logout: vi.fn(),
+    }),
 }));
 
 const mockRealmContext = {
@@ -66,9 +78,7 @@ describe("RealmsPage", () => {
     });
 
     it("should display realms in a table", async () => {
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify(mockRealms), { status: 200 }),
-        );
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(mockRealms), { status: 200 }));
 
         await act(async () => {
             render(
@@ -86,9 +96,7 @@ describe("RealmsPage", () => {
     });
 
     it("should show empty state when no realms exist", async () => {
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify([]), { status: 200 }),
-        );
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
 
         await act(async () => {
             render(
@@ -130,9 +138,7 @@ describe("RealmsPage", () => {
     });
 
     it("should show Create Realm button", async () => {
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify(mockRealms), { status: 200 }),
-        );
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(mockRealms), { status: 200 }));
 
         await act(async () => {
             render(
@@ -146,9 +152,7 @@ describe("RealmsPage", () => {
     });
 
     it("should show auth method tags for each realm", async () => {
-        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-            new Response(JSON.stringify(mockRealms), { status: 200 }),
-        );
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(mockRealms), { status: 200 }));
 
         await act(async () => {
             render(

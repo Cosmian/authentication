@@ -92,14 +92,7 @@ const RealmsPage: React.FC = () => {
     };
 
     if (!isGlobalAdmin) {
-        return (
-            <Alert
-                type="error"
-                showIcon
-                message="Access Denied"
-                description="Realm management requires Super-Admin privileges."
-            />
-        );
+        return <Alert type="error" showIcon message="Access Denied" description="Realm management requires Super-Admin privileges." />;
     }
 
     if (loading) return <LoadingState message="Loading realms..." />;
@@ -132,12 +125,7 @@ const RealmsPage: React.FC = () => {
                                 <Card
                                     title={realm.id}
                                     actions={[
-                                        <Button
-                                            key="edit"
-                                            type="text"
-                                            icon={<EditOutlined />}
-                                            onClick={() => handleEdit(realm)}
-                                        >
+                                        <Button key="edit" type="text" icon={<EditOutlined />} onClick={() => handleEdit(realm)}>
                                             Edit
                                         </Button>,
                                         <Button
@@ -162,9 +150,7 @@ const RealmsPage: React.FC = () => {
                                             {methods.map((m) => (
                                                 <Tag key={m}>{m}</Tag>
                                             ))}
-                                            {methods.length === 0 && (
-                                                <Typography.Text type="secondary">No auth methods</Typography.Text>
-                                            )}
+                                            {methods.length === 0 && <Typography.Text type="secondary">No auth methods</Typography.Text>}
                                         </Space>
                                     </div>
                                 </Card>
@@ -188,12 +174,7 @@ const RealmsPage: React.FC = () => {
                 </Row>
             )}
 
-            <RealmFormDrawer
-                open={drawerOpen}
-                realm={editingRealm}
-                onClose={handleDrawerClose}
-                onSuccess={handleDrawerSuccess}
-            />
+            <RealmFormDrawer open={drawerOpen} realm={editingRealm} onClose={handleDrawerClose} onSuccess={handleDrawerSuccess} />
 
             <ConfirmDeleteModal
                 open={deleteTarget !== null}

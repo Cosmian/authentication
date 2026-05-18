@@ -86,7 +86,19 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }, [fetchRealms]);
 
     return (
-        <RealmContext.Provider value={{ realms, selectedRealm, setSelectedRealm, realmLabel, isSuperAdmin, isGlobalAdmin, loading, error, refreshRealms: fetchRealms }}>
+        <RealmContext.Provider
+            value={{
+                realms,
+                selectedRealm,
+                setSelectedRealm,
+                realmLabel,
+                isSuperAdmin,
+                isGlobalAdmin,
+                loading,
+                error,
+                refreshRealms: fetchRealms,
+            }}
+        >
             {children}
         </RealmContext.Provider>
     );

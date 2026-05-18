@@ -15,12 +15,17 @@ export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ op
     const watchedValues = Form.useWatch([], form);
     useEffect(() => {
         let cancelled = false;
-        form
-            .validateFields({ validateOnly: true })
-            .then(() => { if (!cancelled) setCanSubmit(true); })
-            .catch(() => { if (!cancelled) setCanSubmit(false); });
-        return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        form.validateFields({ validateOnly: true })
+            .then(() => {
+                if (!cancelled) setCanSubmit(true);
+            })
+            .catch(() => {
+                if (!cancelled) setCanSubmit(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [watchedValues]);
 
     const handleOk = async () => {
@@ -54,18 +59,10 @@ export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ op
             destroyOnHidden
         >
             <Form form={form} layout="vertical" autoComplete="off">
-                <Form.Item
-                    name="username"
-                    label="Username"
-                    rules={[{ required: true, message: "Username is required" }]}
-                >
+                <Form.Item name="username" label="Username" rules={[{ required: true, message: "Username is required" }]}>
                     <Input />
                 </Form.Item>
-                <Form.Item
-                    name="password"
-                    label="Password"
-                    rules={[{ required: true, message: "Password is required" }]}
-                >
+                <Form.Item name="password" label="Password" rules={[{ required: true, message: "Password is required" }]}>
                     <Input.Password />
                 </Form.Item>
                 <Form.Item

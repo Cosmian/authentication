@@ -1,14 +1,4 @@
-import {
-    Button,
-    Checkbox,
-    Divider,
-    Drawer,
-    Form,
-    Input,
-    InputNumber,
-    message,
-    Select,
-} from "antd";
+import { Button, Checkbox, Divider, Drawer, Form, Input, InputNumber, message, Select } from "antd";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Realm, RealmAuthParams, TotpAlgorithm } from "../../types/api";
 import { useAuth } from "../../contexts/AuthContext";
@@ -48,8 +38,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
     const watchedValues = Form.useWatch([], form);
     useEffect(() => {
         let cancelled = false;
-        form
-            .validateFields({ validateOnly: true })
+        form.validateFields({ validateOnly: true })
             .then(() => {
                 if (cancelled) return;
                 if (!isEdit) {
@@ -64,21 +53,25 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                     const formDirty =
                         cur.session_max_age_seconds !== orig.session_max_age_seconds ||
                         cur.session_max_stale_age_seconds !== orig.session_max_stale_age_seconds ||
-                        (upEnabled && (cur.allow_expired_passwords ?? false) !==
-                            (orig.auth_params.username_password_params?.allow_expired_passwords ?? false)) ||
-                        (jwtEnabled && cur.smallest_refresh_interval_seconds !==
-                            (orig.auth_params.jwt_params?.smallest_refresh_interval_seconds ?? null)) ||
-                        (totpEnabled && (cur.totp_algorithm ?? "SHA1") !==
-                            (orig.auth_params.totp_params?.algorithm ?? "SHA1")) ||
-                        (totpEnabled && (cur.totp_step ?? 30) !==
-                            (orig.auth_params.totp_params?.step ?? 30));
+                        (upEnabled &&
+                            (cur.allow_expired_passwords ?? false) !==
+                                (orig.auth_params.username_password_params?.allow_expired_passwords ?? false)) ||
+                        (jwtEnabled &&
+                            cur.smallest_refresh_interval_seconds !==
+                                (orig.auth_params.jwt_params?.smallest_refresh_interval_seconds ?? null)) ||
+                        (totpEnabled && (cur.totp_algorithm ?? "SHA1") !== (orig.auth_params.totp_params?.algorithm ?? "SHA1")) ||
+                        (totpEnabled && (cur.totp_step ?? 30) !== (orig.auth_params.totp_params?.step ?? 30));
                     setCanSubmit(formDirty || toggleDirty);
                 }
                 // else: edit mode, original not yet stored — stay disabled
             })
-            .catch(() => { if (!cancelled) setCanSubmit(false); });
-        return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+            .catch(() => {
+                if (!cancelled) setCanSubmit(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [watchedValues, isEdit, upEnabled, jwtEnabled, totpEnabled]);
 
     useEffect(() => {
@@ -169,13 +162,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             width={520}
             destroyOnClose
             footer={
-                <Button
-                    type="primary"
-                    block
-                    loading={submitting}
-                    disabled={!canSubmit}
-                    onClick={handleSubmit}
-                >
+                <Button type="primary" block loading={submitting} disabled={!canSubmit} onClick={handleSubmit}>
                     {isEdit ? "Save" : "Create"}
                 </Button>
             }

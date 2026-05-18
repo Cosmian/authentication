@@ -16,12 +16,17 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ open, us
     const watchedValues = Form.useWatch([], form);
     useEffect(() => {
         let cancelled = false;
-        form
-            .validateFields({ validateOnly: true })
-            .then(() => { if (!cancelled) setCanSubmit(true); })
-            .catch(() => { if (!cancelled) setCanSubmit(false); });
-        return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        form.validateFields({ validateOnly: true })
+            .then(() => {
+                if (!cancelled) setCanSubmit(true);
+            })
+            .catch(() => {
+                if (!cancelled) setCanSubmit(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [watchedValues]);
 
     const handleOk = async () => {
@@ -55,11 +60,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ open, us
             destroyOnHidden
         >
             <Form form={form} layout="vertical" autoComplete="off">
-                <Form.Item
-                    name="password"
-                    label="New Password"
-                    rules={[{ required: true, message: "Password is required" }]}
-                >
+                <Form.Item name="password" label="New Password" rules={[{ required: true, message: "Password is required" }]}>
                     <Input.Password />
                 </Form.Item>
                 <Form.Item

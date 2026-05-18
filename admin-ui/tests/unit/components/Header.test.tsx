@@ -20,8 +20,18 @@ vi.mock("../../../src/contexts/AuthContext", () => ({
 vi.mock("../../../src/contexts/RealmContext", () => ({
     useRealm: vi.fn(() => ({
         realms: [
-            { id: "_", auth_params: { username_password_params: null, jwt_params: null, totp_params: null }, session_max_age_seconds: 0, session_max_stale_age_seconds: 0 },
-            { id: "my-service", auth_params: { username_password_params: null, jwt_params: null, totp_params: null }, session_max_age_seconds: 3600, session_max_stale_age_seconds: 1800 },
+            {
+                id: "_",
+                auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
+                session_max_age_seconds: 0,
+                session_max_stale_age_seconds: 0,
+            },
+            {
+                id: "my-service",
+                auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
+                session_max_age_seconds: 3600,
+                session_max_stale_age_seconds: 1800,
+            },
         ],
         selectedRealm: "_",
         setSelectedRealm: vi.fn(),

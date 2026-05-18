@@ -75,9 +75,33 @@ Options: `secure: false`, `changeOrigin: true`
 ## Test Regression Policy
 
 Per component, always test:
+
 - ✅ Happy path (valid props/data)
 - ❌ Error state (API failure, network error)
 - 🈳 Empty state (no data)
+
+## Changelog & Formatting (mandatory after every change)
+
+### Changelog
+
+Every agent-driven change **must** be recorded in a new file under `CHANGELOG/` at the **workspace root** (not inside `admin-ui/`).
+
+- **File name**: `CHANGELOG/<short_slug>.md` — use a brief kebab-case description (e.g. `remove-admin-ui-mocks.md`).
+- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`, `## CI`, `## Docs`) with bullet points. See `CHANGELOG/ci_add_packaging.md` as a reference.
+- Each bullet must be a single complete sentence summarising **what** changed and **why**, sufficient for a human to understand without reading the diff.
+- Do not add a changelog entry for pure formatting/linting-only commits.
+
+### Formatting (frontend)
+
+After every edit to `.ts` / `.tsx` files in `admin-ui/`, run from the `admin-ui/` directory:
+
+```bash
+pnpm lint      # eslint --fix
+pnpm format    # prettier --write
+```
+
+Both commands auto-fix issues in place. Re-check for any remaining ESLint errors that cannot be auto-fixed and resolve them manually.
+
 - ⏳ Loading state (spinner/skeleton)
 - 🚫 Boundary (long strings, special chars, max items)
 - 🔄 State transition (e.g., realm switch triggers refresh)
@@ -95,9 +119,9 @@ Coverage target: statements ≥80%, branches ≥75%
 ## Backlog / Technical Debt
 
 - **Remove remaining `useMemo` calls** — the following files still use `useMemo` for API factory instances and derived lists; replace with plain variable declarations on the next pass:
-  - `src/pages/RealmsPage.tsx` — `const api = useMemo(...)`
-  - `src/pages/AdminsPage.tsx` — `const api = useMemo(...)`
-  - `src/pages/CredentialsPage.tsx` — `const api = useMemo(...)`
-  - `src/pages/SessionsPage.tsx` — `const api = useMemo(...)`
-  - `src/components/realms/RealmFormDrawer.tsx` — `const api = useMemo(...)`
-  - `src/components/layout/Sidebar.tsx` — `const filteredItems = useMemo(...)`
+    - `src/pages/RealmsPage.tsx` — `const api = useMemo(...)`
+    - `src/pages/AdminsPage.tsx` — `const api = useMemo(...)`
+    - `src/pages/CredentialsPage.tsx` — `const api = useMemo(...)`
+    - `src/pages/SessionsPage.tsx` — `const api = useMemo(...)`
+    - `src/components/realms/RealmFormDrawer.tsx` — `const api = useMemo(...)`
+    - `src/components/layout/Sidebar.tsx` — `const filteredItems = useMemo(...)`

@@ -9,13 +9,7 @@ export interface ConfirmDeleteModalProps {
     loading?: boolean;
 }
 
-export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
-    open,
-    itemName,
-    onConfirm,
-    onCancel,
-    loading = false,
-}) => {
+export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({ open, itemName, onConfirm, onCancel, loading = false }) => {
     const [typed, setTyped] = useState("");
 
     const handleAfterClose = (): void => setTyped("");
@@ -35,12 +29,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
             <p>
                 This action cannot be undone. Type <strong>{itemName}</strong> to confirm.
             </p>
-            <Input
-                placeholder={itemName}
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                autoFocus
-            />
+            <Input placeholder={itemName} value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
         </Modal>
     );
 };
