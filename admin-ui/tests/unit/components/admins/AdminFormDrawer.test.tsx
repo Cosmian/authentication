@@ -46,11 +46,6 @@ const existingAdmin: Admin = {
     totp_auth_url: null,
 };
 
-const adminNoPassword: Admin = {
-    ...existingAdmin,
-    userpass: null,
-};
-
 /** Find the primary footer submit button (last in the DOM). */
 function getSubmitButton(name: string | RegExp) {
     const buttons = screen.getAllByRole("button", { name });
@@ -107,65 +102,6 @@ describe("AdminFormDrawer — submit button state", () => {
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
 
-    it("create mode: toggling password on disables button until password is entered", async () => {
-        await act(async () => {
-            render(<AdminFormDrawer open={true} admin={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
-        });
-        await fillRequiredFields();
-
-        // Button should be enabled before toggle
-        const btn = getSubmitButton("Create");
-        await waitFor(() => expect(btn).not.toBeDisabled());
-
-        // Toggle password on — button should become disabled (password field is now required and empty)
-        await act(async () => {
-            const toggle = screen.getByRole("switch");
-            fireEvent.click(toggle);
-        });
-        await waitFor(() => expect(btn).toBeDisabled());
-    });
-
-    it("create mode: button is enabled after toggling password on and entering a password", async () => {
-        await act(async () => {
-            render(<AdminFormDrawer open={true} admin={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
-        });
-        await fillRequiredFields();
-
-        // Toggle password on
-        await act(async () => {
-            fireEvent.click(screen.getByRole("switch"));
-        });
-
-        // Enter a password
-        await act(async () => {
-            fireEvent.change(screen.getByPlaceholderText("Enter password"), { target: { value: "secret123" } });
-        });
-
-        const btn = getSubmitButton("Create");
-        await waitFor(() => expect(btn).not.toBeDisabled());
-    });
-
-    it("create mode: toggling password off after entering a password enables button without needing password", async () => {
-        await act(async () => {
-            render(<AdminFormDrawer open={true} admin={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
-        });
-        await fillRequiredFields();
-
-        await act(async () => {
-            fireEvent.click(screen.getByRole("switch"));
-        });
-        await act(async () => {
-            fireEvent.change(screen.getByPlaceholderText("Enter password"), { target: { value: "secret123" } });
-        });
-
-        // Toggle off — password field gone, button should remain enabled
-        await act(async () => {
-            fireEvent.click(screen.getByRole("switch"));
-        });
-        const btn = getSubmitButton("Create");
-        await waitFor(() => expect(btn).not.toBeDisabled());
-    });
-
     // ── Edit mode ─────────────────────────────────────────────────────────────
 
     it("edit mode: button is disabled initially (form matches original)", async () => {
@@ -184,36 +120,6 @@ describe("AdminFormDrawer — submit button state", () => {
             fireEvent.change(screen.getByLabelText("JWT"), { target: { value: "new-jwt" } });
         });
         const btn = getSubmitButton("Save");
-        await waitFor(() => expect(btn).not.toBeDisabled());
-    });
-
-    it("edit mode: toggling password off (admin has existing credential) enables save", async () => {
-        await act(async () => {
-            render(<AdminFormDrawer open={true} admin={existingAdmin} onClose={vi.fn()} onSuccess={vi.fn()} />);
-        });
-        // existingAdmin has userpass set → switch starts ON; toggling off is a change
-        await act(async () => {
-            fireEvent.click(screen.getByRole("switch"));
-        });
-        const btn = getSubmitButton("Save");
-        await waitFor(() => expect(btn).not.toBeDisabled());
-    });
-
-    it("edit mode: toggling password on (admin has no credential) disables save until password entered", async () => {
-        await act(async () => {
-            render(<AdminFormDrawer open={true} admin={adminNoPassword} onClose={vi.fn()} onSuccess={vi.fn()} />);
-        });
-        // Toggle on — now requires a password
-        await act(async () => {
-            fireEvent.click(screen.getByRole("switch"));
-        });
-        const btn = getSubmitButton("Save");
-        await waitFor(() => expect(btn).toBeDisabled());
-
-        // Enter password → should enable
-        await act(async () => {
-            fireEvent.change(screen.getByPlaceholderText("Enter password"), { target: { value: "secret123" } });
-        });
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
 });

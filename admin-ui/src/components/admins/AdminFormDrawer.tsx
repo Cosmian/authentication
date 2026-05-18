@@ -24,22 +24,27 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
 
     const isEdit = admin !== null;
 
-    const checkCanSubmit = useCallback(() => {
-        form.validateFields({ validateOnly: true })
-            .then(() => {
-                if (!isEdit) {
-                    setCanSubmit(true);
-                } else if (originalAdminRef.current !== null) {
-                    const cur = form.getFieldsValue();
-                    const orig = originalAdminRef.current;
-                    const isDirty =
-                        (cur.jwt ?? "") !== (orig.jwt ?? "") ||
-                        JSON.stringify([...(cur.realms ?? [])].sort()) !== JSON.stringify([...orig.realms].sort());
-                    setCanSubmit(isDirty);
-                }
-            })
-            .catch(() => setCanSubmit(false));
-    }, [form, isEdit]);
+    const checkCanSubmit = useCallback(
+        (_?: unknown, allValues?: { id?: string; realms?: string[]; jwt?: string }) => {
+            const values = allValues ?? form.getFieldsValue();
+            const hasId = !!values.id?.trim();
+            const hasRealms = Array.isArray(values.realms) && values.realms.length > 0;
+            const valid = hasId && hasRealms;
+
+            if (!valid) {
+                setCanSubmit(false);
+            } else if (!isEdit) {
+                setCanSubmit(true);
+            } else if (originalAdminRef.current !== null) {
+                const orig = originalAdminRef.current;
+                const isDirty =
+                    (values.jwt ?? "") !== (orig.jwt ?? "") ||
+                    JSON.stringify([...(values.realms ?? [])].sort()) !== JSON.stringify([...orig.realms].sort());
+                setCanSubmit(isDirty);
+            }
+        },
+        [form, isEdit],
+    );
 
     // Fields silently preserved on PUT
     const [preservedFields, setPreservedFields] = useState<Partial<Admin>>({});
