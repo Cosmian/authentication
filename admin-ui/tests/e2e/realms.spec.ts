@@ -40,6 +40,23 @@ async function mockRealmsApi(page: Page, initialRealms: Realm[]): Promise<void> 
         route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test-version" }) }),
     );
 
+    // Mock /whoami so ProtectedRoute sees an authenticated session.
+    await page.route("**/whoami**", (route) =>
+        route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+                iss: "https://localhost:8443",
+                sub: "admin",
+                aud: "_",
+                exp: 9999999999,
+                iat: 1000000000,
+                as_as: "username_password",
+                as_rid: "_",
+            }),
+        }),
+    );
+
     // LIST  GET /admins/realms
     await page.route("**/admins/realms", async (route) => {
         if (route.request().method() === "GET") {
@@ -105,7 +122,7 @@ async function mockRealmsApi(page: Page, initialRealms: Realm[]): Promise<void> 
 test.describe("Realms page", () => {
     test("should open the Create Realm drawer when clicking Create Realm", async ({ page }) => {
         await mockRealmsApi(page, [baseRealm]);
-        await page.goto("/realms");
+        await page.goto("/admin-ui/realms");
 
         // Wait for the table to finish loading.
         await expect(page.getByRole("button", { name: "Create Realm" })).toBeVisible();
@@ -118,7 +135,7 @@ test.describe("Realms page", () => {
 
     test("should create a new realm and display it in the table", async ({ page }) => {
         await mockRealmsApi(page, [baseRealm]);
-        await page.goto("/realms");
+        await page.goto("/admin-ui/realms");
 
         await expect(page.getByRole("button", { name: "Create Realm" })).toBeVisible();
         await page.getByRole("button", { name: "Create Realm" }).click();
@@ -136,16 +153,13 @@ test.describe("Realms page", () => {
 
     test("should open the Edit Realm drawer for an existing realm", async ({ page }) => {
         await mockRealmsApi(page, [baseRealm, serviceRealm]);
-        await page.goto("/realms");
+        await page.goto("/admin-ui/realms");
 
-        // Wait for the service realm row to appear.
+        // Wait for the service realm card to appear.
         await expect(page.getByText("my-service")).toBeVisible();
 
-        // Click the Edit button on the my-service row.
-        await page
-            .getByRole("row", { name: /my-service/ })
-            .getByRole("button", { name: "Edit" })
-            .click();
+        // Click the Edit button on the my-service card.
+        await page.locator(".ant-card").filter({ hasText: "my-service" }).getByRole("button", { name: "Edit" }).click();
 
         // The drawer heading should reflect the realm being edited.
         await expect(page.getByText("Edit Realm: my-service")).toBeVisible();
@@ -156,16 +170,13 @@ test.describe("Realms page", () => {
 
     test("should delete a realm after confirming in the delete modal", async ({ page }) => {
         await mockRealmsApi(page, [baseRealm, serviceRealm]);
-        await page.goto("/realms");
+        await page.goto("/admin-ui/realms");
 
-        // Wait for the service realm row to appear.
+        // Wait for the service realm card to appear.
         await expect(page.getByText("my-service")).toBeVisible();
 
-        // Click the Delete button.
-        await page
-            .getByRole("row", { name: /my-service/ })
-            .getByRole("button", { name: "Delete" })
-            .click();
+        // Click the Delete button on the my-service card.
+        await page.locator(".ant-card").filter({ hasText: "my-service" }).getByRole("button", { name: "Delete" }).click();
 
         // Confirm delete modal should appear.
         await expect(page.getByText(/Delete "my-service"/)).toBeVisible();
@@ -174,7 +185,7 @@ test.describe("Realms page", () => {
         await page.getByPlaceholder("my-service").fill("my-service");
         await page.getByRole("button", { name: "Delete" }).last().click();
 
-        // The realm must no longer appear in the table.
+        // The realm must no longer appear in the cards.
         await expect(page.getByText("my-service")).not.toBeVisible();
     });
 });
