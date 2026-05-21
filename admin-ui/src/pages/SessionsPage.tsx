@@ -83,7 +83,6 @@ const SessionsPage: React.FC = () => {
                 itemName={realmLabel(selectedRealm)}
                 onConfirm={handleRevokeAll}
                 onCancel={() => setRevokeModalOpen(false)}
-                loading={false}
             />
         </div>
     );

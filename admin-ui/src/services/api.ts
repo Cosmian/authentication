@@ -48,16 +48,7 @@ export async function apiPut<T>(baseUrl: string, path: string, body: unknown): P
     return handleResponse<T>(response);
 }
 
-export async function apiDelete(baseUrl: string, path: string): Promise<void> {
-    const response = await fetch(`${baseUrl}${path}`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-    });
-    await handleResponse<void>(response);
-}
-
-export async function apiDeleteJson<T>(baseUrl: string, path: string): Promise<T> {
+export async function apiDelete<T = void>(baseUrl: string, path: string): Promise<T> {
     const response = await fetch(`${baseUrl}${path}`, {
         method: "DELETE",
         credentials: "include",
