@@ -9,7 +9,7 @@ repository.workspace = true
 description = "API Server"
 
 [features]
-default = ["openssl", "database"]
+default = ["openssl", "database", "admin-ui"]
 openssl = ["actix-web/openssl", "dep:openssl"]
 rustls = ["actix-web/rustls-0_23", "dep:rustls"]
 # no_jwt_validation: only useful for tests, do not enable in production
