@@ -23,6 +23,11 @@ export type Branding = {
         light?: ThemeConfig["token"];
         dark?: ThemeConfig["token"];
     };
+
+    superAdminBanner?: {
+        light?: { backgroundColor?: string; borderColor?: string; color?: string };
+        dark?: { backgroundColor?: string; borderColor?: string; color?: string };
+    };
 };
 
 const DEFAULT_BRANDING: Branding = {
@@ -51,6 +56,11 @@ const DEFAULT_BRANDING: Branding = {
             colorBgBase: "#2a2d30",
         },
     },
+
+    superAdminBanner: {
+        light: { backgroundColor: "#fff1f0", borderColor: "#ff675f", color: "#a8071a" },
+        dark: { backgroundColor: "#3b0a0a", borderColor: "#ff4d4f", color: "#ffb3b0" },
+    },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -69,6 +79,16 @@ function mergeBranding(defaults: Branding, overrides: Partial<Branding>): Brandi
             dark: {
                 ...(defaults.tokens?.dark ?? {}),
                 ...(overrides.tokens?.dark ?? {}),
+            },
+        },
+        superAdminBanner: {
+            light: {
+                ...(defaults.superAdminBanner?.light ?? {}),
+                ...(overrides.superAdminBanner?.light ?? {}),
+            },
+            dark: {
+                ...(defaults.superAdminBanner?.dark ?? {}),
+                ...(overrides.superAdminBanner?.dark ?? {}),
             },
         },
     };

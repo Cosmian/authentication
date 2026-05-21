@@ -4,14 +4,14 @@ import React, { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import type { LoginResult } from "../contexts/AuthContext";
-import { useBranding } from "../contexts/useBranding";
+import { useTheme } from "../contexts/ThemeProvider";
 
 const { Title } = Typography;
 
 const LoginPage: React.FC = () => {
     const { isAuthenticated, loading, login } = useAuth();
     const location = useLocation();
-    const branding = useBranding();
+    const { branding } = useTheme();
 
     const [submitting, setSubmitting] = useState(false);
     const [totpStep, setTotpStep] = useState(false);

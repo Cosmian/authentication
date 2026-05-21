@@ -19,5 +19,9 @@
             "colorText": "#e4dddd",
             "colorBgBase": "#2a2d30"
         }
+    },
+    "superAdminBanner": {
+        "light": { "backgroundColor": "#fff1f0", "borderColor": "#ff675f", "color": "#a8071a" },
+        "dark": { "backgroundColor": "#3b0a0a", "borderColor": "#ff4d4f", "color": "#ffb3b0" }
     }
 }

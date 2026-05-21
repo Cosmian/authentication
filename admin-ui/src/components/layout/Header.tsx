@@ -3,20 +3,15 @@ import { Button, Select, Switch, Typography } from "antd";
 import React from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRealm } from "../../contexts/RealmContext";
-import { useBranding } from "../../contexts/useBranding";
+import { useTheme } from "../../contexts/ThemeProvider";
 import { SUPER_ADMIN_REALM_ID, SUPER_ADMIN_REALM_LABEL } from "../../constants/apiPaths";
 
 const { Text } = Typography;
 
-interface HeaderProps {
-    isDarkMode: boolean;
-    setIsDarkMode: (value: boolean) => void;
-}
-
-export const Header: React.FC<HeaderProps> = ({ isDarkMode, setIsDarkMode }) => {
+export const Header: React.FC = () => {
     const { username, logout } = useAuth();
     const { realms, selectedRealm, setSelectedRealm, loading } = useRealm();
-    const branding = useBranding();
+    const { isDarkMode, setIsDarkMode, branding } = useTheme();
     const logoUrl = isDarkMode ? branding.logoDarkUrl : branding.logoLightUrl;
 
     return (

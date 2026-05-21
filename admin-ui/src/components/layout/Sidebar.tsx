@@ -3,20 +3,19 @@ import React, { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { menuItems } from "../../menuItems";
 import { useRealm } from "../../contexts/RealmContext";
-import { useBranding } from "../../contexts/useBranding";
+import { useTheme } from "../../contexts/ThemeProvider";
 import { SUPER_ADMIN_REALM_ID } from "../../constants/apiPaths";
 
 export interface SidebarProps {
     collapsed: boolean;
     onCollapse: (collapsed: boolean) => void;
-    isDarkMode: boolean;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse, isDarkMode }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { isGlobalAdmin, realms, selectedRealm } = useRealm();
-    const branding = useBranding();
+    const { isDarkMode, branding } = useTheme();
 
     const filteredItems = useMemo(() => {
         // The user administers the selected realm if they are a global super-admin

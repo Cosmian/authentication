@@ -1,9 +1,8 @@
-import { ConfigProvider, theme } from "antd";
-import { useEffect, useState } from "react";
+import { ConfigProvider } from "antd";
 import { Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { RealmProvider } from "./contexts/RealmContext";
-import { useBranding } from "./contexts/useBranding";
+import { useTheme } from "./contexts/ThemeProvider";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ProtectedRoute } from "./components/common/ProtectedRoute";
 import AdminsPage from "./pages/AdminsPage";
@@ -14,32 +13,12 @@ import NotFoundPage from "./pages/NotFoundPage";
 import RealmsPage from "./pages/RealmsPage";
 import SessionsPage from "./pages/SessionsPage";
 import TotpPage from "./pages/TotpPage";
-import { darkTheme, lightTheme } from "./theme";
-
-const LS_DARKMODE_KEY = "admin-ui-darkMode";
 
 const App: React.FC = () => {
-    const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem(LS_DARKMODE_KEY) === "true");
-    const branding = useBranding();
-
-    useEffect(() => {
-        localStorage.setItem(LS_DARKMODE_KEY, String(isDarkMode));
-    }, [isDarkMode]);
-
-    const activeTheme = isDarkMode ? darkTheme : lightTheme;
-    const brandingTokens = isDarkMode ? branding.tokens?.dark : branding.tokens?.light;
+    const { antTheme } = useTheme();
 
     return (
-        <ConfigProvider
-            theme={{
-                ...theme.defaultConfig,
-                ...activeTheme,
-                token: {
-                    ...activeTheme.token,
-                    ...brandingTokens,
-                },
-            }}
-        >
+        <ConfigProvider theme={antTheme}>
             <AuthProvider>
                 <Routes>
                     <Route path="login" element={<LoginPage />} />
@@ -47,7 +26,7 @@ const App: React.FC = () => {
                         element={
                             <ProtectedRoute>
                                 <RealmProvider>
-                                    <MainLayout isDarkMode={isDarkMode} setIsDarkMode={setIsDarkMode} />
+                                    <MainLayout />
                                 </RealmProvider>
                             </ProtectedRoute>
                         }

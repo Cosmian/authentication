@@ -4,14 +4,20 @@ import { Header } from "../../../src/components/layout/Header";
 
 import { useRealm } from "../../../src/contexts/RealmContext";
 
-vi.mock("../../../src/contexts/useBranding", () => ({
-    useBranding: vi.fn(() => ({
-        title: "Auth Admin",
-        logoAlt: "Auth Admin",
-        logoLightUrl: "",
-        logoDarkUrl: "",
-        loginTitle: "Auth Admin",
-        backgroundImageUrl: "",
+vi.mock("../../../src/contexts/ThemeProvider", () => ({
+    useTheme: vi.fn(() => ({
+        isDarkMode: false,
+        setIsDarkMode: vi.fn(),
+        branding: {
+            title: "Auth Admin",
+            logoAlt: "Auth Admin",
+            logoLightUrl: "",
+            logoDarkUrl: "",
+            loginTitle: "Auth Admin",
+            backgroundImageUrl: "",
+        },
+        antTheme: {},
+        superAdminBannerStyle: undefined,
     })),
 }));
 
@@ -56,17 +62,17 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
 
 describe("Header", () => {
     it("should render the application title", () => {
-        render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
+        render(<Header />);
         expect(screen.getByText("Auth Admin")).toBeInTheDocument();
     });
 
     it("should render the realm selector with Super-Admin as default", () => {
-        render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
+        render(<Header />);
         expect(screen.getByText("Super-Admin")).toBeInTheDocument();
     });
 
     it("should render the dark mode toggle", () => {
-        render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
+        render(<Header />);
         const toggle = screen.getByRole("switch");
         expect(toggle).toBeInTheDocument();
         expect(toggle).toHaveClass("w-20");
@@ -84,7 +90,7 @@ describe("Header", () => {
             error: null,
             refreshRealms: vi.fn(),
         });
-        const { container } = render(<Header isDarkMode={false} setIsDarkMode={() => {}} />);
+        const { container } = render(<Header />);
         // Ant Design Select sets aria-busy="true" on the combobox when loading
         const combobox = container.querySelector(".ant-select-selector");
         expect(combobox).not.toBeNull();

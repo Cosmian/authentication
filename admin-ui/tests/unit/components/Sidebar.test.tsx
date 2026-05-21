@@ -22,14 +22,20 @@ const mockRealm = {
     error: null,
 };
 
-vi.mock("../../../src/contexts/useBranding", () => ({
-    useBranding: vi.fn(() => ({
-        title: "Auth Admin",
-        logoAlt: "Auth Admin",
-        logoLightUrl: "",
-        logoDarkUrl: "",
-        loginTitle: "Auth Admin",
-        backgroundImageUrl: "",
+vi.mock("../../../src/contexts/ThemeProvider", () => ({
+    useTheme: vi.fn(() => ({
+        isDarkMode: false,
+        setIsDarkMode: vi.fn(),
+        branding: {
+            title: "Auth Admin",
+            logoAlt: "Auth Admin",
+            logoLightUrl: "",
+            logoDarkUrl: "",
+            loginTitle: "Auth Admin",
+            backgroundImageUrl: "",
+        },
+        antTheme: {},
+        superAdminBannerStyle: undefined,
     })),
 }));
 
@@ -40,7 +46,7 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
 function renderSidebar(path = "/") {
     return render(
         <MemoryRouter initialEntries={[path]}>
-            <Sidebar collapsed={false} onCollapse={() => {}} isDarkMode={false} />
+            <Sidebar collapsed={false} onCollapse={() => {}} />
         </MemoryRouter>,
     );
 }
@@ -68,7 +74,7 @@ describe("Sidebar", () => {
         const onCollapse = vi.fn();
         const { container } = render(
             <MemoryRouter initialEntries={["/"]}>
-                <Sidebar collapsed={false} onCollapse={onCollapse} isDarkMode={false} />
+                <Sidebar collapsed={false} onCollapse={onCollapse} />
             </MemoryRouter>,
         );
 
@@ -81,7 +87,7 @@ describe("Sidebar", () => {
     it("should render in collapsed state without labels", () => {
         render(
             <MemoryRouter initialEntries={["/"]}>
-                <Sidebar collapsed={true} onCollapse={() => {}} isDarkMode={false} />
+                <Sidebar collapsed={true} onCollapse={() => {}} />
             </MemoryRouter>,
         );
 

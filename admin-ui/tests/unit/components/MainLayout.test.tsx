@@ -3,14 +3,20 @@ import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { MainLayout } from "../../../src/components/layout/MainLayout";
 
-vi.mock("../../../src/contexts/useBranding", () => ({
-    useBranding: vi.fn(() => ({
-        title: "Auth Admin",
-        logoAlt: "Auth Admin",
-        logoLightUrl: "",
-        logoDarkUrl: "",
-        loginTitle: "Auth Admin",
-        backgroundImageUrl: "",
+vi.mock("../../../src/contexts/ThemeProvider", () => ({
+    useTheme: vi.fn(() => ({
+        isDarkMode: false,
+        setIsDarkMode: vi.fn(),
+        branding: {
+            title: "Auth Admin",
+            logoAlt: "Auth Admin",
+            logoLightUrl: "",
+            logoDarkUrl: "",
+            loginTitle: "Auth Admin",
+            backgroundImageUrl: "",
+        },
+        antTheme: {},
+        superAdminBannerStyle: undefined,
     })),
 }));
 
@@ -54,7 +60,7 @@ describe("MainLayout", () => {
         await act(async () => {
             render(
                 <MemoryRouter initialEntries={["/"]}>
-                    <MainLayout isDarkMode={false} setIsDarkMode={() => {}} />
+                    <MainLayout />
                 </MemoryRouter>,
             );
         });
@@ -68,7 +74,7 @@ describe("MainLayout", () => {
         await act(async () => {
             render(
                 <MemoryRouter initialEntries={["/"]}>
-                    <MainLayout isDarkMode={false} setIsDarkMode={() => {}} />
+                    <MainLayout />
                 </MemoryRouter>,
             );
         });

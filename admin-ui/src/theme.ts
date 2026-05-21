@@ -1,10 +1,6 @@
 import { theme } from "antd";
 
 export const lightTheme = {
-    token: {
-        colorPrimary: "#e34319",
-        colorText: "#292f52",
-    },
     components: {
         Layout: {
             headerBg: "#ffffff",
@@ -28,9 +24,6 @@ export const lightTheme = {
 export const darkTheme = {
     algorithm: theme.darkAlgorithm,
     token: {
-        colorPrimary: "#9e6eff",
-        colorText: "#e4dddd",
-        colorBgBase: "#2a2d30",
         colorTextPlaceholder: "#b9b9b9",
         colorError: "#e23030",
         colorBorder: "#4d4b4b",
