@@ -1,4 +1,4 @@
-import { Button, Drawer, Form, Input, message, Select } from "antd";
+import { Alert, Button, Drawer, Form, Input, message, Select } from "antd";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { Admin } from "../../types/api";
 import { SUPER_ADMIN_REALM_ID } from "../../constants/apiPaths";
@@ -19,6 +19,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
     const { realms } = useRealm();
     const [loading, setLoading] = useState(false);
     const [canSubmit, setCanSubmit] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
     // Store original admin for dirty detection — ref so no extra re-render cycle
     const originalAdminRef = useRef<Admin | null>(null);
 
@@ -26,6 +27,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
 
     const checkCanSubmit = useCallback(
         (_?: unknown, allValues?: { id?: string; realms?: string[]; jwt?: string }) => {
+            setSubmitError(null);
             const values = allValues ?? form.getFieldsValue();
             const hasId = !!values.id?.trim();
             const hasRealms = Array.isArray(values.realms) && values.realms.length > 0;
@@ -57,6 +59,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
     useEffect(() => {
         if (open && admin) {
             originalAdminRef.current = admin;
+            setSubmitError(null);
             const values = {
                 id: admin.id,
                 realms: admin.realms,
@@ -73,6 +76,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             });
         } else if (open) {
             originalAdminRef.current = null;
+            setSubmitError(null);
             form.resetFields();
             setPreservedFields({});
         }
@@ -106,8 +110,11 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                 message.success(`Admin "${adminId}" created`);
             }
             onSuccess();
-        } catch {
-            // validation errors shown inline
+        } catch (err) {
+            if (err instanceof Error) {
+                setSubmitError(err.message);
+            }
+            // else: form validation errors — shown inline
         } finally {
             setLoading(false);
         }
@@ -126,18 +133,25 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             }
             destroyOnClose
         >
-            <Form form={form} layout="vertical" autoComplete="off" onValuesChange={checkCanSubmit}>
-                <Form.Item name="id" label="Admin ID" rules={[{ required: true, message: "Admin ID is required" }]}>
-                    <Input disabled={isEdit} placeholder="e.g. alice" />
-                </Form.Item>
-                <Form.Item name="realms" label="Realms" rules={[{ required: true, message: "At least one realm is required" }]}>
-                    <Select mode="multiple" options={realmOptions} placeholder="Select realms" />
-                </Form.Item>
+            <div className="flex flex-col h-full justify-between">
+                <Form form={form} layout="vertical" autoComplete="off" onValuesChange={checkCanSubmit}>
+                    <Form.Item name="id" label="Admin ID" rules={[{ required: true, message: "Admin ID is required" }]}>
+                        <Input disabled={isEdit} placeholder="e.g. alice" />
+                    </Form.Item>
+                    <Form.Item name="realms" label="Realms" rules={[{ required: true, message: "At least one realm is required" }]}>
+                        <Select mode="multiple" options={realmOptions} placeholder="Select realms" />
+                    </Form.Item>
 
-                <Form.Item name="jwt" label="JWT">
-                    <Input placeholder="JWT identifier" />
-                </Form.Item>
-            </Form>
+                    <Form.Item name="jwt" label="JWT">
+                        <Input placeholder="JWT identifier" />
+                    </Form.Item>
+                    {submitError && (
+                        <Form.Item>
+                            <Alert type="error" message={submitError} showIcon />
+                        </Form.Item>
+                    )}
+                </Form>
+            </div>
         </Drawer>
     );
 };

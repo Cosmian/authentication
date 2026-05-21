@@ -209,6 +209,7 @@ interface RealmAdminCreateFormProps {
 const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRealm, realmLabel, api }) => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     const handleSubmit = async () => {
         try {
@@ -229,8 +230,12 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
             await api.create(admin);
             message.success(`Admin "${values.id}" created for realm "${selectedRealm}"`);
             form.resetFields();
-        } catch {
-            message.error("Failed to create admin");
+            setSubmitError(null);
+        } catch (err) {
+            if (err instanceof Error) {
+                setSubmitError(err.message);
+            }
+            // else: form validation errors — shown inline
         } finally {
             setLoading(false);
         }
@@ -247,7 +252,7 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
             />
             <PageHeader title="Create a new Admin" description={`Create admin for realm: ${realmLabel(selectedRealm)}`} />
             <div style={{ maxWidth: 480 }}>
-                <Form form={form} layout="vertical" autoComplete="off" onFinish={handleSubmit}>
+                <Form form={form} layout="vertical" autoComplete="off" onFinish={handleSubmit} onValuesChange={() => setSubmitError(null)}>
                     <Form.Item name="id" label="Admin ID" rules={[{ required: true, message: "Admin ID is required" }]}>
                         <Input placeholder="e.g. alice" />
                     </Form.Item>
@@ -257,6 +262,11 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
                     <Form.Item name="jwt" label="JWT">
                         <Input placeholder="JWT identifier" />
                     </Form.Item>
+                    {submitError && (
+                        <Form.Item>
+                            <Alert type="error" message={submitError} showIcon />
+                        </Form.Item>
+                    )}
                     <Form.Item>
                         <Button type="primary" htmlType="submit" loading={loading}>
                             Create Admin

@@ -1,4 +1,4 @@
-import { Form, Input, Modal } from "antd";
+import { Alert, Form, Input, Modal } from "antd";
 import React, { useEffect, useState } from "react";
 
 interface ResetPasswordModalProps {
@@ -12,9 +12,11 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ open, us
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [canSubmit, setCanSubmit] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     const watchedValues = Form.useWatch([], form);
     useEffect(() => {
+        setSubmitError(null);
         let cancelled = false;
         form.validateFields({ validateOnly: true })
             .then(() => {
@@ -36,14 +38,18 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ open, us
             const passwordBytes = Array.from(new TextEncoder().encode(values.password));
             await onSubmit(passwordBytes);
             form.resetFields();
-        } catch {
-            // validation errors are shown inline
+        } catch (err) {
+            if (err instanceof Error) {
+                setSubmitError(err.message);
+            }
+            // else: form validation errors — shown inline
         } finally {
             setLoading(false);
         }
     };
 
     const handleCancel = () => {
+        setSubmitError(null);
         form.resetFields();
         onCancel();
     };
@@ -81,6 +87,12 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ open, us
                 >
                     <Input.Password />
                 </Form.Item>
+
+                {submitError && (
+                    <Form.Item>
+                        <Alert type="error" message={submitError} showIcon />
+                    </Form.Item>
+                )}
             </Form>
         </Modal>
     );

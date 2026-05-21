@@ -1,4 +1,4 @@
-import { Checkbox, Form, Input, Modal } from "antd";
+import { Alert, Checkbox, Form, Input, Modal } from "antd";
 import React, { useEffect, useState } from "react";
 
 interface CreateCredentialModalProps {
@@ -11,9 +11,11 @@ export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ op
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [canSubmit, setCanSubmit] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
 
     const watchedValues = Form.useWatch([], form);
     useEffect(() => {
+        setSubmitError(null);
         let cancelled = false;
         form.validateFields({ validateOnly: true })
             .then(() => {
@@ -35,14 +37,18 @@ export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ op
             const passwordBytes = Array.from(new TextEncoder().encode(values.password));
             await onSubmit(values.username, passwordBytes, values.change_password ?? false);
             form.resetFields();
-        } catch {
-            // validation errors are shown inline
+        } catch (err) {
+            if (err instanceof Error) {
+                setSubmitError(err.message);
+            }
+            // else: form validation errors — shown inline
         } finally {
             setLoading(false);
         }
     };
 
     const handleCancel = () => {
+        setSubmitError(null);
         form.resetFields();
         onCancel();
     };
@@ -86,6 +92,12 @@ export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ op
                 <Form.Item name="change_password" valuePropName="checked">
                     <Checkbox>Require password change on next login</Checkbox>
                 </Form.Item>
+
+                {submitError && (
+                    <Form.Item>
+                        <Alert type="error" message={submitError} showIcon />
+                    </Form.Item>
+                )}
             </Form>
         </Modal>
     );

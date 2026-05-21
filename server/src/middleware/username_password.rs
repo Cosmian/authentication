@@ -182,10 +182,6 @@ where
                             Ok(req
                                 .into_response(
                                     HttpResponse::Unauthorized()
-                                        .insert_header((
-                                            "WWW-Authenticate",
-                                            "Basic realm=\"Authentication Required\"",
-                                        ))
                                         .body("Authentication service error"),
                                 )
                                 .map_into_right_body())

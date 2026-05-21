@@ -3,3 +3,4 @@ result*
 .cargo_check
 admin-ui/node_modules/
 admin-ui/dist/
+.github/agents/
