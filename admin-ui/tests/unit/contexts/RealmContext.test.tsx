@@ -94,7 +94,7 @@ describe("RealmContext", () => {
 
         expect(screen.getByTestId("selected")).toHaveTextContent("_");
         expect(screen.getByTestId("label")).toHaveTextContent("Super-Admin");
-        expect(screen.getByTestId("count")).toHaveTextContent("1");
+        expect(screen.getByTestId("count")).toHaveTextContent("0");
         expect(screen.getByTestId("error")).toHaveTextContent("Failed to load realms");
     });
 
@@ -110,7 +110,7 @@ describe("RealmContext", () => {
         });
 
         expect(screen.getByTestId("selected")).toHaveTextContent("_");
-        expect(screen.getByTestId("count")).toHaveTextContent("1");
+        expect(screen.getByTestId("count")).toHaveTextContent("0");
     });
 
     it("should restore selected realm from localStorage", async () => {

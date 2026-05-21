@@ -3,6 +3,17 @@ import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { MainLayout } from "../../../src/components/layout/MainLayout";
 
+vi.mock("../../../src/contexts/useBranding", () => ({
+    useBranding: vi.fn(() => ({
+        title: "Auth Admin",
+        logoAlt: "Auth Admin",
+        logoLightUrl: "",
+        logoDarkUrl: "",
+        loginTitle: "Auth Admin",
+        backgroundImageUrl: "",
+    })),
+}));
+
 vi.mock("../../../src/contexts/AuthContext", () => ({
     useAuth: () => ({
         isAuthenticated: true,

@@ -22,6 +22,17 @@ const mockRealm = {
     error: null,
 };
 
+vi.mock("../../../src/contexts/useBranding", () => ({
+    useBranding: vi.fn(() => ({
+        title: "Auth Admin",
+        logoAlt: "Auth Admin",
+        logoLightUrl: "",
+        logoDarkUrl: "",
+        loginTitle: "Auth Admin",
+        backgroundImageUrl: "",
+    })),
+}));
+
 vi.mock("../../../src/contexts/RealmContext", () => ({
     useRealm: () => mockRealm,
 }));

@@ -4,6 +4,17 @@ import { Header } from "../../../src/components/layout/Header";
 
 import { useRealm } from "../../../src/contexts/RealmContext";
 
+vi.mock("../../../src/contexts/useBranding", () => ({
+    useBranding: vi.fn(() => ({
+        title: "Auth Admin",
+        logoAlt: "Auth Admin",
+        logoLightUrl: "",
+        logoDarkUrl: "",
+        loginTitle: "Auth Admin",
+        backgroundImageUrl: "",
+    })),
+}));
+
 vi.mock("../../../src/contexts/AuthContext", () => ({
     useAuth: vi.fn(() => ({
         isAuthenticated: true,
