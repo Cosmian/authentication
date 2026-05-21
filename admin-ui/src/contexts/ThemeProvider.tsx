@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { theme as antdTheme } from "antd";
 import type { ThemeConfig } from "antd";
@@ -43,7 +44,7 @@ export function ThemeProvider({ branding, children }: { branding: Branding; chil
         ...antdTheme.defaultConfig,
         ...activeTheme,
         token: {
-            ...activeTheme.token,
+            ...(activeTheme as ThemeConfig).token,
             ...brandingTokens,
         },
     };

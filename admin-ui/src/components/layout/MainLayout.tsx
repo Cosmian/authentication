@@ -16,7 +16,7 @@ export const MainLayout: React.FC = () => {
     const [serverVersion, setServerVersion] = useState("");
     const { serverUrl } = useAuth();
     const { isSuperAdmin } = useRealm();
-    const { isDarkMode, setIsDarkMode, superAdminBannerStyle } = useTheme();
+    const { isDarkMode, superAdminBannerStyle } = useTheme();
 
     const fetchVersion = useCallback(async () => {
         try {
