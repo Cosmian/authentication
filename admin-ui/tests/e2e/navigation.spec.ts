@@ -27,9 +27,7 @@ test.describe("Navigation", () => {
         await page.route("**/admins/realms", (route) =>
             route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockRealms) }),
         );
-        await page.route("**/admins", (route) =>
-            route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
-        );
+        await page.route("**/admins", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }));
         await page.route("**/public/version", (route) =>
             route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test" }) }),
         );
