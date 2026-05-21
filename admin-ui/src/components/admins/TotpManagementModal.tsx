@@ -1,5 +1,6 @@
 import { Alert, Button, Input, Modal, Space, Typography } from "antd";
-import React, { useState } from "react";
+import QRCode from "qrcode";
+import React, { useEffect, useRef, useState } from "react";
 import type { TotpGenerateResponse } from "../../types/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { createTotpApi } from "../../services/totpApi";
@@ -22,6 +23,15 @@ export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({ open, 
     const [error, setError] = useState<string | null>(null);
 
     const api = createTotpApi(serverUrl);
+    const qrCanvasRef = useRef<HTMLCanvasElement>(null);
+
+    useEffect(() => {
+        if (totpData?.otpauth_url && qrCanvasRef.current) {
+            QRCode.toCanvas(qrCanvasRef.current, totpData.otpauth_url, { width: 200 }).catch(() => {
+                setError("Failed to render QR code");
+            });
+        }
+    }, [totpData]);
 
     const handleGenerate = async () => {
         setLoading(true);
@@ -115,12 +125,7 @@ export const TotpManagementModal: React.FC<TotpManagementModalProps> = ({ open, 
                     {totpData && (
                         <Space direction="vertical" className="w-full mb-4">
                             <div className="p-4 bg-white rounded text-center">
-                                <img
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(totpData.otpauth_url)}`}
-                                    alt="TOTP QR Code"
-                                    width={200}
-                                    height={200}
-                                />
+                                <canvas ref={qrCanvasRef} aria-label="TOTP QR Code" />
                             </div>
                             <Typography.Text copyable>{totpData.secret_base32}</Typography.Text>
                         </Space>
