@@ -20,27 +20,31 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
 }) => {
     const [credentials, setCredentials] = useState<UserPass[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [resetTarget, setResetTarget] = useState<UserPass | null>(null);
 
     useEffect(() => {
         setLoading(true);
+        setError(null);
         const api = createCredentialsApi(serverUrl);
         api.list(realmId)
             .then(setCredentials)
-            .catch(() => {
-                /* shown inline below */
-            })
+            .catch(() => setError("Failed to load credentials"))
             .finally(() => setLoading(false));
     }, [realmId, serverUrl, refreshKey]);
 
     const handleResetPassword = async (password: number[]) => {
         if (!resetTarget) return;
-        const api = createCredentialsApi(serverUrl);
-        await api.update(realmId, resetTarget.username, { ...resetTarget, password });
-        message.success(`Password reset for "${resetTarget.username}"`);
-        setResetTarget(null);
-        const data = await api.list(realmId);
-        setCredentials(data);
+        try {
+            const api = createCredentialsApi(serverUrl);
+            await api.update(realmId, resetTarget.username, { ...resetTarget, password });
+            message.success(`Password reset for "${resetTarget.username}"`);
+            setResetTarget(null);
+            const data = await api.list(realmId);
+            setCredentials(data);
+        } catch {
+            message.error(`Failed to reset password for "${resetTarget.username}"`);
+        }
     };
 
     const handleDelete = async (username: string) => {
@@ -56,6 +60,7 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
     };
 
     if (loading) return <LoadingState message="Loading…" />;
+    if (error) return <Alert type="error" showIcon message={error} />;
     if (credentials.length === 0) return <Typography.Text type="secondary">No credentials in this realm.</Typography.Text>;
 
     const columns = [
@@ -149,10 +154,14 @@ const CredentialsPage: React.FC = () => {
             password,
             change_password: changePassword,
         };
-        await api.create(selectedRealm, userpass);
-        message.success(`Credential "${username}" created`);
-        setCreateOpen(false);
-        fetchCredentials();
+        try {
+            await api.create(selectedRealm, userpass);
+            message.success(`Credential "${username}" created`);
+            setCreateOpen(false);
+            fetchCredentials();
+        } catch {
+            message.error(`Failed to create credential "${username}"`);
+        }
     };
 
     const handleResetPassword = async (password: number[]) => {

@@ -10,14 +10,7 @@ import { LoadingState } from "../components/common/LoadingState";
 import { EmptyState } from "../components/common/EmptyState";
 import { ConfirmDeleteModal } from "../components/common/ConfirmDeleteModal";
 import { RealmFormDrawer } from "../components/realms/RealmFormDrawer";
-
-/** Format seconds into a human-readable duration */
-function formatDuration(seconds: number): string {
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-}
+import { formatDuration } from "../utils/formatDuration";
 
 const RealmsPage: React.FC = () => {
     const { serverUrl } = useAuth();
