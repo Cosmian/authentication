@@ -19,11 +19,9 @@ export default defineConfig({
             use: { ...devices["Desktop Chrome"] },
         },
     ],
-    ...(!process.env.CI && {
-        webServer: {
-            command: "pnpm preview",
-            url: "http://localhost:4173/admin-ui/",
-            reuseExistingServer: true,
-        },
-    }),
+    webServer: {
+        command: "pnpm preview",
+        url: "http://localhost:4173/admin-ui/",
+        reuseExistingServer: !process.env.CI,
+    },
 });
