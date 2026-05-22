@@ -30,6 +30,7 @@ A fully commented sample configuration is provided in `auth_server.toml` at the 
   - [Session Store](#session-store)
   - [Stale Session Collector](#stale-session-collector)
   - [Forward Proxy](#forward-proxy)
+  - [API Documentation (Swagger UI)](#api-documentation-swagger-ui)
   - [Bootstrap Environment Variables](#bootstrap-environment-variables)
   - [Complete Example — Production (PostgreSQL + Redis)](#complete-example--production-postgresql--redis)
   - [Complete Example — Development (SQLite in-memory)](#complete-example--development-sqlite-in-memory)
@@ -273,6 +274,29 @@ exclusion_list = ["localhost", "127.0.0.1", "10.0.0.0/8", "192.168.0.0/16"]
 
 ---
 
+## API Documentation (Swagger UI)
+
+Two unauthenticated public routes expose the API schema. Both are served under `/public` and require no credentials.
+
+| Route | Description |
+|-------|-------------|
+| `GET /public/swagger-ui` | Interactive Swagger UI (assets loaded from unpkg CDN) |
+| `GET /public/openapi.yaml` | Raw OpenAPI 3.1 schema (YAML, embedded in the binary) |
+
+```bash
+# Open in browser
+https://<host_name>:<host_port>/public/swagger-ui
+
+# Download the schema
+curl -k https://<host_name>:<host_port>/public/openapi.yaml
+```
+
+The YAML schema is embedded at compile time from `server/documentation/openapi.yaml`. Any change to that file takes effect after the next build.
+
+> **Note:** The Swagger UI page loads JavaScript and CSS from `unpkg.com`. In air-gapped environments the page will load but the UI assets will be missing. Serve the raw YAML instead and use a local Swagger UI deployment or [editor.swagger.io](https://editor.swagger.io).
+
+---
+
 ## Bootstrap Environment Variables
 
 These environment variables are read **once on first startup** to create the initial super admin. They are ignored if the admin already exists.
@@ -359,7 +383,7 @@ connection_url = "sqlite::memory:"
 
 ## Realm Authentication Parameters
 
-Realm configuration is managed at runtime via the API, not through the TOML file. These parameters are stored in the database and modified through `POST /admin/realm` and `PUT /admin/realm/{id}`.
+Realm configuration is managed at runtime via the API, not through the TOML file. These parameters are stored in the database and modified through `POST /admins/realms` and `PUT /admins/realms/{realm_id}`.
 
 For each realm you can configure:
 

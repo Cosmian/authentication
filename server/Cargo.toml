@@ -9,7 +9,7 @@ repository.workspace = true
 description = "API Server"
 
 [features]
-default = ["openssl", "database"]
+default = ["openssl", "database", "admin-ui"]
 openssl = ["actix-web/openssl", "dep:openssl"]
 rustls = ["actix-web/rustls-0_23", "dep:rustls"]
 # no_jwt_validation: only useful for tests, do not enable in production
@@ -17,9 +17,14 @@ rustls = ["actix-web/rustls-0_23", "dep:rustls"]
 no_jwt_validation = []
 # Database support - all backends are available at runtime based on DatabaseParams
 database = ["dep:sqlx", "sqlx?/postgres", "sqlx?/sqlite", "sqlx?/mysql"]
+# Expose /public/swagger-ui and /public/openapi.yaml routes (dev/staging only)
+swagger-ui = []
+# Serve the pre-built admin UI static files at /admin-ui
+admin-ui = ["dep:actix-files"]
 
 [dependencies]
 actix-cors = { workspace = true }
+actix-files = { workspace = true, optional = true }
 actix-tls = { workspace = true }
 actix-web = { workspace = true, features = ["macros", "cookies"] }
 argon2 = { workspace = true }
@@ -47,7 +52,7 @@ sqlx = { workspace = true, features = [
 ], optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-auth_client = { path = "../client", features = ["_server"], version = "1.0.0" }
+auth_client = { path = "../client", version = "0.1.0", features = ["_server"] }
 toml = { workspace = true }
 totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
 url = { workspace = true }

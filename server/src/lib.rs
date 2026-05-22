@@ -31,9 +31,9 @@ pub mod client {
 }
 pub mod models {
     pub use auth_client::{
-        ADMIN_REALM, AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme,
+        ADMIN_REALM, Admin, AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme,
         AuthenticationNextStep, AuthenticationResult, ClientClaims, LoginRequest, Realm,
-        RegisteredClaims, SessionData, User, UserPass,
+        RegisteredClaims, SessionData, UserPass,
     };
 }
 

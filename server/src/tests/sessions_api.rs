@@ -417,3 +417,90 @@ async fn test_get_session_logout_all_sessions() -> AuthResult<()> {
 
     ctx.stop_server().await
 }
+
+// ── Session revocation end-to-end (management API → whoami) ──────────────────
+
+/// After a session is deleted via the management API, the client that holds the
+/// corresponding `_ea_` cookie must receive HTTP 401 on the next `whoami` call.
+#[actix_web::test]
+async fn test_whoami_fails_after_session_deleted() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    // Login and keep the client so it retains the _ea_ cookie.
+    let logged_in_client = ctx.get_test_client(admin_scheme());
+    let (login_result, _) = logged_in_client.login(ADMIN_REALM, None, None).await?;
+    let session_id = login_result
+        .session_id
+        .expect("login must return a session_id");
+
+    // Sanity check: whoami works while the session is alive.
+    logged_in_client.whoami(ADMIN_REALM).await?;
+
+    // Delete the session via the management API (no session cookie required).
+    let mgmt_client = ctx.get_test_client(admin_scheme());
+    mgmt_client
+        .delete_sessions(std::slice::from_ref(&session_id))
+        .await?;
+
+    // Now whoami must fail with 401 — the session no longer exists in the store.
+    let err = logged_in_client
+        .whoami(ADMIN_REALM)
+        .await
+        .expect_err("Expected whoami to fail after session deletion");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("401"),
+        "Expected HTTP 401 after session deletion, got: {msg}"
+    );
+    info!("whoami correctly rejected revoked session with 401");
+
+    ctx.stop_server().await
+}
+
+/// Revoking one session must not invalidate other active sessions for the same
+/// user.  Session B must remain usable after session A is deleted.
+#[actix_web::test]
+async fn test_revoking_one_session_leaves_other_valid() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    // Create two independent sessions for the same user.
+    let client_a = ctx.get_test_client(admin_scheme());
+    let (result_a, _) = client_a.login(ADMIN_REALM, None, None).await?;
+    let session_a_id = result_a
+        .session_id
+        .expect("login_a must return a session_id");
+
+    let client_b = ctx.get_test_client(admin_scheme());
+    client_b.login(ADMIN_REALM, None, None).await?;
+
+    // Delete only session A.
+    let mgmt_client = ctx.get_test_client(admin_scheme());
+    mgmt_client
+        .delete_sessions(std::slice::from_ref(&session_a_id))
+        .await?;
+
+    // Session A must now be rejected.
+    let err_a = client_a.whoami(ADMIN_REALM).await;
+    assert!(
+        err_a.is_err(),
+        "client_a whoami must fail after its session was revoked"
+    );
+    let msg_a = err_a.unwrap_err().to_string();
+    assert!(
+        msg_a.contains("401"),
+        "Expected 401 for revoked client_a, got: {msg_a}"
+    );
+
+    // Session B must still succeed.
+    let claims_b = client_b.whoami(ADMIN_REALM).await?;
+    assert_eq!(
+        claims_b.registered.sub.as_deref(),
+        Some(APP_REALM_ADMIN_USERNAME),
+        "client_b must remain authenticated after client_a was revoked"
+    );
+    info!("Revoking session A did not affect session B");
+
+    ctx.stop_server().await
+}

@@ -12,7 +12,7 @@ The authentication server sits in front of your application. Every **client** mu
 Client ──► Auth Server ──► Session Cookie ──► Your API ──► Services
 ```
 
-> **Terminology note:** Throughout this documentation, **client** means any entity that authenticates against the `/login` endpoint — a human via browser, the Auth CLI, or a machine/service account. A **User** (capitalised) is a database record representing an administrator account (super admin or realm admin). See [index.md](index.md#terminology) for the full glossary.
+> **Terminology note:** Throughout this documentation, **client** means any entity that authenticates against the `/login` endpoint — a human via browser, the Auth CLI, or a machine/service account. An **Admin** (capitalised) is a database record representing an administrator account (super admin or realm admin). See [index.md](index.md#terminology) for the full glossary.
 
 All communication uses **HTTPS** (TLS). Session cookies carry a plain-text `cookie_string` that is the session identifier stored in the server-side session store.
 
@@ -51,8 +51,8 @@ sequenceDiagram
 
     U->>API: GET /api/resource<br/>Cookie: _ea_=<cookie_string>
     note over API: CookieAuthSameServer middleware<br/>1. Extracts cookie_string from _ea_ cookie<br/>2. Looks up session in store by cookie_string<br/>3. Returns SessionData claims to handler
-    API->>EA: (internal) find_users_by_auth_scheme
-    EA-->>API: User{id, realms, …}
+    API->>EA: (internal) find_admins_by_auth_scheme
+    EA-->>API: Admin{id, realms, …}
     API-->>U: 200 OK  {"data": …}
 ```
 
@@ -201,7 +201,7 @@ stateDiagram-v2
     [*] --> Active : POST /login (credentials valid)
     Active --> Active : Any authenticated request<br/>(resets stale timer)
     Active --> Expired : session_max_age_seconds elapsed
-    Active --> Revoked : DELETE /sessions/session (explicit logout)
+    Active --> Revoked : DELETE /sessions (explicit logout)
     Expired --> [*] : Stale-session collector removes it
     Revoked --> [*] : Immediately rejected by CookieAuthSameServer
 ```
@@ -220,7 +220,7 @@ Sessions are stored in the configured session backend (SQLite / PostgreSQL / MyS
 To invalidate a session:
 
 ```http
-DELETE /sessions/session
+DELETE /sessions
 Content-Type: application/json
 
 {"session_ids": ["<session_id>"]}
@@ -229,7 +229,7 @@ Content-Type: application/json
 Administratively, a super admin can revoke all sessions for a realm:
 
 ```http
-DELETE /sessions/session/realms/{realm_id}
+DELETE /sessions/realms/{realm_id}
 ```
 
 ---
@@ -249,18 +249,19 @@ DELETE /sessions/session/realms/{realm_id}
 
 | Method | Path | Description | Auth required |
 |--------|------|-------------|---------------|
-| `GET` | `/sessions/session/{id}` | Retrieve `SessionData` by session ID (`null` when not found) | — |
-| `POST` | `/sessions/session/{id}` | Retrieve `SessionData` and optionally apply a `SessionsAction` | — |
-| `POST` | `/sessions/session/realms/{realm}/users` | Get `SessionData` list for a set of users | — |
-| `DELETE` | `/sessions/session` | Delete sessions by ID list (logout) | — |
-| `DELETE` | `/sessions/session/expired` | Purge all expired sessions | — |
-| `DELETE` | `/sessions/session/realms/{realm}` | Revoke all sessions for a realm | — |
+| `GET` | `/sessions/{id}` | Retrieve `SessionData` by session ID (`null` when not found) | — |
+| `POST` | `/sessions/{id}` | Retrieve `SessionData` and optionally apply a `SessionsAction` | — |
+| `POST` | `/sessions/realms/{realm}/clients` | Get session IDs for a set of clients | — |
+| `DELETE` | `/sessions` | Delete sessions by ID list (logout) | — |
+| `DELETE` | `/sessions/expired` | Purge all expired sessions | — |
+| `DELETE` | `/sessions/realms/{realm}` | Revoke all sessions for a realm | — |
 
 ---
 
-## Session Actions on `POST /sessions/session/{id}`
+## Session Actions on `POST /sessions/{id}`
 
 When fetching a session you can pass an optional `sessions_action` in the request body to perform a bulk logout as part of the same call. This is the recommended way to implement "log out everywhere else" and "log out everywhere" features.
+<!-- TODO : Where is the recommendation from ? -->
 
 ### Request body
 
@@ -294,7 +295,7 @@ sequenceDiagram
     participant EA as Auth Server
     participant SS as Session Store
 
-    U->>EA: POST /sessions/session/{session_a}<br/>{sessions_action: "LogoutOtherSessions", authenticated_clients: [...]}
+    U->>EA: POST /sessions/{session_a}<br/>{sessions_action: "LogoutOtherSessions", authenticated_clients: [...]}
     EA->>SS: get_session(session_a)
     SS-->>EA: SessionData for session_a
     EA->>SS: get_sessions_for_clients(authenticated_clients)
@@ -314,7 +315,7 @@ sequenceDiagram
     participant EA as Auth Server
     participant SS as Session Store
 
-    U->>EA: POST /sessions/session/{session_a}<br/>{sessions_action: "LogoutAllSessions", authenticated_clients: [...]}
+    U->>EA: POST /sessions/{session_a}<br/>{sessions_action: "LogoutAllSessions", authenticated_clients: [...]}
     EA->>SS: get_session(session_a)
     SS-->>EA: SessionData for session_a
     EA->>SS: get_sessions_for_clients(authenticated_clients)
@@ -339,11 +340,11 @@ flowchart TD
     D --> G{Session found\nin store by cookie_string?}
     G -- No --> F[401 Unauthorized]
     G -- Yes --> H[SessionData → ClientClaims injected]
-    H --> I{UserAuth required?}
-    I -- Yes --> J[DB lookup: find_users_by_auth_scheme]
-    J --> K{User record exists?}
+    H --> I{AdminAuth required?}
+    I -- Yes --> J[DB lookup: find_admins_by_auth_scheme]
+    J --> K{Admin record exists?}
     K -- No --> F
-    K -- Yes --> L[User injected → handler runs]
+    K -- Yes --> L[Admin injected → handler runs]
     I -- No --> M[Handler runs with claims only]
 
     C -- No --> N{Has Basic Auth header?}

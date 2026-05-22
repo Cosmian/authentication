@@ -60,6 +60,8 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
         session_jwt_params: None,
         sessions_store_params: None,
         stale_session_collector_config: None,
+        dev_seed: None,
+        admin_ui_path: None,
     };
 
     Ok(server_params)

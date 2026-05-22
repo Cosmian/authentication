@@ -31,6 +31,12 @@ host_port = 8443 # <REQUIRED>
 # default_username = "dev_user"
 
 
+# Optional: path to the pre-built admin UI dist/ directory.
+# When set and the server is built with the `admin-ui` feature, static files
+# are served at /admin-ui with a SPA fallback for client-side routing.
+# admin_ui_path = "/usr/share/auth_server/admin-ui"
+
+
 # -----------------------------------------------------------------------------
 # TLS configuration  <REQUIRED>
 # -----------------------------------------------------------------------------

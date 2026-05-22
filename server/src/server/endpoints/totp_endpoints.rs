@@ -1,7 +1,7 @@
 use crate::{
     AuthError,
     database::Database,
-    server::endpoints::user_from_request,
+    server::endpoints::admin_from_request,
     totp::{create_totp_secret, realm_params_to_totp_params},
 };
 use actix_web::{
@@ -19,7 +19,7 @@ use std::sync::Arc;
 /// and enable TOTP for the user.
 ///
 /// The requester must administer the realm specified in the path.
-#[post("/{realm}/totp/generate")]
+#[post("/{realm_id}/totp/generate")]
 pub async fn totp_generate(
     req: HttpRequest,
     realm: Path<String>,
@@ -27,7 +27,7 @@ pub async fn totp_generate(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -74,7 +74,7 @@ pub async fn totp_generate(
 /// valid the secret is stored and TOTP is activated for the user.
 ///
 /// The requester must administer the realm specified in the path.
-#[post("/{realm}/totp/verify")]
+#[post("/{realm_id}/totp/verify")]
 pub async fn totp_verify(
     req: HttpRequest,
     realm: Path<String>,
@@ -82,7 +82,7 @@ pub async fn totp_verify(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -136,14 +136,14 @@ pub async fn totp_verify(
 /// Disable TOTP for a user, removing their stored secret.
 ///
 /// The requester must administer the realm specified in the path.
-#[delete("/{realm}/totp/{username}")]
+#[delete("/{realm_id}/totp/{username}")]
 pub async fn totp_disable(
     req: HttpRequest,
     params: Path<(String, String)>,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm_id, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
