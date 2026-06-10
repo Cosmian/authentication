@@ -19,8 +19,8 @@ pub use dto::{
 mod models;
 pub use models::{
     ADMIN_REALM, Admin, AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme,
-    AuthenticationNextStep, AuthenticationResult, ClientClaims, LoginRequest, Realm,
-    RegisteredClaims, SessionData, UserPass,
+    AuthenticationNextStep, AuthenticationResult, AuthorizationClaims, ClientClaims, LoginRequest,
+    Realm, RegisteredClaims, SessionData, UserPass,
 };
 
 mod params;

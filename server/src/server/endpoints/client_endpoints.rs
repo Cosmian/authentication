@@ -77,12 +77,29 @@ pub async fn login(
     }
     // --- end TOTP check ---
 
+    // Fetch roles and domain from userpass record (if authenticated via username/password).
+    // For non-userpass auth schemes (JWT, mTLS), roles=[] and domain=None (N1: fail-closed).
+    let (roles, domain) = if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword
+    {
+        match database
+            .get_userpass(&realm.id, &authenticated_client.username)
+            .await?
+        {
+            Some(up) => (up.roles, up.domain),
+            None => (Vec::new(), None),
+        }
+    } else {
+        (Vec::new(), None)
+    };
+
     let token = issue_token(
         &authenticated_client.username,
         authenticated_client.auth_scheme,
         &realm.id,
         // TODO : Only useful for VELO ?
         login_request.public_key_pem.clone(),
+        roles,
+        domain,
         jwt_token_config.algorithm,
         jwt_token_config.encoding_key.clone(),
         realm.session_max_age_seconds,

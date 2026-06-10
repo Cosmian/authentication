@@ -58,7 +58,7 @@ let client = AuthClient::new(
 println!("Base URL: {}", client.base_url());
 ```
 
-`AuthClient::new` returns `AuthResult<AuthClient>`. It fails if the CA certificate is malformed or the authentication scheme configuration is invalid (e.g., unparseable PKCS#12 archive).
+`AuthClient::new` returns `AuthResult<AuthClient>`. It fails if the CA certificate is malformed or the authentication scheme configuration is invalid (e.g., unparsable PKCS#12 archive).
 
 ---
 
@@ -342,6 +342,8 @@ admin.create_admin_credentials_in_realm(
         username: "alice".to_string(),
         password: b"hunter2".to_vec(),  // plaintext — server hashes with Argon2id
         change_password: false,
+        roles: vec!["CryptoOfficer".to_string()],
+        domain: Some("acme.com".to_string()),
     },
 ).await?;
 
@@ -358,6 +360,8 @@ admin.update_admin_credentials_in_realm(
         username: "alice".to_string(),
         password: b"new-password".to_vec(),
         change_password: true,
+        roles: vec!["CryptoOfficer".to_string()],
+        domain: Some("acme.com".to_string()),
     },
 ).await?;
 

@@ -33,6 +33,14 @@ pub struct UserPass {
     pub username: String,
     pub password: Vec<u8>,
     pub change_password: bool,
+    /// RBAC roles assigned to this user (e.g. `["CryptoOfficer", "Auditor"]`).
+    /// Emitted in the JWT `roles` claim for OPA policy evaluation.
+    #[serde(default)]
+    pub roles: Vec<String>,
+    /// Domain this user belongs to (e.g. `"acme.com"`).
+    /// Emitted in the JWT `as_domain` private claim for domain-scoped access control.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 }
 
 /// Authentication server admins.

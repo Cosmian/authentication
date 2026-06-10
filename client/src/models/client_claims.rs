@@ -111,6 +111,18 @@ pub struct RegisteredClaims {
 
 // ── §4.2  Public Claim Names ───────────────────────────────────────────────────
 
+/// Authorization claims (RFC 9068 §2.2.3.1 inspired).
+///
+/// Contains role assignments used by OPA for RBAC policy evaluation.
+/// Serialised as flat fields in the JWT payload.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AuthorizationClaims {
+    /// RBAC roles assigned to the user (e.g. `["CryptoOfficer"]`).
+    /// Absence or empty array means no roles (fail-closed in OPA).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roles: Option<Vec<String>>,
+}
+
 // ── §4.3  Private Claim Names ─────────────────────────────────────────────────
 
 /// Private claims used exclusively within the Auth Authentication Server
@@ -132,6 +144,9 @@ pub struct AuthPrivateClaims {
     /// Realm ID that the client authenticated to.
     #[serde(rename = "as_rid", skip_serializing_if = "Option::is_none")]
     pub realm_id: Option<String>,
+    /// Domain the authenticated user belongs to (for OPA domain-scoped RBAC).
+    #[serde(rename = "as_domain", skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 }
 
 // ── Top-level JWT Claims Set ──────────────────────────────────────────────────
@@ -162,6 +177,10 @@ pub struct ClientClaims {
     /// RFC 7519 §4.1 — the seven registered claim names.
     #[serde(flatten)]
     pub registered: RegisteredClaims,
+
+    /// RFC 9068 §2.2.3.1 — authorization claims (roles).
+    #[serde(flatten)]
+    pub authorization: AuthorizationClaims,
 
     /// RFC 7519 §4.3 — Auth Authentication Server private claims.
     #[serde(flatten)]

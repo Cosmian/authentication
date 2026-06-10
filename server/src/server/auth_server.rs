@@ -86,6 +86,8 @@ async fn seed_dev_realm_admin(
             username: seed.admin_username.clone(),
             password: hashed,
             change_password: true,
+            roles: Vec::new(),
+            domain: None,
         };
         db.create_userpass(&userpass).await.map_err(|e| {
             crate::AuthError::Init(format!(

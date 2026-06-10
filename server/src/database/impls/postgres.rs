@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    database::{AuthDbResult, hash_password_with_argon2, r#trait::Database},
+    database::{AuthDbError, AuthDbResult, hash_password_with_argon2, r#trait::Database},
     models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
@@ -43,6 +43,8 @@ impl Database for PostgresDatabase {
                 username TEXT NOT NULL,
                 password BYTEA NOT NULL,
                 change_password BOOLEAN NOT NULL DEFAULT FALSE,
+                roles TEXT NOT NULL DEFAULT '[]',
+                domain TEXT,
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -50,6 +52,30 @@ impl Database for PostgresDatabase {
         )
         .execute(&self.pool)
         .await?;
+
+        // Migration: add roles/domain columns if missing (existing databases)
+        let has_roles: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='userpass' AND column_name='roles')",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+        if !has_roles {
+            sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
+                .execute(&self.pool)
+                .await?;
+        }
+        let has_domain: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='userpass' AND column_name='domain')",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+        if !has_domain {
+            sqlx::query("ALTER TABLE userpass ADD COLUMN domain TEXT")
+                .execute(&self.pool)
+                .await?;
+        }
 
         // Create admin table
         sqlx::query(
@@ -228,16 +254,20 @@ impl Database for PostgresDatabase {
     // ===== UserPass CRUD operations =====
 
     async fn create_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
+        let roles_json = serde_json::to_string(&userpass.roles)
+            .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO userpass (realm, username, password, change_password, roles, domain)
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
         .bind(&userpass.password)
         .bind(userpass.change_password)
+        .bind(&roles_json)
+        .bind(&userpass.domain)
         .execute(&self.pool)
         .await?;
 
@@ -247,7 +277,7 @@ impl Database for PostgresDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password
+            SELECT realm, username, change_password, roles, domain
             FROM userpass
             WHERE realm = $1 AND username = $2
             "#,
@@ -259,11 +289,15 @@ impl Database for PostgresDatabase {
 
         match row {
             Some(row) => {
+                let roles_json: String = row.try_get("roles").unwrap_or_default();
+                let roles: Vec<String> = serde_json::from_str(&roles_json).unwrap_or_default();
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,
                     password: vec![], // do not return the password hash
                     change_password: row.try_get("change_password")?,
+                    roles,
+                    domain: row.try_get("domain").ok().flatten(),
                 };
                 Ok(Some(userpass))
             }
@@ -272,10 +306,12 @@ impl Database for PostgresDatabase {
     }
 
     async fn update_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
+        let roles_json = serde_json::to_string(&userpass.roles)
+            .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = $3, change_password = $4
+            SET password = $3, change_password = $4, roles = $5, domain = $6
             WHERE realm = $1 AND username = $2
             "#,
         )
@@ -283,6 +319,8 @@ impl Database for PostgresDatabase {
         .bind(&userpass.username)
         .bind(&userpass.password)
         .bind(userpass.change_password)
+        .bind(&roles_json)
+        .bind(&userpass.domain)
         .execute(&self.pool)
         .await?;
 
@@ -321,7 +359,7 @@ impl Database for PostgresDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password
+            SELECT realm, username, password, change_password, roles, domain
             FROM userpass
             WHERE realm = $1
             ORDER BY username
@@ -333,11 +371,15 @@ impl Database for PostgresDatabase {
 
         let mut userpass_list = Vec::new();
         for row in rows {
+            let roles_json: String = row.try_get("roles").unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).unwrap_or_default();
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
+                roles,
+                domain: row.try_get("domain").ok().flatten(),
             });
         }
 
@@ -347,7 +389,7 @@ impl Database for PostgresDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password
+            SELECT realm, username, password, change_password, roles, domain
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -357,11 +399,15 @@ impl Database for PostgresDatabase {
 
         let mut userpass_list = Vec::new();
         for row in rows {
+            let roles_json: String = row.try_get("roles").unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).unwrap_or_default();
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
+                roles,
+                domain: row.try_get("domain").ok().flatten(),
             });
         }
 

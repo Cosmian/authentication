@@ -25,6 +25,8 @@ pub fn issue_token(
     auth_scheme: AuthScheme,
     realm_id: &str,
     public_key_pem: Option<String>,
+    roles: Vec<String>,
+    domain: Option<String>,
     algorithm: Algorithm,
     encoding_key: EncodingKey,
     expiration_seconds: i64,
@@ -41,10 +43,14 @@ pub fn issue_token(
             iat: Some(now),
             ..Default::default()
         },
+        authorization: crate::models::AuthorizationClaims {
+            roles: if roles.is_empty() { None } else { Some(roles) },
+        },
         private: crate::models::AuthPrivateClaims {
             auth_scheme: Some(auth_scheme),
             public_key: public_key_pem,
             realm_id: Some(realm_id.to_string()),
+            domain,
         },
         ..Default::default()
     };
@@ -91,6 +97,8 @@ mod tests {
             AuthScheme::UsernamePassword,
             "realm123",
             None,
+            vec!["CryptoOfficer".to_string()],
+            Some("acme.com".to_string()),
             config.algorithm,
             config.encoding_key,
             expiration_seconds,
@@ -114,6 +122,8 @@ mod tests {
             "user123",
             AuthScheme::UsernamePassword,
             "realm123",
+            None,
+            Vec::new(),
             None,
             config.algorithm,
             config.encoding_key,
@@ -144,6 +154,8 @@ mod tests {
             "user123",
             AuthScheme::UsernamePassword,
             "realm123",
+            None,
+            Vec::new(),
             None,
             config.algorithm,
             config.encoding_key,

@@ -1,3 +1,4 @@
+---
 openapi: 3.1.0
 
 info:
@@ -198,21 +199,21 @@ components:
         jwt:
           type: string
           nullable: true
-          example: null
+          example:
         fido2:
           type: string
           nullable: true
-          example: null
+          example:
         digital_credentials:
           type: object
           additionalProperties:
             type: string
           nullable: true
-          example: null
+          example:
         client_certificate:
           type: string
           nullable: true
-          example: null
+          example:
         totp_enabled:
           type: boolean
           nullable: true
@@ -221,23 +222,23 @@ components:
           type: string
           nullable: true
           description: Base32-encoded TOTP secret. Read-only via GET.
-          example: null
+          example:
         totp_auth_url:
           type: string
           nullable: true
           description: otpauth:// URL for QR code enrollment. Read-only via GET.
-          example: null
+          example:
       example:
         id: alice
         realms: [my-service]
         userpass: alice
-        jwt: null
-        fido2: null
-        digital_credentials: null
-        client_certificate: null
+        jwt:
+        fido2:
+        digital_credentials:
+        client_certificate:
         totp_enabled: false
-        totp_secret: null
-        totp_auth_url: null
+        totp_secret:
+        totp_auth_url:
 
     UserPass:
       type: object
@@ -260,6 +261,22 @@ components:
         change_password:
           type: boolean
           example: false
+        roles:
+          type: array
+          items:
+            type: string
+          description: |
+            RBAC roles assigned to this user (e.g. ["CryptoOfficer", "Auditor"]).
+            Emitted in the JWT `roles` claim for OPA policy evaluation.
+          default: []
+          example: [CryptoOfficer]
+        domain:
+          type: string
+          nullable: true
+          description: |
+            Domain this user belongs to (e.g. "acme.com").
+            Emitted in the JWT `as_domain` private claim for domain-scoped access control.
+          example: acme.com
 
     SessionData:
       type: object
@@ -307,12 +324,12 @@ components:
         public_key_pem:
           type: string
           nullable: true
-          example: null
+          example:
         totp_code:
           type: string
           nullable: true
           description: 6-digit TOTP code. Required when the previous response returned TotpRequired.
-          example: "482913"
+          example: '482913'
 
     AuthenticationResult:
       type: object
@@ -364,7 +381,7 @@ components:
         as_pk:
           type: string
           nullable: true
-          example: null
+          example:
         as_rid:
           type: string
           example: my-service
@@ -438,7 +455,7 @@ components:
           example: JBSWY3DPEHPK3PXP
         otpauth_url:
           type: string
-          example: "otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30"
+          example: otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30
 
     TotpVerifyRequest:
       type: object
@@ -449,7 +466,7 @@ components:
           example: alice
         token:
           type: string
-          example: "482913"
+          example: '482913'
         secret:
           type: string
           example: JBSWY3DPEHPK3PXP
@@ -604,13 +621,13 @@ paths:
               standard:
                 summary: Normal login
                 value:
-                  public_key_pem: null
-                  totp_code: null
+                  public_key_pem:
+                  totp_code:
               withTotp:
                 summary: Second step with TOTP code
                 value:
-                  public_key_pem: null
-                  totp_code: "482913"
+                  public_key_pem:
+                  totp_code: '482913'
       responses:
         '200':
           description: |
@@ -632,12 +649,12 @@ paths:
                   summary: TOTP required
                   value:
                     next_step: TotpRequired
-                    session_id: null
+                    session_id:
                 changePassword:
                   summary: Password expired
                   value:
                     next_step: ChangePassword
-                    session_id: null
+                    session_id:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -770,7 +787,7 @@ paths:
                     created_at: 1744996400
                 notFound:
                   summary: Not found
-                  value: null
+                  value:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -793,7 +810,7 @@ paths:
                 summary: Fetch only
                 value:
                   authenticated_clients: []
-                  sessions_action: null
+                  sessions_action:
               logoutOthers:
                 summary: Keep this session, logout all others for alice
                 value:
@@ -1049,10 +1066,10 @@ paths:
               id: bob
               realms: [my-service]
               userpass: bob
-              jwt: null
-              fido2: null
-              digital_credentials: null
-              client_certificate: null
+              jwt:
+              fido2:
+              digital_credentials:
+              client_certificate:
               totp_enabled: false
       responses:
         '201':
@@ -1383,7 +1400,7 @@ paths:
                 $ref: '#/components/schemas/TotpGenerateResponse'
               example:
                 secret_base32: JBSWY3DPEHPK3PXP
-                otpauth_url: "otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30"
+                otpauth_url: otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1409,7 +1426,7 @@ paths:
               $ref: '#/components/schemas/TotpVerifyRequest'
             example:
               username: alice
-              token: "482913"
+              token: '482913'
               secret: JBSWY3DPEHPK3PXP
               issuer: My Application
       responses:
