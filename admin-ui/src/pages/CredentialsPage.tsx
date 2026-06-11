@@ -59,8 +59,9 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; avai
             setEditTarget(null);
             const data = await api.list(realmId);
             setCredentials(data);
-        } catch {
+        } catch (err) {
             message.error(`Failed to update "${updated.username}"`);
+            throw err;
         }
     };
 
@@ -239,8 +240,9 @@ const CredentialsPage: React.FC = () => {
             message.success(`Roles updated for "${updated.username}"`);
             setEditTarget(null);
             fetchCredentials();
-        } catch {
+        } catch (err) {
             message.error(`Failed to update "${updated.username}"`);
+            throw err;
         }
     };
 

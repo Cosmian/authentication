@@ -288,7 +288,11 @@ impl Database for SqliteDatabase {
         match row {
             Some(row) => {
                 let roles_json: String = row.try_get("roles").unwrap_or_default();
-                let roles: Vec<String> = serde_json::from_str(&roles_json).unwrap_or_default();
+                let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize roles for user '{username}': {e}"
+                    ))
+                })?;
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,

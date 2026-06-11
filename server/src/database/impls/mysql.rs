@@ -62,7 +62,15 @@ impl Database for MySqlDatabase {
         .map(|c: i64| c > 0)
         .unwrap_or(false);
         if !has_roles {
-            sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
+            // MySQL TEXT columns do not support DEFAULT values in many versions.
+            // Use a three-step migration: add nullable, backfill, then enforce NOT NULL.
+            sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT")
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("UPDATE userpass SET roles = '[]' WHERE roles IS NULL")
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("ALTER TABLE userpass MODIFY COLUMN roles TEXT NOT NULL")
                 .execute(&self.pool)
                 .await?;
         }
@@ -277,7 +285,11 @@ impl Database for MySqlDatabase {
         match row {
             Some(row) => {
                 let roles_json: String = row.try_get("roles").unwrap_or_default();
-                let roles: Vec<String> = serde_json::from_str(&roles_json).unwrap_or_default();
+                let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize roles for user '{username}': {e}"
+                    ))
+                })?;
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,

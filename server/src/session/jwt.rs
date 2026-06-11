@@ -103,6 +103,12 @@ mod tests {
         let claims = validate_token(&token, config.algorithm, &config.decoding_key).unwrap();
         assert_eq!(claims.registered.sub, Some("user123".to_string()));
         assert_eq!(claims.private.realm_id, Some("realm123".to_string()));
+        // Verify roles and domain are present in issued tokens.
+        assert_eq!(
+            claims.authorization.roles,
+            Some(vec!["CryptoOfficer".to_string()])
+        );
+        assert_eq!(claims.private.domain, Some("realm123".to_string()));
     }
 
     #[test]

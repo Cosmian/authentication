@@ -343,7 +343,6 @@ admin.create_admin_credentials_in_realm(
         password: b"hunter2".to_vec(),  // plaintext — server hashes with Argon2id
         change_password: false,
         roles: vec!["CryptoOfficer".to_string()],
-        domain: Some("acme.com".to_string()),
     },
 ).await?;
 
@@ -361,7 +360,6 @@ admin.update_admin_credentials_in_realm(
         password: b"new-password".to_vec(),
         change_password: true,
         roles: vec!["CryptoOfficer".to_string()],
-        domain: Some("acme.com".to_string()),
     },
 ).await?;
 
