@@ -30,7 +30,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const resolveServerUrl = (): string => {
     const configured = import.meta.env.VITE_AUTH_URL as string | undefined;
     const trimmed = configured?.trim();
-    return trimmed && trimmed.length > 0 ? trimmed : "https://localhost:8443";
+    return trimmed && trimmed.length > 0 ? trimmed : "";
 };
 
 const INITIAL_STATE: AuthState = {

@@ -56,7 +56,6 @@ impl Database for SqliteDatabase {
                 password BLOB NOT NULL,
                 change_password INTEGER NOT NULL DEFAULT 0,
                 roles TEXT NOT NULL DEFAULT '[]',
-                domain TEXT,
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -65,7 +64,7 @@ impl Database for SqliteDatabase {
         .execute(&self.pool)
         .await?;
 
-        // Migration: add roles/domain columns if missing (existing databases)
+        // Migration: add roles column if missing (existing databases)
         let has_roles: bool = sqlx::query_scalar(
             "SELECT COUNT(*) FROM pragma_table_info('userpass') WHERE name='roles'",
         )
@@ -75,18 +74,6 @@ impl Database for SqliteDatabase {
         .unwrap_or(false);
         if !has_roles {
             sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
-                .execute(&self.pool)
-                .await?;
-        }
-        let has_domain: bool = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM pragma_table_info('userpass') WHERE name='domain'",
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map(|c: i32| c > 0)
-        .unwrap_or(false);
-        if !has_domain {
-            sqlx::query("ALTER TABLE userpass ADD COLUMN domain TEXT")
                 .execute(&self.pool)
                 .await?;
         }
@@ -270,8 +257,8 @@ impl Database for SqliteDatabase {
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password, roles, domain)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO userpass (realm, username, password, change_password, roles)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&userpass.realm)
@@ -279,7 +266,6 @@ impl Database for SqliteDatabase {
         .bind(&userpass.password)
         .bind(userpass.change_password)
         .bind(&roles_json)
-        .bind(&userpass.domain)
         .execute(&self.pool)
         .await?;
 
@@ -289,7 +275,7 @@ impl Database for SqliteDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password, roles, domain
+            SELECT realm, username, change_password, roles
             FROM userpass
             WHERE realm = ? AND username = ?
             "#,
@@ -309,7 +295,6 @@ impl Database for SqliteDatabase {
                     password: vec![], // do not return the password hash
                     change_password: row.try_get("change_password")?,
                     roles,
-                    domain: row.try_get("domain").ok().flatten(),
                 };
                 Ok(Some(userpass))
             }
@@ -323,14 +308,13 @@ impl Database for SqliteDatabase {
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = ?, change_password = ?, roles = ?, domain = ?
+            SET password = ?, change_password = ?, roles = ?
             WHERE realm = ? AND username = ?
             "#,
         )
         .bind(&userpass.password)
         .bind(userpass.change_password)
         .bind(&roles_json)
-        .bind(&userpass.domain)
         .bind(&userpass.realm)
         .bind(&userpass.username)
         .execute(&self.pool)
@@ -371,7 +355,7 @@ impl Database for SqliteDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles, domain
+            SELECT realm, username, password, change_password, roles
             FROM userpass
             WHERE realm = ?
             ORDER BY username
@@ -391,7 +375,6 @@ impl Database for SqliteDatabase {
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
                 roles,
-                domain: row.try_get("domain").ok().flatten(),
             });
         }
 
@@ -401,7 +384,7 @@ impl Database for SqliteDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles, domain
+            SELECT realm, username, password, change_password, roles
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -419,7 +402,6 @@ impl Database for SqliteDatabase {
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
                 roles,
-                domain: row.try_get("domain").ok().flatten(),
             });
         }
 

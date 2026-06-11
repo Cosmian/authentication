@@ -270,14 +270,6 @@ components:
             Emitted in the JWT `roles` claim for OPA policy evaluation.
           default: []
           example: [CryptoOfficer]
-        domain:
-          type: string
-          nullable: true
-          description: |
-            Domain this user belongs to (e.g. "acme.com").
-            Emitted in the JWT `as_domain` private claim for domain-scoped access control.
-          example: acme.com
-
     SessionData:
       type: object
       description: |

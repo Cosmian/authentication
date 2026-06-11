@@ -77,19 +77,19 @@ pub async fn login(
     }
     // --- end TOTP check ---
 
-    // Fetch roles and domain from userpass record (if authenticated via username/password).
-    // For non-userpass auth schemes (JWT, mTLS), roles=[] and domain=None (N1: fail-closed).
-    let (roles, domain) = if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword
-    {
+    // Fetch roles from userpass record (if authenticated via username/password).
+    // For non-userpass auth schemes (JWT, mTLS), roles=[] (fail-closed).
+    // The domain (as_domain JWT claim) is always set to the realm_id.
+    let roles = if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword {
         match database
             .get_userpass(&realm.id, &authenticated_client.username)
             .await?
         {
-            Some(up) => (up.roles, up.domain),
-            None => (Vec::new(), None),
+            Some(up) => up.roles,
+            None => Vec::new(),
         }
     } else {
-        (Vec::new(), None)
+        Vec::new()
     };
 
     let token = issue_token(
@@ -99,9 +99,7 @@ pub async fn login(
         // TODO : Only useful for VELO ?
         login_request.public_key_pem.clone(),
         roles,
-        domain,
-        jwt_token_config.algorithm,
-        jwt_token_config.encoding_key.clone(),
+        &jwt_token_config,
         realm.session_max_age_seconds,
     )?;
 
@@ -148,6 +146,13 @@ pub async fn version_endpoint(_req: HttpRequest) -> Result<HttpResponse, AuthErr
         version: version.to_string(),
     };
     Ok(HttpResponse::Ok().json(version))
+}
+
+/// Returns the list of available RBAC roles configured on this server.
+pub async fn roles_endpoint(
+    server_params: Data<Arc<crate::server::parameters::ServerParams>>,
+) -> Result<HttpResponse, AuthError> {
+    Ok(HttpResponse::Ok().json(&server_params.roles))
 }
 
 /// Serve the raw OpenAPI 3.1 schema (YAML), embedded at compile time.

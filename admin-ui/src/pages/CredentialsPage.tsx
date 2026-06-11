@@ -1,27 +1,31 @@
-import { Alert, Badge, Button, Collapse, message, Popconfirm, Space, Table, Typography } from "antd";
-import { DeleteOutlined, KeyOutlined, PlusOutlined, SwapOutlined } from "@ant-design/icons";
+import { Alert, Badge, Button, Collapse, message, Popconfirm, Space, Table, Tag, Typography } from "antd";
+import { DeleteOutlined, EditOutlined, KeyOutlined, PlusOutlined, SwapOutlined } from "@ant-design/icons";
 import React, { useCallback, useEffect, useState } from "react";
 import type { UserPass } from "../types/api";
 import { SUPER_ADMIN_REALM_ID } from "../constants/apiPaths";
 import { useAuth } from "../contexts/AuthContext";
 import { useRealm } from "../contexts/RealmContext";
 import { createCredentialsApi } from "../services/credentialsApi";
+import { createRolesApi } from "../services/rolesApi";
 import { PageHeader } from "../components/common/PageHeader";
 import { LoadingState } from "../components/common/LoadingState";
 import { EmptyState } from "../components/common/EmptyState";
 import { CreateCredentialModal } from "../components/credentials/CreateCredentialModal";
+import { EditCredentialModal } from "../components/credentials/EditCredentialModal";
 import { ResetPasswordModal } from "../components/credentials/ResetPasswordModal";
 
 /** Fetches and displays credentials for a single realm — used in the super-admin overview. */
-const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refreshKey?: number }> = ({
+const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; availableRoles: string[]; refreshKey?: number }> = ({
     realmId,
     serverUrl,
+    availableRoles,
     refreshKey = 0,
 }) => {
     const [credentials, setCredentials] = useState<UserPass[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [resetTarget, setResetTarget] = useState<UserPass | null>(null);
+    const [editTarget, setEditTarget] = useState<UserPass | null>(null);
 
     useEffect(() => {
         setLoading(true);
@@ -47,6 +51,19 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
         }
     };
 
+    const handleEdit = async (updated: UserPass) => {
+        try {
+            const api = createCredentialsApi(serverUrl);
+            await api.update(realmId, updated.username, updated);
+            message.success(`Roles updated for "${updated.username}"`);
+            setEditTarget(null);
+            const data = await api.list(realmId);
+            setCredentials(data);
+        } catch {
+            message.error(`Failed to update "${updated.username}"`);
+        }
+    };
+
     const handleDelete = async (username: string) => {
         try {
             const api = createCredentialsApi(serverUrl);
@@ -64,22 +81,41 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
     if (credentials.length === 0) return <Typography.Text type="secondary">No credentials in this realm.</Typography.Text>;
 
     const columns = [
-        { title: "Username", dataIndex: "username", key: "username", width: "30%" },
+        { title: "Username", dataIndex: "username", key: "username", width: "20%" },
         {
             title: "Status",
             dataIndex: "change_password",
             key: "change_password",
-            width: "25%",
+            width: "15%",
             render: (val: boolean) => (val ? <Badge status="warning" text="Pending change" /> : <Badge status="success" text="Active" />),
+        },
+        {
+            title: "Roles",
+            dataIndex: "roles",
+            key: "roles",
+            width: "25%",
+            render: (roles: string[] | undefined) =>
+                roles && roles.length > 0 ? (
+                    roles.map((r) => (
+                        <Tag key={r} color="blue">
+                            {r}
+                        </Tag>
+                    ))
+                ) : (
+                    <Typography.Text type="secondary">—</Typography.Text>
+                ),
         },
         {
             title: "Actions",
             key: "actions",
-            width: "45%",
+            width: "25%",
             render: (_: unknown, record: UserPass) => (
                 <Space>
                     <Button size="small" icon={<KeyOutlined />} onClick={() => setResetTarget(record)}>
                         Reset Password
+                    </Button>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => setEditTarget(record)}>
+                        Edit
                     </Button>
                     <Popconfirm
                         title={`Delete credential "${record.username}"?`}
@@ -105,6 +141,13 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
                 onCancel={() => setResetTarget(null)}
                 onSubmit={handleResetPassword}
             />
+            <EditCredentialModal
+                open={editTarget !== null}
+                credential={editTarget}
+                availableRoles={availableRoles}
+                onCancel={() => setEditTarget(null)}
+                onSubmit={handleEdit}
+            />
         </>
     );
 };
@@ -117,15 +160,29 @@ const CredentialsPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Available RBAC roles fetched from the server
+    const [availableRoles, setAvailableRoles] = useState<string[]>([]);
+
     // Create modal (single-realm mode)
     const [createOpen, setCreateOpen] = useState(false);
 
     // Reset password modal
     const [resetTarget, setResetTarget] = useState<UserPass | null>(null);
 
+    // Edit roles modal
+    const [editTarget, setEditTarget] = useState<UserPass | null>(null);
+
     // Super-admin create modal
     const [createTargetRealm, setCreateTargetRealm] = useState<string | null>(null);
     const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({});
+
+    // Fetch available roles on mount
+    useEffect(() => {
+        const api = createRolesApi(serverUrl);
+        api.list()
+            .then(setAvailableRoles)
+            .catch(() => setAvailableRoles([]));
+    }, [serverUrl]);
 
     const fetchCredentials = useCallback(async () => {
         if (selectedRealm === SUPER_ADMIN_REALM_ID) return;
@@ -146,13 +203,14 @@ const CredentialsPage: React.FC = () => {
         fetchCredentials();
     }, [fetchCredentials]);
 
-    const handleCreate = async (username: string, password: number[], changePassword: boolean) => {
+    const handleCreate = async (username: string, password: number[], changePassword: boolean, roles: string[]) => {
         const api = createCredentialsApi(serverUrl);
         const userpass: UserPass = {
             realm: selectedRealm,
             username,
             password,
             change_password: changePassword,
+            roles,
         };
         try {
             await api.create(selectedRealm, userpass);
@@ -167,14 +225,23 @@ const CredentialsPage: React.FC = () => {
     const handleResetPassword = async (password: number[]) => {
         if (!resetTarget) return;
         const api = createCredentialsApi(serverUrl);
-        const updated: UserPass = {
-            ...resetTarget,
-            password,
-        };
+        const updated: UserPass = { ...resetTarget, password };
         await api.update(selectedRealm, resetTarget.username, updated);
         message.success(`Password reset for "${resetTarget.username}"`);
         setResetTarget(null);
         fetchCredentials();
+    };
+
+    const handleEdit = async (updated: UserPass) => {
+        const api = createCredentialsApi(serverUrl);
+        try {
+            await api.update(selectedRealm, updated.username, updated);
+            message.success(`Roles updated for "${updated.username}"`);
+            setEditTarget(null);
+            fetchCredentials();
+        } catch {
+            message.error(`Failed to update "${updated.username}"`);
+        }
     };
 
     const handleToggleChangePassword = async (record: UserPass) => {
@@ -204,10 +271,10 @@ const CredentialsPage: React.FC = () => {
         }
     };
 
-    const handleSuperAdminCreate = async (username: string, password: number[], changePassword: boolean) => {
+    const handleSuperAdminCreate = async (username: string, password: number[], changePassword: boolean, roles: string[]) => {
         if (!createTargetRealm) return;
         const api = createCredentialsApi(serverUrl);
-        const userpass: UserPass = { realm: createTargetRealm, username, password, change_password: changePassword };
+        const userpass: UserPass = { realm: createTargetRealm, username, password, change_password: changePassword, roles };
         await api.create(createTargetRealm, userpass);
         message.success(`Credential "${username}" created in "${createTargetRealm}"`);
         setRefreshKeys((prev) => ({ ...prev, [createTargetRealm]: (prev[createTargetRealm] ?? 0) + 1 }));
@@ -243,12 +310,20 @@ const CredentialsPage: React.FC = () => {
                                     </Button>
                                 </div>
                             ),
-                            children: <RealmCredentialsPanel realmId={r.id} serverUrl={serverUrl} refreshKey={refreshKeys[r.id] ?? 0} />,
+                            children: (
+                                <RealmCredentialsPanel
+                                    realmId={r.id}
+                                    serverUrl={serverUrl}
+                                    availableRoles={availableRoles}
+                                    refreshKey={refreshKeys[r.id] ?? 0}
+                                />
+                            ),
                         }))}
                     />
                 )}
                 <CreateCredentialModal
                     open={createTargetRealm !== null}
+                    availableRoles={availableRoles}
                     onCancel={() => setCreateTargetRealm(null)}
                     onSubmit={handleSuperAdminCreate}
                 />
@@ -260,16 +335,27 @@ const CredentialsPage: React.FC = () => {
     if (error) return <Alert type="error" showIcon message="Error" description={error} />;
 
     const columns = [
-        {
-            title: "Username",
-            dataIndex: "username",
-            key: "username",
-        },
+        { title: "Username", dataIndex: "username", key: "username" },
         {
             title: "Status",
             dataIndex: "change_password",
             key: "change_password",
             render: (val: boolean) => (val ? <Badge status="warning" text="Pending change" /> : <Badge status="success" text="Active" />),
+        },
+        {
+            title: "Roles",
+            dataIndex: "roles",
+            key: "roles",
+            render: (roles: string[] | undefined) =>
+                roles && roles.length > 0 ? (
+                    roles.map((r) => (
+                        <Tag key={r} color="blue">
+                            {r}
+                        </Tag>
+                    ))
+                ) : (
+                    <Typography.Text type="secondary">—</Typography.Text>
+                ),
         },
         {
             title: "Actions",
@@ -281,6 +367,9 @@ const CredentialsPage: React.FC = () => {
                     </Button>
                     <Button size="small" icon={<SwapOutlined />} onClick={() => handleToggleChangePassword(record)}>
                         Toggle Change
+                    </Button>
+                    <Button size="small" icon={<EditOutlined />} onClick={() => setEditTarget(record)}>
+                        Edit
                     </Button>
                     <Popconfirm
                         title={`Delete credential "${record.username}"?`}
@@ -312,13 +401,26 @@ const CredentialsPage: React.FC = () => {
                 <Table dataSource={credentials} columns={columns} rowKey="username" pagination={false} />
             )}
 
-            <CreateCredentialModal open={createOpen} onCancel={() => setCreateOpen(false)} onSubmit={handleCreate} />
+            <CreateCredentialModal
+                open={createOpen}
+                availableRoles={availableRoles}
+                onCancel={() => setCreateOpen(false)}
+                onSubmit={handleCreate}
+            />
 
             <ResetPasswordModal
                 open={resetTarget !== null}
                 username={resetTarget?.username ?? ""}
                 onCancel={() => setResetTarget(null)}
                 onSubmit={handleResetPassword}
+            />
+
+            <EditCredentialModal
+                open={editTarget !== null}
+                credential={editTarget}
+                availableRoles={availableRoles}
+                onCancel={() => setEditTarget(null)}
+                onSubmit={handleEdit}
             />
         </div>
     );

@@ -26,9 +26,7 @@ pub fn issue_token(
     realm_id: &str,
     public_key_pem: Option<String>,
     roles: Vec<String>,
-    domain: Option<String>,
-    algorithm: Algorithm,
-    encoding_key: EncodingKey,
+    jwt_config: &JwtTokenConfig,
     expiration_seconds: i64,
 ) -> Result<String, AuthError> {
     let now = SystemTime::now()
@@ -50,13 +48,13 @@ pub fn issue_token(
             auth_scheme: Some(auth_scheme),
             public_key: public_key_pem,
             realm_id: Some(realm_id.to_string()),
-            domain,
+            domain: Some(realm_id.to_string()),
         },
         ..Default::default()
     };
 
-    let header = Header::new(algorithm);
-    encode(&header, &claims, &encoding_key)
+    let header = Header::new(jwt_config.algorithm);
+    encode(&header, &claims, &jwt_config.encoding_key)
         .map_err(|e| AuthError::Unexpected(format!("Failed to issue token: {e}")))
 }
 
@@ -98,9 +96,7 @@ mod tests {
             "realm123",
             None,
             vec!["CryptoOfficer".to_string()],
-            Some("acme.com".to_string()),
-            config.algorithm,
-            config.encoding_key,
+            &config,
             expiration_seconds,
         )
         .unwrap();
@@ -124,9 +120,7 @@ mod tests {
             "realm123",
             None,
             Vec::new(),
-            None,
-            config.algorithm,
-            config.encoding_key,
+            &config,
             expiration_seconds,
         )
         .unwrap();
@@ -156,9 +150,7 @@ mod tests {
             "realm123",
             None,
             Vec::new(),
-            None,
-            config.algorithm,
-            config.encoding_key,
+            &config,
             expiration_seconds,
         )
         .unwrap();

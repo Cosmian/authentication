@@ -21,15 +21,33 @@ const mockRealms = [
 
 test.describe("Navigation", () => {
     test.beforeEach(async ({ page }) => {
-        await page.route("**/whoami**", (route) =>
-            route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockClaims) }),
+        await page.route(
+            (url) => url.pathname.startsWith("/whoami"),
+            (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockClaims) }),
         );
-        await page.route("**/admins/realms", (route) =>
-            route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockRealms) }),
+        await page.route(
+            (url) => url.pathname === "/admins/realms",
+            (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockRealms) }),
         );
-        await page.route("**/admins", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }));
-        await page.route("**/public/version", (route) =>
-            route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test" }) }),
+        await page.route(
+            (url) => url.pathname === "/admins",
+            (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
+        );
+        await page.route(
+            (url) => url.pathname === "/public/version",
+            (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test" }) }),
+        );
+        await page.route(
+            (url) => url.pathname === "/public/roles",
+            (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
+        );
+        await page.route(
+            (url) => url.pathname.startsWith("/realms/"),
+            (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
+        );
+        await page.route(
+            (url) => url.pathname.startsWith("/sessions"),
+            (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
         );
     });
 

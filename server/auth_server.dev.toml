@@ -31,6 +31,12 @@ host_port = 8443
 admin_ui_path = "admin-ui/dist"
 
 # ---------------------------------------------------------------------------
+# RBAC roles — available role names exposed via GET /public/roles.
+# The admin UI role-selection dropdowns are populated from this list.
+# ---------------------------------------------------------------------------
+roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+
+# ---------------------------------------------------------------------------
 # TLS — uses the test EC P-256 certificates bundled with the source tree.
 # These are self-signed and must NOT be used in production.
 # ---------------------------------------------------------------------------
@@ -45,7 +51,7 @@ server_ca_chain    = "server/src/tests/certificates/ec/auth.ca.pem"
 # ---------------------------------------------------------------------------
 [database_params]
 backend        = "sqlite"
-connection_url = "sqlite::memory:"
+connection_url = "sqlite:///tmp/path.db"
 auto_init_schema = true
 
 # ---------------------------------------------------------------------------

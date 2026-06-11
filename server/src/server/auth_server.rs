@@ -8,9 +8,9 @@ use crate::{
             delete_expired_sessions, delete_realm, delete_sessions, delete_sessions_for_realm,
             delete_userpass, get_admin, get_realm, get_session, get_session_by_id,
             get_sessions_for_clients, get_userpass, list_admins, list_all_userpass, list_realms,
-            list_userpass_by_realm, login, remove_admin_from_realm, totp_disable, totp_generate,
-            totp_verify, update_admin, update_realm, update_userpass, upsert_session,
-            version_endpoint, whoami,
+            list_userpass_by_realm, login, remove_admin_from_realm, roles_endpoint, totp_disable,
+            totp_generate, totp_verify, update_admin, update_realm, update_userpass,
+            upsert_session, version_endpoint, whoami,
         },
         parameters::{DatabaseBackend, DatabaseParams, DevSeedParams, ServerParams},
     },
@@ -87,7 +87,6 @@ async fn seed_dev_realm_admin(
             password: hashed,
             change_password: true,
             roles: Vec::new(),
-            domain: None,
         };
         db.create_userpass(&userpass).await.map_err(|e| {
             crate::AuthError::Init(format!(
@@ -319,7 +318,8 @@ fn build_app(
     // The public scope
     let public_scope = web::scope("/public")
         .wrap(Cors::permissive())
-        .route("/version", web::get().to(version_endpoint));
+        .route("/version", web::get().to(version_endpoint))
+        .route("/roles", web::get().to(roles_endpoint));
 
     #[cfg(feature = "swagger-ui")]
     let public_scope = {

@@ -194,7 +194,6 @@ fn make_expired_userpass(realm: &str, username: &str, password: &str) -> AuthRes
         password: hash_password_with_argon2(username, password)?,
         change_password: true,
         roles: Vec::new(),
-        domain: None,
     })
 }
 

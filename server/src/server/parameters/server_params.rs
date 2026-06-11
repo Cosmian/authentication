@@ -43,6 +43,12 @@ pub struct ServerParams {
     /// When set and the `admin-ui` feature is enabled, the server serves those
     /// static files at `/admin-ui` with a SPA fallback for client-side routing.
     pub admin_ui_path: Option<std::path::PathBuf>,
+
+    /// Available RBAC role names exposed via `GET /public/roles`.
+    /// These are the roles that can be assigned to users and evaluated by OPA.
+    /// Example: `["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]`
+    #[serde(default)]
+    pub roles: Vec<String>,
 }
 
 /// Parameters for seeding a realm-admin on first start in development mode.

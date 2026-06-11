@@ -62,7 +62,7 @@ describe("AuthContext", () => {
         expect(screen.getByTestId("user")).toHaveTextContent("alice");
     });
 
-    it("should resolve serverUrl from default", async () => {
+    it("should resolve serverUrl to empty string by default (same-origin mode)", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }));
 
         await act(async () => {
@@ -73,7 +73,7 @@ describe("AuthContext", () => {
             );
         });
 
-        expect(screen.getByTestId("url")).toHaveTextContent("https://localhost:8443");
+        expect(screen.getByTestId("url")).toHaveTextContent("");
     });
 
     it("should throw when useAuth is used outside AuthProvider", () => {

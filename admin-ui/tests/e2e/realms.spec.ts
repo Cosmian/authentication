@@ -36,85 +36,100 @@ async function mockRealmsApi(page: Page, initialRealms: Realm[]): Promise<void> 
     const store: Realm[] = [...initialRealms];
 
     // Also mock /public/version so the Footer doesn't hit a real server.
-    await page.route("**/public/version", (route) =>
-        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test-version" }) }),
+    await page.route(
+        (url) => url.pathname === "/public/version",
+        (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test-version" }) }),
+    );
+
+    // Mock /public/roles for the Credentials page role selector.
+    await page.route(
+        (url) => url.pathname === "/public/roles",
+        (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
     );
 
     // Mock /whoami so ProtectedRoute sees an authenticated session.
-    await page.route("**/whoami**", (route) =>
-        route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({
-                iss: "https://localhost:8443",
-                sub: "admin",
-                aud: "_",
-                exp: 9999999999,
-                iat: 1000000000,
-                as_as: "username_password",
-                as_rid: "_",
+    await page.route(
+        (url) => url.pathname.startsWith("/whoami"),
+        (route) =>
+            route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    iss: "https://localhost:8443",
+                    sub: "admin",
+                    aud: "_",
+                    exp: 9999999999,
+                    iat: 1000000000,
+                    as_as: "username_password",
+                    as_rid: "_",
+                }),
             }),
-        }),
     );
 
     // LIST  GET /admins/realms
-    await page.route("**/admins/realms", async (route) => {
-        if (route.request().method() === "GET") {
-            return route.fulfill({
-                status: 200,
-                contentType: "application/json",
-                body: JSON.stringify(store),
-            });
-        }
-        // CREATE  POST /admins/realms
-        if (route.request().method() === "POST") {
-            const body = (await route.request().postDataJSON()) as Realm;
-            if (store.some((r) => r.id === body.id)) {
+    await page.route(
+        (url) => url.pathname === "/admins/realms",
+        async (route) => {
+            if (route.request().method() === "GET") {
                 return route.fulfill({
-                    status: 409,
+                    status: 200,
                     contentType: "application/json",
-                    body: JSON.stringify({ message: `Realm '${body.id}' already exists` }),
+                    body: JSON.stringify(store),
                 });
             }
-            store.push(body);
-            return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(body) });
-        }
-        return route.continue();
-    });
+            // CREATE  POST /admins/realms
+            if (route.request().method() === "POST") {
+                const body = (await route.request().postDataJSON()) as Realm;
+                if (store.some((r) => r.id === body.id)) {
+                    return route.fulfill({
+                        status: 409,
+                        contentType: "application/json",
+                        body: JSON.stringify({ message: `Realm '${body.id}' already exists` }),
+                    });
+                }
+                store.push(body);
+                return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(body) });
+            }
+            return route.continue();
+        },
+    );
 
     // GET / PUT / DELETE  /admins/realms/:id
-    await page.route("**/admins/realms/**", async (route) => {
-        const url = new URL(route.request().url());
-        const realmId = decodeURIComponent(url.pathname.split("/").pop() ?? "");
-        const idx = store.findIndex((r) => r.id === realmId);
+    await page.route(
+        (url) => url.pathname.startsWith("/admins/realms/"),
+        async (route) => {
+            const reqUrl = new URL(route.request().url());
+            const realmId = decodeURIComponent(reqUrl.pathname.split("/").pop() ?? "");
+            const idx = store.findIndex((r) => r.id === realmId);
 
-        if (route.request().method() === "GET") {
-            if (idx === -1) {
-                return route.fulfill({
-                    status: 404,
-                    contentType: "application/json",
-                    body: JSON.stringify({ message: "Not found" }),
-                });
+            if (route.request().method() === "GET") {
+                if (idx === -1) {
+                    return route.fulfill({
+                        status: 404,
+                        contentType: "application/json",
+                        body: JSON.stringify({ message: "Not found" }),
+                    });
+                }
+                return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(store[idx]) });
             }
-            return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(store[idx]) });
-        }
 
-        if (route.request().method() === "PUT") {
-            const body = (await route.request().postDataJSON()) as Realm;
-            if (idx === -1) {
-                return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ message: "Not found" }) });
+            if (route.request().method() === "PUT") {
+                const body = (await route.request().postDataJSON()) as Realm;
+                if (idx === -1) {
+                    return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ message: "Not found" }) });
+                }
+                store[idx] = { ...body, id: realmId };
+                return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(store[idx]) });
             }
-            store[idx] = { ...body, id: realmId };
-            return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(store[idx]) });
-        }
 
-        if (route.request().method() === "DELETE") {
-            if (idx !== -1) store.splice(idx, 1);
-            return route.fulfill({ status: 204, body: "" });
-        }
+            if (route.request().method() === "DELETE") {
+                if (idx !== -1) store.splice(idx, 1);
+                return route.fulfill({ status: 204, body: "" });
+            }
 
-        return route.continue();
-    });
+            return route.continue();
+        },
+    );
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

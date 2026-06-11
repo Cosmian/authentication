@@ -1,13 +1,14 @@
-import { Alert, Checkbox, Form, Input, Modal } from "antd";
+import { Alert, Checkbox, Form, Input, Modal, Select } from "antd";
 import React, { useEffect, useState } from "react";
 
 interface CreateCredentialModalProps {
     open: boolean;
+    availableRoles: string[];
     onCancel: () => void;
-    onSubmit: (username: string, password: number[], changePassword: boolean) => Promise<void>;
+    onSubmit: (username: string, password: number[], changePassword: boolean, roles: string[]) => Promise<void>;
 }
 
-export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ open, onCancel, onSubmit }) => {
+export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ open, availableRoles, onCancel, onSubmit }) => {
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [canSubmit, setCanSubmit] = useState(false);
@@ -35,7 +36,7 @@ export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ op
             const values = await form.validateFields();
             setLoading(true);
             const passwordBytes = Array.from(new TextEncoder().encode(values.password));
-            await onSubmit(values.username, passwordBytes, values.change_password ?? false);
+            await onSubmit(values.username, passwordBytes, values.change_password ?? false, values.roles ?? []);
             form.resetFields();
         } catch (err) {
             if (err instanceof Error) {
@@ -92,7 +93,14 @@ export const CreateCredentialModal: React.FC<CreateCredentialModalProps> = ({ op
                 <Form.Item name="change_password" valuePropName="checked">
                     <Checkbox>Require password change on next login</Checkbox>
                 </Form.Item>
-
+                <Form.Item name="roles" label="Roles">
+                    <Select
+                        mode="multiple"
+                        allowClear
+                        placeholder="No roles (optional)"
+                        options={availableRoles.map((r) => ({ label: r, value: r }))}
+                    />
+                </Form.Item>
                 {submitError && (
                     <Form.Item>
                         <Alert type="error" message={submitError} showIcon />
