@@ -79,7 +79,6 @@ pub async fn login(
 
     // Fetch roles from userpass record (if authenticated via username/password).
     // For non-userpass auth schemes (JWT, mTLS), roles=[] (fail-closed).
-    // The domain (as_domain JWT claim) is always set to the realm_id.
     let roles = if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword {
         match database
             .get_userpass(&realm.id, &authenticated_client.username)

@@ -111,14 +111,21 @@ pub struct RegisteredClaims {
 
 // ── §4.2  Public Claim Names ───────────────────────────────────────────────────
 
-/// Authorization claims (RFC 9068 §2.2.3.1 inspired).
+/// Authorization claims.
 ///
-/// Contains role assignments used by OPA for RBAC policy evaluation.
+/// The `roles` claim is registered in the IANA JWT Claims Registry by
+/// RFC 9068 §7.2.1.1 and is defined in RFC 7643 §4.1.2 (SCIM User resource).
+/// RFC 9068 §2.2.3.1 recommends using it to convey role memberships in access
+/// tokens outside of delegation scenarios.  The value is simplified to a flat
+/// `Vec<String>` rather than the full SCIM complex type; RFC 9068 states
+/// "no specific vocabulary is provided for `roles`".
+///
 /// Serialised as flat fields in the JWT payload.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthorizationClaims {
     /// RBAC roles assigned to the user (e.g. `["CryptoOfficer"]`).
     /// Absence or empty array means no roles (fail-closed in OPA).
+    /// Claim name `roles` per RFC 9068 §7.2.1.1 / RFC 7643 §4.1.2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roles: Option<Vec<String>>,
 }
@@ -142,11 +149,10 @@ pub struct AuthPrivateClaims {
     pub public_key: Option<String>,
 
     /// Realm ID that the client authenticated to.
+    /// Also used as the OPA domain scope: consumers should read `as_rid` for
+    /// domain-scoped RBAC rather than a separate `as_domain` claim.
     #[serde(rename = "as_rid", skip_serializing_if = "Option::is_none")]
     pub realm_id: Option<String>,
-    /// Domain the authenticated user belongs to (for OPA domain-scoped RBAC).
-    #[serde(rename = "as_domain", skip_serializing_if = "Option::is_none")]
-    pub domain: Option<String>,
 }
 
 // ── Top-level JWT Claims Set ──────────────────────────────────────────────────
