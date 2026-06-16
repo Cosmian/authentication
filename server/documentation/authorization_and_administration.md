@@ -10,9 +10,9 @@ Every `Admin` record in the database represents an administrator — either a su
 
 The two tiers are:
 
-| Tier | Sentinel | Condition |
-|------|----------|-----------|
-| **Super Admin** | `Admin.realms` contains `"_"` | Can administer all realms and all users |
+| Tier            | Sentinel                                      | Condition                                                |
+| --------------- | --------------------------------------------- | -------------------------------------------------------- |
+| **Super Admin** | `Admin.realms` contains `"_"`                 | Can administer all realms and all users                  |
 | **Realm Admin** | `Admin.realms` contains one or more realm IDs | Can administer only the listed realms (and their admins) |
 
 ```mermaid
@@ -96,55 +96,55 @@ flowchart TD
 
 ### Realm Management
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `POST` | `/admins/realms` | ✅ | ❌ |
-| `GET` | `/admins/realms/{id}` | ✅ | ✅ if `can_administer_realm(id)` |
-| `PUT` | `/admins/realms/{id}` | ✅ | ❌ |
-| `DELETE` | `/admins/realms/{id}` | ✅ | ❌ |
-| `GET` | `/admins/realms` | ✅ all | ✅ filtered |
+| Method   | Endpoint              | Super Admin |           Realm Admin           |
+| -------- | --------------------- | :---------: | :-----------------------------: |
+| `POST`   | `/admins/realms`      |      ✅      |                ❌                |
+| `GET`    | `/admins/realms/{id}` |      ✅      | ✅ if `can_administer_realm(id)` |
+| `PUT`    | `/admins/realms/{id}` |      ✅      |                ❌                |
+| `DELETE` | `/admins/realms/{id}` |      ✅      |                ❌                |
+| `GET`    | `/admins/realms`      |    ✅ all    |           ✅ filtered            |
 
 ### Admin Management
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `POST` | `/admins` | ✅ | ✅ if owns all target realms |
-| `GET` | `/admins/{id}` | ✅ | ✅ if owns all target realms |
-| `PUT` | `/admins/{id}` | ✅ | ✅ if owns current AND new realms |
-| `DELETE` | `/admins/{id}` | ✅ | ✅ if owns all target realms |
-| `GET` | `/admins` | ✅ | ❌ |
-| `PUT` | `/admins/{id}/realms/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
-| `DELETE` | `/admins/{id}/realms/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
+| Method   | Endpoint                         | Super Admin |              Realm Admin              |
+| -------- | -------------------------------- | :---------: | :-----------------------------------: |
+| `POST`   | `/admins`                        |      ✅      |      ✅ if owns all target realms      |
+| `GET`    | `/admins/{id}`                   |      ✅      |      ✅ if owns all target realms      |
+| `PUT`    | `/admins/{id}`                   |      ✅      |   ✅ if owns current AND new realms    |
+| `DELETE` | `/admins/{id}`                   |      ✅      |      ✅ if owns all target realms      |
+| `GET`    | `/admins`                        |      ✅      |                   ❌                   |
+| `PUT`    | `/admins/{id}/realms/{realm_id}` |      ✅      | ✅ if `can_administer_realm(realm_id)` |
+| `DELETE` | `/admins/{id}/realms/{realm_id}` |      ✅      | ✅ if `can_administer_realm(realm_id)` |
 
 ### Credential Management
 
 All `/realms/{realm}/userpass` endpoints require `can_administer_realm(realm)`.
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `POST` | `/realms/{realm}/userpass` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `GET` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `PUT` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `DELETE` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `GET` | `/realms/{realm}/userpass` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `GET` | `/admins/userpass` | ✅ all | ❌ |
+| Method   | Endpoint                              | Super Admin |            Realm Admin             |
+| -------- | ------------------------------------- | :---------: | :--------------------------------: |
+| `POST`   | `/realms/{realm}/userpass`            |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `GET`    | `/realms/{realm}/userpass/{username}` |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `PUT`    | `/realms/{realm}/userpass/{username}` |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `DELETE` | `/realms/{realm}/userpass/{username}` |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `GET`    | `/realms/{realm}/userpass`            |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `GET`    | `/admins/userpass`                    |    ✅ all    |                 ❌                  |
 
 ### Session Management
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `GET` | `/sessions/{session_id}` | ✅ | ✅ if session is in an administered realm |
-| `DELETE` | `/sessions/{session_id}` | ✅ | ✅ if session is in an administered realm |
-| `GET` | `/sessions` | ✅ | ✅ filtered to administered realms |
+| Method   | Endpoint                 | Super Admin |               Realm Admin                |
+| -------- | ------------------------ | :---------: | :--------------------------------------: |
+| `GET`    | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
+| `DELETE` | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
+| `GET`    | `/sessions`              |      ✅      |    ✅ filtered to administered realms     |
 
 ### Public / unauthenticated
 
-| Method | Endpoint | Anyone |
-|--------|---------|:------:|
-| `GET` | `/public/version` | ✅ |
-| `GET` | `/public/jwks` | ✅ |
-| `POST` | `/login` | ✅ |
-| `GET` | `/whoami` | ✅ (no `AdminAuth`) |
+| Method | Endpoint                 |       Anyone       |
+| ------ | ------------------------ | :----------------: |
+| `GET`  | `/public/version`        |         ✅          |
+| `GET`  | `/.well-known/jwks.json` |         ✅          |
+| `POST` | `/login`                 |         ✅          |
+| `GET`  | `/whoami`                | ✅ (no `AdminAuth`) |
 
 ---
 
@@ -189,9 +189,9 @@ The `/realms/{realm}/userpass` endpoints read the session cookie and check that 
 
 The first super admin is seeded at server startup from two environment variables:
 
-| Variable | Description |
-|----------|-------------|
-| `APP_REALM_ADMIN_USERNAME` | Username for the initial super admin |
+| Variable                           | Description                                       |
+| ---------------------------------- | ------------------------------------------------- |
+| `APP_REALM_ADMIN_USERNAME`         | Username for the initial super admin              |
 | `APP_REALM_ADMIN_INITIAL_PASSWORD` | Plaintext password (hashed with Argon2id at boot) |
 
 At startup the server:

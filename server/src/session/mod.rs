@@ -5,7 +5,7 @@ mod factory;
 pub use factory::create_session_store_with_collector;
 
 mod jwt;
-pub use jwt::{JwtTokenConfig, issue_token, validate_token};
+pub use jwt::{JwksData, JwtTokenConfig, build_jwks_from_pem, issue_token, validate_token};
 
 mod session_store;
 pub use session_store::SessionStore;

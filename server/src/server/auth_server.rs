@@ -7,14 +7,14 @@ use crate::{
             add_admin_to_realm, create_admin, create_realm, create_userpass, delete_admin,
             delete_expired_sessions, delete_realm, delete_sessions, delete_sessions_for_realm,
             delete_userpass, get_admin, get_realm, get_session, get_session_by_id,
-            get_sessions_for_clients, get_userpass, list_admins, list_all_userpass, list_realms,
-            list_userpass_by_realm, login, remove_admin_from_realm, roles_endpoint, totp_disable,
-            totp_generate, totp_verify, update_admin, update_realm, update_userpass,
+            get_sessions_for_clients, get_userpass, jwks_well_known, list_admins, list_all_userpass,
+            list_realms, list_userpass_by_realm, login, remove_admin_from_realm, roles_endpoint,
+            totp_disable, totp_generate, totp_verify, update_admin, update_realm, update_userpass,
             upsert_session, version_endpoint, whoami,
         },
         parameters::{DatabaseBackend, DatabaseParams, DevSeedParams, ServerParams},
     },
-    session::{self, JwtTokenConfig},
+    session::{self, JwksData, JwtTokenConfig},
 };
 use actix_cors::Cors;
 use actix_web::{
@@ -215,6 +215,23 @@ async fn prepare_auth_server(
         decoding_key: params.get_jwt_decoding_key()?,
     });
 
+    // Build the JWKS document once from the JWT signing public key.
+    // Reads the same PEM path that get_jwt_decoding_key() uses.
+    let jwks_pem_path = params
+        .session_jwt_params
+        .as_ref()
+        .map(|p| p.jwt_ec_public_key.clone())
+        .unwrap_or_else(|| params.tls_params.server_certificate.clone());
+    let jwks_pem = std::fs::read_to_string(&jwks_pem_path).map_err(|e| {
+        crate::AuthError::Init(format!(
+            "Failed to read JWT public key PEM for JWKS ({jwks_pem_path}): {e}"
+        ))
+    })?;
+    let jwks_data = Arc::new(
+        crate::session::build_jwks_from_pem(&jwks_pem)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?,
+    );
+
     // Clone test server params for HttpServer closure
     let server_params = params.clone();
 
@@ -229,6 +246,7 @@ async fn prepare_auth_server(
             jwks_manager.clone(),
             default_username.clone(),
             jwt_token_config.clone(),
+            jwks_data.clone(),
         )
     });
     let http_server = http_server
@@ -268,6 +286,7 @@ fn build_app(
     jwks_manager: Arc<JwksManager>,
     default_username: Option<String>,
     jwt_token_config: Arc<JwtTokenConfig>,
+    jwks_data: Arc<JwksData>,
 ) -> App<
     impl ServiceFactory<
         ServiceRequest,
@@ -285,8 +304,13 @@ fn build_app(
         .app_data(Data::new(database.clone()))
         .app_data(Data::new(session_store.clone()))
         .app_data(Data::new(jwt_token_config.clone()))
+        .app_data(Data::new(jwks_data.clone()))
         .app_data(PayloadConfig::new(1_000_000))
-        .app_data(JsonConfig::default().limit(1_000_000));
+        .app_data(JsonConfig::default().limit(1_000_000))
+        .route(
+            "/.well-known/jwks.json",
+            web::get().to(jwks_well_known),
+        );
 
     #[cfg(test)]
     let app = {

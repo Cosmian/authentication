@@ -4,6 +4,160 @@ use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, deco
 
 use crate::{AuthError, AuthScheme, models::ClientClaims};
 
+/// Pre-built JWKS document served at `/.well-known/jwks.json`.
+pub struct JwksData(pub serde_json::Value);
+
+/// Build a JWKS document from a PEM string (either an X.509 certificate or a
+/// SubjectPublicKeyInfo / `BEGIN PUBLIC KEY` file). The resulting set contains a
+/// single EC P-256 `sig` key with a deterministic `kid` derived from the
+/// SHA-256 digest of the raw x‖y bytes.
+///
+/// Supported PEM types: `BEGIN CERTIFICATE`, `BEGIN PUBLIC KEY`.
+#[cfg(feature = "openssl")]
+pub fn build_jwks_from_pem(pem: &str) -> crate::AuthResult<JwksData> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use sha2::{Digest, Sha256};
+
+    let xy = ec_xy_from_pem_openssl(pem)?;
+
+    let kid = hex::encode(Sha256::digest(&xy));
+    let jwk = serde_json::json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "use": "sig",
+        "alg": "ES256",
+        "kid": kid,
+        "x": URL_SAFE_NO_PAD.encode(&xy[0..32]),
+        "y": URL_SAFE_NO_PAD.encode(&xy[32..64]),
+    });
+    Ok(JwksData(serde_json::json!({ "keys": [jwk] })))
+}
+
+#[cfg(feature = "openssl")]
+fn ec_xy_from_pem_openssl(pem: &str) -> crate::AuthResult<Vec<u8>> {
+    if pem.contains("BEGIN CERTIFICATE") {
+        let der = pem_to_der_bytes(pem, "CERTIFICATE")?;
+        let cert = openssl::x509::X509::from_der(&der)
+            .map_err(|e| AuthError::Config(format!("Failed to parse X.509 certificate: {e}")))?;
+        let pkey = cert
+            .public_key()
+            .map_err(|e| AuthError::Config(format!("Failed to extract public key: {e}")))?;
+        ec_xy_from_pkey(&pkey)
+    } else {
+        let der = pem_to_der_bytes(pem, "PUBLIC KEY")?;
+        let pkey = openssl::pkey::PKey::public_key_from_der(&der)
+            .map_err(|e| AuthError::Config(format!("Failed to parse public key DER: {e}")))?;
+        ec_xy_from_pkey(&pkey)
+    }
+}
+
+#[cfg(feature = "openssl")]
+fn ec_xy_from_pkey(
+    pkey: &openssl::pkey::PKey<openssl::pkey::Public>,
+) -> crate::AuthResult<Vec<u8>> {
+    let ec = pkey
+        .ec_key()
+        .map_err(|e| AuthError::Config(format!("JWT key is not an EC key: {e}")))?;
+    let group = ec.group();
+    let point = ec.public_key();
+    let mut ctx = openssl::bn::BigNumContext::new()
+        .map_err(|e| AuthError::Config(format!("Failed to create BigNum context: {e}")))?;
+    let bytes = point
+        .to_bytes(
+            group,
+            openssl::ec::PointConversionForm::UNCOMPRESSED,
+            &mut ctx,
+        )
+        .map_err(|e| AuthError::Config(format!("Failed to export EC point: {e}")))?;
+    if bytes.len() != 65 || bytes[0] != 0x04 {
+        return Err(AuthError::Config(format!(
+            "Expected 65-byte uncompressed P-256 point, got {} bytes",
+            bytes.len()
+        )));
+    }
+    Ok(bytes[1..].to_vec()) // 64 bytes: x‖y
+}
+
+/// Build a JWKS document from a PEM string.
+///
+/// This is the `rustls`-only (no OpenSSL) implementation. It parses the raw DER
+/// bytes to locate the uncompressed EC public-key point directly.
+#[cfg(all(feature = "rustls", not(feature = "openssl")))]
+pub fn build_jwks_from_pem(pem: &str) -> crate::AuthResult<JwksData> {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use sha2::{Digest, Sha256};
+
+    let xy = ec_xy_from_pem_der(pem)?;
+
+    let kid = hex::encode(Sha256::digest(&xy));
+    let jwk = serde_json::json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "use": "sig",
+        "alg": "ES256",
+        "kid": kid,
+        "x": URL_SAFE_NO_PAD.encode(&xy[0..32]),
+        "y": URL_SAFE_NO_PAD.encode(&xy[32..64]),
+    });
+    Ok(JwksData(serde_json::json!({ "keys": [jwk] })))
+}
+
+/// Locate the 64-byte x‖y from a P-256 EC key embedded in raw DER bytes.
+///
+/// The uncompressed-point marker `0x04` is always the last content byte of the
+/// BitString that encodes the SubjectPublicKeyInfo's public key. In a P-256
+/// SubjectPublicKeyInfo the DER is exactly 91 bytes and `0x04` is at byte 26.
+/// In an X.509 certificate the same BitString appears near the end of the
+/// TBSCertificate, so scanning backwards for `0x00 0x04` (no unused bits +
+/// uncompressed marker) followed by exactly 64 bytes is reliable.
+#[cfg(all(feature = "rustls", not(feature = "openssl")))]
+fn ec_xy_from_pem_der(pem: &str) -> crate::AuthResult<[u8; 64]> {
+    let label = if pem.contains("BEGIN CERTIFICATE") {
+        "CERTIFICATE"
+    } else {
+        "PUBLIC KEY"
+    };
+    let der = pem_to_der_bytes(pem, label)?;
+
+    // Search for the last occurrence of [0x00, 0x04] (BitString no-unused-bits +
+    // uncompressed EC point marker) where 64 bytes follow.
+    let pos = der
+        .windows(2)
+        .enumerate()
+        .rev()
+        .find(|(i, w)| w[0] == 0x00 && w[1] == 0x04 && i + 2 + 64 <= der.len())
+        .map(|(i, _)| i + 2) // first byte of x
+        .ok_or_else(|| {
+            AuthError::Config("Cannot locate P-256 uncompressed point in DER".to_string())
+        })?;
+
+    let mut xy = [0u8; 64];
+    xy.copy_from_slice(&der[pos..pos + 64]);
+    Ok(xy)
+}
+
+fn pem_to_der_bytes(pem: &str, label: &str) -> crate::AuthResult<Vec<u8>> {
+    use base64::Engine as _;
+    let begin = format!("-----BEGIN {label}-----");
+    let end = format!("-----END {label}-----");
+    let start = pem
+        .find(&begin)
+        .ok_or_else(|| AuthError::Config(format!("Missing BEGIN {label} marker in PEM")))?
+        + begin.len();
+    let end_idx = pem
+        .find(&end)
+        .ok_or_else(|| AuthError::Config(format!("Missing END {label} marker in PEM")))?;
+    let b64: String = pem[start..end_idx]
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    base64::engine::general_purpose::STANDARD
+        .decode(&b64)
+        .map_err(|e| AuthError::Config(format!("Failed to base64-decode PEM body: {e}")))
+}
+
 pub struct JwtTokenConfig {
     pub algorithm: Algorithm,
     pub encoding_key: EncodingKey,
