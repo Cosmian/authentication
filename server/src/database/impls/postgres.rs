@@ -361,7 +361,12 @@ impl Database for PostgresDatabase {
         let mut userpass_list = Vec::new();
         for row in rows {
             let roles_json: String = row.try_get("roles").unwrap_or_default();
-            let roles: Vec<String> = serde_json::from_str(&roles_json).unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                let username: String = row.try_get("username").unwrap_or_default();
+                AuthDbError::Unexpected(format!(
+                    "failed to deserialize roles for user '{username}': {e}"
+                ))
+            })?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
@@ -388,7 +393,12 @@ impl Database for PostgresDatabase {
         let mut userpass_list = Vec::new();
         for row in rows {
             let roles_json: String = row.try_get("roles").unwrap_or_default();
-            let roles: Vec<String> = serde_json::from_str(&roles_json).unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                let username: String = row.try_get("username").unwrap_or_default();
+                AuthDbError::Unexpected(format!(
+                    "failed to deserialize roles for user '{username}': {e}"
+                ))
+            })?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
