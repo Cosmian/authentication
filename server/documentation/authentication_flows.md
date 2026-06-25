@@ -126,7 +126,7 @@ See [two_factor_authentication.md](two_factor_authentication.md) for the full TO
 
 Machine-to-machine scenarios (service accounts, CI pipelines, SDKs) use RS256 or ES256 JWT tokens instead of cookies.
 
-### Sequence
+### JWT Bearer Token sequence
 
 ```mermaid
 sequenceDiagram
@@ -170,7 +170,7 @@ The server exposes a JWKS endpoint at `GET /public/jwks` which returns the RSA/E
 
 For high-assurance scenarios, clients authenticate using an EC P-256 client certificate over mutual TLS.
 
-### Sequence
+### Client Certificate sequence
 
 ```mermaid
 sequenceDiagram
@@ -241,9 +241,35 @@ DELETE /sessions/realms/{realm_id}
 | Method | Path | Description | Auth required |
 |--------|------|-------------|---------------|
 | `POST` | `/login?realm={realm}` | Authenticate and issue a session cookie | No (credentials in body) |
-| `GET` | `/whoami?realm={realm}` | Return the current session's claims | Session cookie |
+| `GET` | `/whoami?realm={realm}` | Return the current session's claims as a signed JWT | Session cookie |
 | `GET` | `/public/version` | Server version string | No |
 | `GET` | `/public/jwks` | JSON Web Key Set for JWT verification | No |
+
+### Session JWT — `/whoami` response
+
+`GET /whoami?realm={realm}` returns a signed JWT (`ClientClaims`) whose payload is a
+**flat JSON object** containing three groups of claims:
+
+| Claim | Group | Description |
+|-------|-------|-------------|
+| `sub` | Registered (RFC 7519 §4.1.2) | Username of the authenticated client |
+| `exp` | Registered | Expiry time (Unix seconds) |
+| `iat` | Registered | Issued-at time (Unix seconds) |
+| `roles` | Authorization (RFC 9068 §2.2.3.1) | RBAC roles assigned to the user — **omitted when empty** |
+| `as_as` | Private | Auth scheme: `"up"` / `"jwt"` / `"cc"` / `"f2"` / `"dc"` |
+| `as_rid` | Private | Realm ID (also used as the OPA domain scope) |
+| `as_pk` | Private | Client public key PEM — only present for mTLS sessions |
+
+The `roles` claim follows [RFC 9068 §2.2.3.1](https://www.rfc-editor.org/rfc/rfc9068#section-2.2.3.1)
+and [RFC 7643 §4.1.2](https://www.rfc-editor.org/rfc/rfc7643#section-4.1.2). It is
+a flat `Vec<String>` of role names (e.g. `["CryptoOfficer"]`). Absence means no
+roles — downstream OPA policies should treat absence as fail-closed.
+
+Roles are set per credential via the admin API. See the
+[Credential Management](client_library.md#credential-management) section of the
+client library guide for the `UserPass.roles` field, and the
+[`ClientClaims` type reference](client_library.md#clientclaims) for the full
+struct layout and a wire-format example.
 
 ### Session management endpoints
 

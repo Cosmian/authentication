@@ -23,6 +23,8 @@ The `auth_client` crate provides an HTTP client and shared types for interacting
 - [Public Endpoints](#public-endpoints)
 - [Error Handling](#error-handling)
 - [Types Reference](#types-reference)
+  - [`ClientClaims`](#clientclaims)
+    - [Reading roles from a validated session](#reading-roles-from-a-validated-session)
 - [Actix-web Integration Example](#actix-web-integration-example)
 
 ---
@@ -482,18 +484,20 @@ pub enum AuthClientScheme {
 
 ### `ClientClaims`
 
-Returned by `whoami()`. The struct has two flattened sub-structs:
+Returned by `whoami()`. The struct has three flattened sub-structs — the JWT is a
+**flat JSON object** on the wire; the sub-struct boundaries exist only in Rust:
 
 ```rust
 pub struct ClientClaims {
-    pub registered: RegisteredClaims,  // RFC 7519 §4.1
-    pub private:    AuthPrivateClaims, // Auth-specific
-    pub extra:      HashMap<String, Value>,
+    pub registered:    RegisteredClaims,    // RFC 7519 §4.1
+    pub authorization: AuthorizationClaims, // RFC 9068 §2.2.3.1
+    pub private:       AuthPrivateClaims,   // Auth-specific
+    pub extra:         HashMap<String, Value>,
 }
 
 pub struct RegisteredClaims {
     pub iss: Option<String>,      // Issuer
-    pub sub: Option<String>,      // Subject
+    pub sub: Option<String>,      // Subject (username)
     pub aud: Option<Vec<String>>, // Audience
     pub exp: Option<i64>,         // Expiry (Unix secs)
     pub nbf: Option<i64>,         // Not-before (Unix secs)
@@ -501,15 +505,52 @@ pub struct RegisteredClaims {
     pub jti: Option<String>,      // JWT ID
 }
 
+/// Authorization claims (RFC 9068 §2.2.3.1 / RFC 7643 §4.1.2).
+pub struct AuthorizationClaims {
+    // "roles" — RBAC roles assigned to the user at credential level.
+    // Omitted when empty (fail-closed in OPA and downstream consumers).
+    pub roles: Option<Vec<String>>,
+}
+
 pub struct AuthPrivateClaims {
     // "as_as" — auth scheme: "up" | "jwt" | "cc" | "f2" | "dc"
     pub auth_scheme: Option<AuthScheme>,
     // "as_pk" — client public key PEM (when using mTLS)
     pub public_key: Option<String>,
-    // "as_rid" — realm ID
+    // "as_rid" — realm ID (also used as the OPA domain scope)
     pub realm_id: Option<String>,
 }
 ```
+
+#### Reading roles from a validated session
+
+```rust
+let claims: ClientClaims = client.whoami("my-service").await?;
+
+let roles = claims.authorization.roles.as_deref().unwrap_or(&[]);
+if roles.contains(&"CryptoOfficer".to_string()) {
+    // grant access to crypto operations
+}
+```
+
+#### Wire format example
+
+A token issued for a user with the `CryptoOfficer` role in realm `acme` looks like:
+
+```json
+{
+  "sub": "alice",
+  "exp": 1893456000,
+  "iat": 1893452400,
+  "roles": ["CryptoOfficer"],
+  "as_as": "up",
+  "as_rid": "acme"
+}
+```
+
+The `roles` claim is absent (not `[]`) when the credential has no roles assigned,
+so downstream OPA policies can treat absence as fail-closed without an explicit
+empty-array check.
 
 ---
 
