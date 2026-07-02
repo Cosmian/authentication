@@ -60,6 +60,13 @@ pub struct DevSeedParams {
     pub admin_username: String,
     /// Plain-text password for the realm-admin account.
     pub admin_password: String,
+    /// Username for a TOTP-enabled regular user in the seeded realm (optional).
+    pub totp_username: Option<String>,
+    /// Plain-text password for the TOTP-enabled user (optional).
+    pub totp_password: Option<String>,
+    /// Fixed Base32 TOTP secret for the TOTP user (optional).
+    /// If omitted, a random secret is generated and logged at startup.
+    pub totp_secret: Option<String>,
 }
 
 impl ServerParams {

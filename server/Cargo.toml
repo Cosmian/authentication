@@ -36,6 +36,7 @@ futures = { workspace = true }
 hex = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs", "use_pem"] }
 openssl = { workspace = true, features = ["vendored"], optional = true }
+pem = { workspace = true }
 redis = { workspace = true }
 reqwest = { workspace = true, features = [
     "json",

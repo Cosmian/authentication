@@ -138,24 +138,16 @@ fn ec_xy_from_pem_der(pem: &str) -> crate::AuthResult<[u8; 64]> {
     Ok(xy)
 }
 
-fn pem_to_der_bytes(pem: &str, label: &str) -> crate::AuthResult<Vec<u8>> {
-    use base64::Engine as _;
-    let begin = format!("-----BEGIN {label}-----");
-    let end = format!("-----END {label}-----");
-    let start = pem
-        .find(&begin)
-        .ok_or_else(|| AuthError::Config(format!("Missing BEGIN {label} marker in PEM")))?
-        + begin.len();
-    let end_idx = pem
-        .find(&end)
-        .ok_or_else(|| AuthError::Config(format!("Missing END {label} marker in PEM")))?;
-    let b64: String = pem[start..end_idx]
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .collect();
-    base64::engine::general_purpose::STANDARD
-        .decode(&b64)
-        .map_err(|e| AuthError::Config(format!("Failed to base64-decode PEM body: {e}")))
+fn pem_to_der_bytes(pem_str: &str, label: &str) -> crate::AuthResult<Vec<u8>> {
+    let parsed = pem::parse(pem_str)
+        .map_err(|e| AuthError::Config(format!("Failed to parse PEM ({label}): {e}")))?;
+    if parsed.tag() != label {
+        return Err(AuthError::Config(format!(
+            "Expected PEM label {label}, got {}",
+            parsed.tag()
+        )));
+    }
+    Ok(parsed.into_contents())
 }
 
 pub struct JwtTokenConfig {

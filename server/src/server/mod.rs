@@ -1,4 +1,5 @@
 mod auth_server;
+mod dev_seed;
 pub use auth_server::start_auth_server;
 
 pub mod endpoints;

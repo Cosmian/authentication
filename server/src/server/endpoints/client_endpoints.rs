@@ -156,9 +156,7 @@ pub async fn roles_endpoint(
 
 /// Returns the JWKS (JSON Web Key Set) document containing the server's EC signing
 /// public key. Served at `/.well-known/jwks.json` per OIDC / RFC 8414.
-pub async fn jwks_well_known(
-    jwks: Data<Arc<JwksData>>,
-) -> Result<HttpResponse, AuthError> {
+pub async fn jwks_well_known(jwks: Data<Arc<JwksData>>) -> Result<HttpResponse, AuthError> {
     Ok(HttpResponse::Ok()
         .insert_header(("Cache-Control", "public, max-age=3600"))
         .json(&jwks.0))

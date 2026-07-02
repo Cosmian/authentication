@@ -337,6 +337,7 @@ dependencies = [
  "hex",
  "jsonwebtoken",
  "openssl",
+ "pem",
  "redis",
  "reqwest 0.13.2",
  "rustls",
