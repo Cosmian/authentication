@@ -1,5 +1,14 @@
 # Authorization Model
 
+<!-- TODO(staleness): This file is not linked from documentation/index.md, AGENTS.md, or
+     copilot-instructions.md and appears to be an orphaned duplicate of
+     documentation/authorization_and_administration.md. It predates the "Reworked REST API"
+     commit (df357f2) and the User->Admin rename (548c9c0): several paths below still used
+     `/admin/realm*`, `/admins/admin/{id}`, `/admin/userpass`, and `POST /login/{realm}` from
+     before those changes. Paths have been corrected here to match the current routes in
+     server/src/server/auth_server.rs, but prefer documentation/authorization_and_administration.md
+     as the source of truth and consider deleting this file to avoid future drift. -->
+
 This document describes the two-tier authorization model for the authentication server.
 
 > **Terminology:** A **client** is any entity that authenticates against `/login` (a human, a service, the CLI). A **`Admin` record** is an administrator account stored in the database — every `Admin` is either a super admin or a realm admin. See the [documentation index](documentation/index.md#terminology) for the full glossary.
@@ -41,34 +50,34 @@ A super admin always satisfies `can_administer_realm` for any realm.
 
 ## Endpoint Authorization Matrix
 
-### Realm Management (`/admin/*`)
+### Realm Management (`/admins/realms`)
 
 | Method | Path | Who may call it |
 |--------|------|-----------------|
-| `POST` | `/admin/realm` | Super admin |
-| `GET` | `/admin/realm/{id}` | Admin of `id` **or** super admin |
-| `PUT` | `/admin/realm/{id}` | Super admin |
-| `DELETE` | `/admin/realm/{id}` | Super admin |
-| `GET` | `/admin/realms` | Any authenticated admin (filtered) |
+| `POST` | `/admins/realms` | Super admin |
+| `GET` | `/admins/realms/{id}` | Admin of `id` **or** super admin |
+| `PUT` | `/admins/realms/{id}` | Super admin |
+| `DELETE` | `/admins/realms/{id}` | Super admin |
+| `GET` | `/admins/realms` | Any authenticated admin (filtered) |
 
-> `GET /admin/realms` returns **all** realms for super admins and only the
+> `GET /admins/realms` returns **all** realms for super admins and only the
 > administered realms for realm admins.
 
 ### Admin Management (`/admins/*`)
 
 | Method | Path | Who may call it |
 |--------|------|-----------------|
-| `POST` | `/admins/admin` | Super admin **or** realm admin (see below) |
-| `GET` | `/admins/admin/{id}` | Super admin **or** realm admin (see below) |
-| `PUT` | `/admins/admin/{id}` | Super admin **or** realm admin (see below) |
-| `DELETE` | `/admins/admin/{id}` | Super admin **or** realm admin (see below) |
+| `POST` | `/admins` | Super admin **or** realm admin (see below) |
+| `GET` | `/admins/{id}` | Super admin **or** realm admin (see below) |
+| `PUT` | `/admins/{id}` | Super admin **or** realm admin (see below) |
+| `DELETE` | `/admins/{id}` | Super admin **or** realm admin (see below) |
 | `GET` | `/admins` | Super admin |
-| `PUT` | `/admins/admin/{id}/realm/{realm_id}` | Admin of `realm_id` **or** super admin |
-| `DELETE` | `/admins/admin/{id}/realm/{realm_id}` | Admin of `realm_id` **or** super admin |
+| `PUT` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
+| `DELETE` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 
 #### Exclusive-Ownership Rule
 
-For `POST /admins/admin`, `GET /admins/admin/{id}`, `PUT /admins/admin/{id}`, and `DELETE /admins/admin/{id}`, a realm admin is permitted **only when every realm in the target `Admin` record's `realms` list is administered by the requester** and the list is non-empty:
+For `POST /admins`, `GET /admins/{id}`, `PUT /admins/{id}`, and `DELETE /admins/{id}`, a realm admin is permitted **only when every realm in the target `Admin` record's `realms` list is administered by the requester** and the list is non-empty:
 
 ```rust
 !target.realms.is_empty()
@@ -77,7 +86,7 @@ For `POST /admins/admin`, `GET /admins/admin/{id}`, `PUT /admins/admin/{id}`, an
 
 In other words, a realm admin may create, read, or delete a `Admin` record that belongs **exclusively** to realm(s) they control. If the `Admin` record belongs to any realm the requester does not administer — including `"_"` — the request is rejected with HTTP 403.
 
-For `PUT /admins/admin/{id}` specifically, the check is applied **twice**:
+For `PUT /admins/{id}` specifically, the check is applied **twice**:
 
 1. **Against the current DB state** of the user (same as GET/DELETE) — the requester must own the user as it currently exists.
 2. **Against the incoming request body** — the new `realms` list submitted in the body must also be entirely within the requester's authority. This prevents a realm admin from silently escalating a user's privileges by injecting `"_"` or a foreign realm into the update body.
@@ -105,9 +114,9 @@ These endpoints manage `UserPass` (username/password) credentials stored per rea
 | `PUT` | `/realms/{realm}/userpass/{username}` | Admin of `realm` **or** super admin |
 | `DELETE` | `/realms/{realm}/userpass/{username}` | Admin of `realm` **or** super admin |
 | `GET` | `/realms/{realm}/userpass` | Admin of `realm` **or** super admin |
-| `GET` | `/admin/userpass` | Super admin only |
+| `GET` | `/admins/userpass` | Super admin only |
 
-> **Cookie-realm constraint:** The `/realms/{R}/…` endpoints authenticate the caller using the cookie issued by `POST /login/{R}`. A session created by logging into realm `_` can only authenticate calls to `/realms/_/…`. A realm admin who logs into `_` can therefore only manage credentials in `_` — and only if `can_administer_realm("_")` is true (i.e., they are also a super admin).
+> **Cookie-realm constraint:** The `/realms/{R}/…` endpoints authenticate the caller using the cookie issued by `POST /login?realm={R}`. A session created by logging into realm `_` can only authenticate calls to `/realms/_/…`. A realm admin who logs into `_` can therefore only manage credentials in `_` — and only if `can_administer_realm("_")` is true (i.e., they are also a super admin).
 
 ---
 
@@ -148,10 +157,10 @@ All management operations use the `AdminAuth` middleware, which:
 
 1. Reads the `_ea_` session cookie (set by `POST /login?realm={realm}`).
 2. Resolves the session to a `ClientClaims` object (the authenticated client's identity).
-3. Calls `database.find_users_by_auth_scheme(scheme, value)` to load the matching `Admin` record.
+3. Calls `database.find_admins_by_auth_scheme(scheme, value)` to load the matching `Admin` record.
 4. Injects the loaded `Admin` record into the Actix request extensions.
 
-Endpoint handlers retrieve the `Admin` record with the `user_from_request(&req)` helper.
+Endpoint handlers retrieve the `Admin` record with the `admin_from_request(&req)` helper.
 
 ---
 
@@ -178,7 +187,7 @@ To configure a `Admin` record as a realm admin (e.g., for `my_realm`):
 2. **Create the `Admin` record** and link the realm memberships and credentials:
 
    ```http
-   POST /admins/admin
+   POST /admins
    Content-Type: application/json
 
    {
@@ -190,7 +199,7 @@ To configure a `Admin` record as a realm admin (e.g., for `my_realm`):
 
    The `userpass` field is the **username** (acting as a foreign key into the `userpass` table). It is **not** the password itself.
 
-3. **Authenticate** via `POST /login/_` with `username=alice` and `password=<plain>`.  
+3. **Authenticate** via `POST /login?realm=_` with `username=alice` and `password=<plain>`.  
    The resulting `_ea_` session cookie authorises any requests scoped to `my_realm`.
 
 ---
