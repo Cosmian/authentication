@@ -4,10 +4,12 @@ use crate::{
     tests::{TestsContext, get_default_server_params},
 };
 use actix_web::dev::ServerHandle;
-use cosmian_logger::{error, info};
+use cosmian_logger::{error, info, warn};
 use std::{
+    net::TcpStream,
     sync::{Arc, mpsc},
     thread,
+    time::{Duration, Instant},
 };
 
 /// Starts the test server in a separate thread and returns a `TestsContext` containing
@@ -38,6 +40,29 @@ pub async fn start_test_server(server_params: ServerParams) -> AuthResult<TestsC
     let server_handle = rx
         .recv_timeout(std::time::Duration::from_secs(10))
         .map_err(|e| AuthError::Unexpected(format!("Error getting test server handle: {e}")))?;
+
+    // The handle is sent before `server.await` begins its accept loop, so on
+    // slow runners (e.g. ARM) there is a race window where TCP connections are
+    // refused.  Poll the port with a plain TCP connect (no TLS) until the OS
+    // backlog is open, then give the TLS layer a brief moment to be ready.
+    let addr = format!("{}:{}", server_params.host_name, server_params.host_port);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        match TcpStream::connect(&addr) {
+            Ok(_) => break,
+            Err(_) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(20));
+            }
+            Err(e) => {
+                return Err(AuthError::Unexpected(format!(
+                    "Timed out waiting for test server to accept connections on {addr}: {e}"
+                )));
+            }
+        }
+    }
+    // Give the TLS accept loop a moment to be ready after TCP bind.
+    thread::sleep(Duration::from_millis(50));
+    warn!("Test server is ready on {addr}");
 
     Ok(TestsContext {
         server_params,
