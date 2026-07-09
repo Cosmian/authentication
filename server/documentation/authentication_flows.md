@@ -143,7 +143,7 @@ sequenceDiagram
 
     C->>API: GET /api/resource<br/>Authorization: Bearer eyJhbG…
     note over API: JwtAuth middleware
-    API->>EA: GET /public/jwks  (key discovery)
+    API->>EA: GET /.well-known/jwks.json  (key discovery)
     EA-->>API: JWKS (public keys)
     note over API: Validates JWT signature + exp + aud
     API->>SS: upsert_session(jwt_claims)
@@ -153,7 +153,7 @@ sequenceDiagram
 
 ### Key discovery
 
-The server exposes a JWKS endpoint at `GET /public/jwks` which returns the RSA/EC public keys used to verify tokens. The JWT middleware caches this document and refreshes it on a configurable interval.
+The server exposes a JWKS endpoint at `GET /.well-known/jwks.json` which returns the RSA/EC public keys used to verify tokens. The JWT middleware caches this document and refreshes it on a configurable interval.
 
 ### JWT requirements
 
@@ -238,12 +238,13 @@ DELETE /sessions/realms/{realm_id}
 
 ### Authentication endpoints
 
-| Method | Path                    | Description                                         | Auth required            |
-| ------ | ----------------------- | --------------------------------------------------- | ------------------------ |
-| `POST` | `/login?realm={realm}`  | Authenticate and issue a session cookie             | No (credentials in body) |
-| `GET`  | `/whoami?realm={realm}` | Return the current session's claims as a signed JWT | Session cookie           |
-| `GET`  | `/public/version`       | Server version string                               | No                       |
-| `GET`  | `/public/jwks`          | JSON Web Key Set for JWT verification               | No                       |
+| Method | Path                     | Description                                         | Auth required            |
+| ------ | ------------------------ | --------------------------------------------------- | ------------------------ |
+| `POST` | `/login?realm={realm}`   | Authenticate and issue a session cookie             | No (credentials in body) |
+| `GET`  | `/whoami?realm={realm}`  | Return the current session's claims as a signed JWT | Session cookie           |
+| `GET`  | `/public/version`        | Server version string                               | No                       |
+| `GET`  | `/.well-known/jwks.json` | JSON Web Key Set for JWT verification               | No                       |
+
 
 ### Session JWT — `/whoami` response
 

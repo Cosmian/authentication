@@ -1,6 +1,6 @@
 use crate::models::ClientClaims;
 use crate::models::LoginRequest;
-use crate::session::{self, issue_token, session_id_from_cookie_value};
+use crate::session::{self, JwksData, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
 use actix_web::HttpMessage;
@@ -152,6 +152,14 @@ pub async fn roles_endpoint(
     server_params: Data<Arc<crate::server::parameters::ServerParams>>,
 ) -> Result<HttpResponse, AuthError> {
     Ok(HttpResponse::Ok().json(&server_params.roles))
+}
+
+/// Returns the JWKS (JSON Web Key Set) document containing the server's EC signing
+/// public key. Served at `/.well-known/jwks.json` per OIDC / RFC 8414.
+pub async fn jwks_well_known(jwks: Data<Arc<JwksData>>) -> Result<HttpResponse, AuthError> {
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "public, max-age=3600"))
+        .json(&jwks.0))
 }
 
 /// Serve the raw OpenAPI 3.1 schema (YAML), embedded at compile time.

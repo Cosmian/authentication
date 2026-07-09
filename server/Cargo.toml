@@ -56,6 +56,7 @@ auth_client = { path = "../client", version = "0.1.0", features = ["_server"] }
 toml = { workspace = true }
 totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
 url = { workspace = true }
+x509-cert = { workspace = true }
 
 [lib]
 path = "src/lib.rs"
