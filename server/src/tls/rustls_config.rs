@@ -3,7 +3,6 @@ use crate::server::parameters::TlsParams;
 use crate::tls::PeerCertificate;
 use actix_web::dev::Extensions;
 use cosmian_logger::{error, info};
-use openssl::x509::X509;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::WebPkiClientVerifier;
@@ -88,11 +87,9 @@ pub(crate) fn extract_rustls_peer_certificate(cnx: &dyn Any, extensions: &mut Ex
         if let Some(certs) = tls_session.peer_certificates() {
             if let Some(cert) = certs.last() {
                 info!("A client certificate was found");
-                let Ok(openssl_cert) = X509::from_der(cert.as_ref()) else {
-                    error!("Failed to parse client certificate");
-                    return;
-                };
-                extensions.insert(PeerCertificate { cert: openssl_cert });
+                extensions.insert(PeerCertificate {
+                    cert_der: cert.as_ref().to_vec(),
+                });
             } else {
                 error!("No client certificate found");
             }

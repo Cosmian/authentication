@@ -29,7 +29,12 @@ pub fn extract_openssl_peer_certificate(cnx: &dyn Any, extensions: &mut Extensio
                 "Extracted peer certificate from TLS connection: {:?}",
                 cert.subject_name()
             );
-            extensions.insert(PeerCertificate { cert });
+            match cert.to_der() {
+                Ok(cert_der) => {
+                    extensions.insert(PeerCertificate { cert_der });
+                }
+                Err(e) => error!("Failed to DER-encode peer certificate: {e}"),
+            }
         } else {
             debug!("No peer certificate presented by client");
         }

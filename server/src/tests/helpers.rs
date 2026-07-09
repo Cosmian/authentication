@@ -55,6 +55,7 @@ pub fn create_userpass(
         username: username.to_string(),
         password: hash_password_with_argon2(username, password)?,
         change_password,
+        roles: Vec::new(),
     })
 }
 

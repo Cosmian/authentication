@@ -50,6 +50,7 @@ pub trait Database: Send + Sync {
                     AuthDbError::Init(format!("failed to set the app admin initial password: {e}"))
                 })?,
                 change_password: true,
+                roles: Vec::new(),
             };
             self.create_userpass(&app_user_pass).await?;
             // create the admin in the admin table

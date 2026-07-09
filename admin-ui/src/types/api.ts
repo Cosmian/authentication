@@ -62,6 +62,8 @@ export interface UserPass {
     username: string;
     password: number[];
     change_password: boolean;
+    /** RBAC roles assigned to this user (e.g. ["CryptoOfficer"]). Emitted in JWT `roles` claim. */
+    roles?: string[];
 }
 
 /** Session data */

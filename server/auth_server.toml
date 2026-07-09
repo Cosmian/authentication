@@ -38,6 +38,15 @@ host_port = 8443 # <REQUIRED>
 
 
 # -----------------------------------------------------------------------------
+# RBAC roles
+# -----------------------------------------------------------------------------
+# Available role names exposed via GET /public/roles.
+# The admin UI role-selection dropdowns are populated from this list.
+# This must match the roles expected by your OPA policy.
+roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+
+
+# -----------------------------------------------------------------------------
 # TLS configuration  <REQUIRED>
 # -----------------------------------------------------------------------------
 # The server requires TLS.  All three PEM files must be present.

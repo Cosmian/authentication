@@ -30,7 +30,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const resolveServerUrl = (): string => {
     const configured = import.meta.env.VITE_AUTH_URL as string | undefined;
     const trimmed = configured?.trim();
-    return trimmed && trimmed.length > 0 ? trimmed : "https://localhost:8443";
+    return trimmed && trimmed.length > 0 ? trimmed : "";
 };
 
 const INITIAL_STATE: AuthState = {
@@ -61,9 +61,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
                 setState(INITIAL_STATE);
                 return;
             }
-            expiryTimerRef.current = setTimeout(() => {
-                setState(INITIAL_STATE);
-            }, msUntilExpiry);
+            // Cap to 2^31 - 1 ms (~24.85 days) to avoid 32-bit setTimeout overflow in browsers.
+            // Tokens with longer lifetimes will be re-checked at the capped interval.
+            const MAX_TIMEOUT_MS = 0x7fffffff;
+            expiryTimerRef.current = setTimeout(
+                () => {
+                    setState(INITIAL_STATE);
+                },
+                Math.min(msUntilExpiry, MAX_TIMEOUT_MS),
+            );
         },
         [clearExpiryTimer],
     );

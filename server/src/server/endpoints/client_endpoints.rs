@@ -1,6 +1,6 @@
 use crate::models::ClientClaims;
 use crate::models::LoginRequest;
-use crate::session::{self, issue_token, session_id_from_cookie_value};
+use crate::session::{self, JwksData, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
 use actix_web::HttpMessage;
@@ -77,14 +77,28 @@ pub async fn login(
     }
     // --- end TOTP check ---
 
+    // Fetch roles from userpass record (if authenticated via username/password).
+    // For non-userpass auth schemes (JWT, mTLS), roles=[] (fail-closed).
+    let roles = if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword {
+        match database
+            .get_userpass(&realm.id, &authenticated_client.username)
+            .await?
+        {
+            Some(up) => up.roles,
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+
     let token = issue_token(
         &authenticated_client.username,
         authenticated_client.auth_scheme,
         &realm.id,
         // TODO : Only useful for VELO ?
         login_request.public_key_pem.clone(),
-        jwt_token_config.algorithm,
-        jwt_token_config.encoding_key.clone(),
+        roles,
+        &jwt_token_config,
         realm.session_max_age_seconds,
     )?;
 
@@ -131,6 +145,21 @@ pub async fn version_endpoint(_req: HttpRequest) -> Result<HttpResponse, AuthErr
         version: version.to_string(),
     };
     Ok(HttpResponse::Ok().json(version))
+}
+
+/// Returns the list of available RBAC roles configured on this server.
+pub async fn roles_endpoint(
+    server_params: Data<Arc<crate::server::parameters::ServerParams>>,
+) -> Result<HttpResponse, AuthError> {
+    Ok(HttpResponse::Ok().json(&server_params.roles))
+}
+
+/// Returns the JWKS (JSON Web Key Set) document containing the server's EC signing
+/// public key. Served at `/.well-known/jwks.json` per OIDC / RFC 8414.
+pub async fn jwks_well_known(jwks: Data<Arc<JwksData>>) -> Result<HttpResponse, AuthError> {
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "public, max-age=3600"))
+        .json(&jwks.0))
 }
 
 /// Serve the raw OpenAPI 3.1 schema (YAML), embedded at compile time.

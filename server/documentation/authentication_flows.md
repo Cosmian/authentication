@@ -60,16 +60,16 @@ sequenceDiagram
 
 The `_ea_` cookie value is a plain-text `cookie_string`. All session state is kept server-side in the session store. The `cookie_string` is used as a lookup key to retrieve the full `SessionData` record:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `session_id` | `String` | Unique session identifier (UUID) |
-| `realm_id` | `String` | Realm the session belongs to |
-| `username` | `String` | Authenticated client username |
-| `auth_scheme` | `String` | Authentication method used (`userpass`, `jwt`, `cert`) |
-| `cookie_string` | `String` | The opaque value stored in the `_ea_` cookie |
-| `max_age_seconds` | `i64` | Maximum absolute session lifetime |
-| `max_stale_age_seconds` | `i64` | Maximum idle time before the session is considered stale |
-| `created_at` | `i64` | Unix timestamp when the session was created |
+| Field                   | Type     | Description                                              |
+| ----------------------- | -------- | -------------------------------------------------------- |
+| `session_id`            | `String` | Unique session identifier (UUID)                         |
+| `realm_id`              | `String` | Realm the session belongs to                             |
+| `username`              | `String` | Authenticated client username                            |
+| `auth_scheme`           | `String` | Authentication method used (`userpass`, `jwt`, `cert`)   |
+| `cookie_string`         | `String` | The opaque value stored in the `_ea_` cookie             |
+| `max_age_seconds`       | `i64`    | Maximum absolute session lifetime                        |
+| `max_stale_age_seconds` | `i64`    | Maximum idle time before the session is considered stale |
+| `created_at`            | `i64`    | Unix timestamp when the session was created              |
 
 ### Credential validation
 
@@ -126,7 +126,7 @@ See [two_factor_authentication.md](two_factor_authentication.md) for the full TO
 
 Machine-to-machine scenarios (service accounts, CI pipelines, SDKs) use RS256 or ES256 JWT tokens instead of cookies.
 
-### Sequence
+### JWT Bearer Token sequence
 
 ```mermaid
 sequenceDiagram
@@ -143,7 +143,7 @@ sequenceDiagram
 
     C->>API: GET /api/resource<br/>Authorization: Bearer eyJhbG…
     note over API: JwtAuth middleware
-    API->>EA: GET /public/jwks  (key discovery)
+    API->>EA: GET /.well-known/jwks.json  (key discovery)
     EA-->>API: JWKS (public keys)
     note over API: Validates JWT signature + exp + aud
     API->>SS: upsert_session(jwt_claims)
@@ -153,16 +153,16 @@ sequenceDiagram
 
 ### Key discovery
 
-The server exposes a JWKS endpoint at `GET /public/jwks` which returns the RSA/EC public keys used to verify tokens. The JWT middleware caches this document and refreshes it on a configurable interval.
+The server exposes a JWKS endpoint at `GET /.well-known/jwks.json` which returns the RSA/EC public keys used to verify tokens. The JWT middleware caches this document and refreshes it on a configurable interval.
 
 ### JWT requirements
 
-| Claim | Required | Description |
-|-------|----------|-------------|
-| `sub` | Yes | Subject (user or service identifier) |
-| `aud` | Yes | Must match the configured audience |
-| `exp` | Yes | Expiration time (Unix seconds) |
-| `iss` | Yes | Issuer URL matching JWKS discovery URL |
+| Claim | Required | Description                            |
+| ----- | -------- | -------------------------------------- |
+| `sub` | Yes      | Subject (user or service identifier)   |
+| `aud` | Yes      | Must match the configured audience     |
+| `exp` | Yes      | Expiration time (Unix seconds)         |
+| `iss` | Yes      | Issuer URL matching JWKS discovery URL |
 
 ---
 
@@ -170,7 +170,7 @@ The server exposes a JWKS endpoint at `GET /public/jwks` which returns the RSA/E
 
 For high-assurance scenarios, clients authenticate using an EC P-256 client certificate over mutual TLS.
 
-### Sequence
+### Client Certificate sequence
 
 ```mermaid
 sequenceDiagram
@@ -208,10 +208,10 @@ stateDiagram-v2
 
 ### Session parameters (per realm)
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `session_max_age_seconds` | 3600 | Maximum absolute lifetime of a session |
-| `session_max_stale_age_seconds` | 3600 | Maximum idle time before a session is considered stale |
+| Parameter                       | Default | Description                                            |
+| ------------------------------- | ------- | ------------------------------------------------------ |
+| `session_max_age_seconds`       | 3600    | Maximum absolute lifetime of a session                 |
+| `session_max_stale_age_seconds` | 3600    | Maximum idle time before a session is considered stale |
 
 Sessions are stored in the configured session backend (SQLite / PostgreSQL / MySQL / Redis).
 
@@ -238,23 +238,50 @@ DELETE /sessions/realms/{realm_id}
 
 ### Authentication endpoints
 
-| Method | Path | Description | Auth required |
-|--------|------|-------------|---------------|
-| `POST` | `/login?realm={realm}` | Authenticate and issue a session cookie | No (credentials in body) |
-| `GET` | `/whoami?realm={realm}` | Return the current session's claims | Session cookie |
-| `GET` | `/public/version` | Server version string | No |
-| `GET` | `/public/jwks` | JSON Web Key Set for JWT verification | No |
+| Method | Path                     | Description                                         | Auth required            |
+| ------ | ------------------------ | --------------------------------------------------- | ------------------------ |
+| `POST` | `/login?realm={realm}`   | Authenticate and issue a session cookie             | No (credentials in body) |
+| `GET`  | `/whoami?realm={realm}`  | Return the current session's claims as a signed JWT | Session cookie           |
+| `GET`  | `/public/version`        | Server version string                               | No                       |
+| `GET`  | `/.well-known/jwks.json` | JSON Web Key Set for JWT verification               | No                       |
+
+
+### Session JWT — `/whoami` response
+
+`GET /whoami?realm={realm}` returns a signed JWT (`ClientClaims`) whose payload is a
+**flat JSON object** containing three groups of claims:
+
+| Claim    | Group                             | Description                                              |
+| -------- | --------------------------------- | -------------------------------------------------------- |
+| `sub`    | Registered (RFC 7519 §4.1.2)      | Username of the authenticated client                     |
+| `exp`    | Registered                        | Expiry time (Unix seconds)                               |
+| `iat`    | Registered                        | Issued-at time (Unix seconds)                            |
+| `roles`  | Authorization (RFC 9068 §2.2.3.1) | RBAC roles assigned to the user — **omitted when empty** |
+| `as_as`  | Private                           | Auth scheme: `"up"` / `"jwt"` / `"cc"` / `"f2"` / `"dc"` |
+| `as_rid` | Private                           | Realm ID (also used as the OPA domain scope)             |
+| `as_pk`  | Private                           | Client public key PEM — only present for mTLS sessions   |
+
+The `roles` claim follows [RFC 9068 §2.2.3.1](https://www.rfc-editor.org/rfc/rfc9068#section-2.2.3.1)
+and [RFC 7643 §4.1.2](https://www.rfc-editor.org/rfc/rfc7643#section-4.1.2). It is
+a flat `Vec<String>` of role names (e.g. `["CryptoOfficer"]`). Absence means no
+roles — downstream OPA policies should treat absence as fail-closed.
+
+Roles are set per credential via the admin API. See the
+[Credential Management](client_library.md#credential-management) section of the
+client library guide for the `UserPass.roles` field, and the
+[`ClientClaims` type reference](client_library.md#clientclaims) for the full
+struct layout and a wire-format example.
 
 ### Session management endpoints
 
-| Method | Path | Description | Auth required |
-|--------|------|-------------|---------------|
-| `GET` | `/sessions/{id}` | Retrieve `SessionData` by session ID (`null` when not found) | — |
-| `POST` | `/sessions/{id}` | Retrieve `SessionData` and optionally apply a `SessionsAction` | — |
-| `POST` | `/sessions/realms/{realm}/clients` | Get session IDs for a set of clients | — |
-| `DELETE` | `/sessions` | Delete sessions by ID list (logout) | — |
-| `DELETE` | `/sessions/expired` | Purge all expired sessions | — |
-| `DELETE` | `/sessions/realms/{realm}` | Revoke all sessions for a realm | — |
+| Method   | Path                               | Description                                                    | Auth required |
+| -------- | ---------------------------------- | -------------------------------------------------------------- | ------------- |
+| `GET`    | `/sessions/{id}`                   | Retrieve `SessionData` by session ID (`null` when not found)   | —             |
+| `POST`   | `/sessions/{id}`                   | Retrieve `SessionData` and optionally apply a `SessionsAction` | —             |
+| `POST`   | `/sessions/realms/{realm}/clients` | Get session IDs for a set of clients                           | —             |
+| `DELETE` | `/sessions`                        | Delete sessions by ID list (logout)                            | —             |
+| `DELETE` | `/sessions/expired`                | Purge all expired sessions                                     | —             |
+| `DELETE` | `/sessions/realms/{realm}`         | Revoke all sessions for a realm                                | —             |
 
 ---
 
@@ -274,17 +301,17 @@ When fetching a session you can pass an optional `sessions_action` in the reques
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field                   | Type                             | Description                                           |
+| ----------------------- | -------------------------------- | ----------------------------------------------------- |
 | `authenticated_clients` | `Vec<AuthenticatedClientScheme>` | Users whose sessions should be affected by the action |
-| `sessions_action` | `SessionsAction` (optional) | Action to perform; omit for a plain session lookup |
+| `sessions_action`       | `SessionsAction` (optional)      | Action to perform; omit for a plain session lookup    |
 
 ### `SessionsAction` variants
 
-| Variant | Behaviour |
-|---------|-----------|
-| `LogoutOtherSessions` | Deletes all active sessions for the given clients **except** the session being queried. Use this to implement "keep this session, log out everywhere else". |
-| `LogoutAllSessions` | Deletes **all** active sessions for the given clients, including the queried session. The session data is returned before deletion. Use this to implement "log out everywhere". |
+| Variant               | Behaviour                                                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LogoutOtherSessions` | Deletes all active sessions for the given clients **except** the session being queried. Use this to implement "keep this session, log out everywhere else".                     |
+| `LogoutAllSessions`   | Deletes **all** active sessions for the given clients, including the queried session. The session data is returned before deletion. Use this to implement "log out everywhere". |
 
 ### Sequence — `LogoutOtherSessions`
 

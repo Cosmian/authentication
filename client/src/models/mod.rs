@@ -4,7 +4,7 @@ pub use base::{
 };
 
 mod client_claims;
-pub use client_claims::{AuthPrivateClaims, ClientClaims, RegisteredClaims};
+pub use client_claims::{AuthPrivateClaims, AuthorizationClaims, ClientClaims, RegisteredClaims};
 
 mod login;
 pub use login::{AuthenticationNextStep, AuthenticationResult, LoginRequest};

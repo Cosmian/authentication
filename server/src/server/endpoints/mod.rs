@@ -16,7 +16,7 @@ pub use realms_endpoints::{
 };
 
 mod client_endpoints;
-pub use client_endpoints::{login, version_endpoint, whoami};
+pub use client_endpoints::{jwks_well_known, login, roles_endpoint, version_endpoint, whoami};
 #[cfg(feature = "swagger-ui")]
 pub use client_endpoints::{openapi_yaml_endpoint, swagger_ui_endpoint};
 

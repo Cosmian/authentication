@@ -52,8 +52,11 @@ jobs:
       - name: Static analysis
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      # - name: Static analysis all features
-      #   run: cargo clippy --workspace --all-targets --no-default-features --features database,rustls -- -D warnings
+      - name: Static analysis all features
+        run: cargo clippy --workspace --all-targets --no-default-features --features database,rustls -- -D warnings
+
+      - name: Static analysis openssl backend
+        run: cargo clippy --workspace --all-targets --no-default-features --features database,openssl -- -D warnings
 
   cargo-test:
     name: Cargo test - ${{ matrix.runner }}

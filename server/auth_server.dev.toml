@@ -31,6 +31,17 @@ host_port = 8443
 admin_ui_path = "admin-ui/dist"
 
 # ---------------------------------------------------------------------------
+# RBAC roles — available role names exposed via GET /public/roles.
+# The admin UI role-selection dropdowns are populated from this list.
+# ---------------------------------------------------------------------------
+roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+
+# Pre-configure a fixed TOTP secret for the basic admin ("admin" / realm "_").
+# Use any Base32 TOTP secret you generate once, e.g.:
+#   python3 -c "import base64, os; print(base64.b32encode(os.urandom(20)).decode())"
+# admin_totp_secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+
+# ---------------------------------------------------------------------------
 # TLS — uses the test EC P-256 certificates bundled with the source tree.
 # These are self-signed and must NOT be used in production.
 # ---------------------------------------------------------------------------
@@ -45,7 +56,7 @@ server_ca_chain    = "server/src/tests/certificates/ec/auth.ca.pem"
 # ---------------------------------------------------------------------------
 [database_params]
 backend        = "sqlite"
-connection_url = "sqlite::memory:"
+connection_url = "sqlite:///tmp/path.db"
 auto_init_schema = true
 
 # ---------------------------------------------------------------------------
@@ -62,3 +73,10 @@ auto_init_schema = true
 realm_id       = "dev-realm"
 admin_username = "realm-admin"
 admin_password = "change_me"
+
+# TOTP-enabled user for testing two-factor authentication.
+# Use the secret below with any TOTP app (Google Authenticator, Authy, etc.).
+# Login requires both the password and the current TOTP code.
+totp_username = "totp-user"
+totp_password = "change_me"
+totp_secret   = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"

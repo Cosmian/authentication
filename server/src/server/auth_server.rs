@@ -7,14 +7,14 @@ use crate::{
             add_admin_to_realm, create_admin, create_realm, create_userpass, delete_admin,
             delete_expired_sessions, delete_realm, delete_sessions, delete_sessions_for_realm,
             delete_userpass, get_admin, get_realm, get_session, get_session_by_id,
-            get_sessions_for_clients, get_userpass, list_admins, list_all_userpass, list_realms,
-            list_userpass_by_realm, login, remove_admin_from_realm, totp_disable, totp_generate,
-            totp_verify, update_admin, update_realm, update_userpass, upsert_session,
-            version_endpoint, whoami,
+            get_sessions_for_clients, get_userpass, jwks_well_known, list_admins,
+            list_all_userpass, list_realms, list_userpass_by_realm, login, remove_admin_from_realm,
+            roles_endpoint, totp_disable, totp_generate, totp_verify, update_admin, update_realm,
+            update_userpass, upsert_session, version_endpoint, whoami,
         },
-        parameters::{DatabaseBackend, DatabaseParams, DevSeedParams, ServerParams},
+        parameters::{DatabaseBackend, DatabaseParams, ServerParams},
     },
-    session::{self, JwtTokenConfig},
+    session::{self, JwksData, JwtTokenConfig},
 };
 use actix_cors::Cors;
 use actix_web::{
@@ -35,95 +35,6 @@ use crate::tls::openssl_config::{create_openssl_acceptor, extract_openssl_peer_c
 
 #[cfg(feature = "rustls")]
 use crate::tls::rustls_config::{extract_rustls_peer_certificate, rustls_server_config};
-
-/// Seeds a realm and a realm-scoped admin account for development use.
-/// All operations are idempotent — nothing is overwritten if it already exists.
-async fn seed_dev_realm_admin(
-    db: &dyn crate::database::Database,
-    seed: &DevSeedParams,
-) -> AuthResult<()> {
-    use crate::database::hash_password_with_argon2;
-    use crate::models::{ADMIN_REALM, Admin, Realm, UserPass};
-    use crate::{RealmAuthParams, UsernamePasswordParams};
-
-    // 1. Create the realm if it does not exist.
-    if db.get_realm(&seed.realm_id).await?.is_none() {
-        let realm = Realm {
-            id: seed.realm_id.clone(),
-            auth_params: RealmAuthParams {
-                username_password_params: Some(UsernamePasswordParams {
-                    allow_expired_passwords: false,
-                }),
-                ..Default::default()
-            },
-            session_max_age_seconds: 3600,
-            session_max_stale_age_seconds: 3600,
-        };
-        db.create_realm(&realm).await.map_err(|e| {
-            crate::AuthError::Init(format!(
-                "dev_seed: failed to create realm '{}': {e}",
-                seed.realm_id
-            ))
-        })?;
-        info!("dev_seed: created realm '{}'", seed.realm_id);
-    }
-
-    // 2. Create the credential in the admin realm if it does not exist.
-    if db
-        .get_userpass(ADMIN_REALM, &seed.admin_username)
-        .await?
-        .is_none()
-    {
-        let hashed = hash_password_with_argon2(&seed.admin_username, &seed.admin_password)
-            .map_err(|e| {
-                crate::AuthError::Init(format!(
-                    "dev_seed: failed to hash password for '{}': {e}",
-                    seed.admin_username
-                ))
-            })?;
-        let userpass = UserPass {
-            realm: ADMIN_REALM.to_string(),
-            username: seed.admin_username.clone(),
-            password: hashed,
-            change_password: true,
-        };
-        db.create_userpass(&userpass).await.map_err(|e| {
-            crate::AuthError::Init(format!(
-                "dev_seed: failed to create credential for '{}': {e}",
-                seed.admin_username
-            ))
-        })?;
-        info!("dev_seed: created credential for '{}'", seed.admin_username);
-    }
-
-    // 3. Create the admin record if it does not exist.
-    if db.get_admin(&seed.admin_username).await?.is_none() {
-        let admin = Admin {
-            id: seed.admin_username.clone(),
-            realms: vec![seed.realm_id.clone()],
-            userpass: Some(seed.admin_username.clone()),
-            jwt: None,
-            fido2: None,
-            digital_credentials: None,
-            client_certificate: None,
-            totp_enabled: None,
-            totp_secret: None,
-            totp_auth_url: None,
-        };
-        db.create_admin(&admin).await.map_err(|e| {
-            crate::AuthError::Init(format!(
-                "dev_seed: failed to create admin '{}': {e}",
-                seed.admin_username
-            ))
-        })?;
-        info!(
-            "dev_seed: created realm-admin '{}' for realm '{}'",
-            seed.admin_username, seed.realm_id
-        );
-    }
-
-    Ok(())
-}
 
 /// Inner function to start the test server asynchronously.
 pub async fn start_auth_server(
@@ -180,6 +91,7 @@ async fn prepare_auth_server(
 
     // If a dev_seed config is present, ensure the seeded realm and realm-admin exist.
     if let Some(seed) = &params.dev_seed {
+        use crate::server::dev_seed::seed_dev_realm_admin;
         seed_dev_realm_admin(database.as_ref(), seed).await?;
     }
 
@@ -214,6 +126,23 @@ async fn prepare_auth_server(
         decoding_key: params.get_jwt_decoding_key()?,
     });
 
+    // Build the JWKS document once from the JWT signing public key.
+    // Reads the same PEM path that get_jwt_decoding_key() uses.
+    let jwks_pem_path = params
+        .session_jwt_params
+        .as_ref()
+        .map(|p| p.jwt_ec_public_key.clone())
+        .unwrap_or_else(|| params.tls_params.server_certificate.clone());
+    let jwks_pem = std::fs::read_to_string(&jwks_pem_path).map_err(|e| {
+        crate::AuthError::Init(format!(
+            "Failed to read JWT public key PEM for JWKS ({jwks_pem_path}): {e}"
+        ))
+    })?;
+    let jwks_data = Arc::new(
+        crate::session::build_jwks_from_pem(&jwks_pem)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?,
+    );
+
     // Clone test server params for HttpServer closure
     let server_params = params.clone();
 
@@ -228,6 +157,7 @@ async fn prepare_auth_server(
             jwks_manager.clone(),
             default_username.clone(),
             jwt_token_config.clone(),
+            jwks_data.clone(),
         )
     });
     let http_server = http_server
@@ -267,6 +197,7 @@ fn build_app(
     jwks_manager: Arc<JwksManager>,
     default_username: Option<String>,
     jwt_token_config: Arc<JwtTokenConfig>,
+    jwks_data: Arc<JwksData>,
 ) -> App<
     impl ServiceFactory<
         ServiceRequest,
@@ -284,6 +215,7 @@ fn build_app(
         .app_data(Data::new(database.clone()))
         .app_data(Data::new(session_store.clone()))
         .app_data(Data::new(jwt_token_config.clone()))
+        .app_data(Data::new(jwks_data.clone()))
         .app_data(PayloadConfig::new(1_000_000))
         .app_data(JsonConfig::default().limit(1_000_000));
 
@@ -317,7 +249,15 @@ fn build_app(
     // The public scope
     let public_scope = web::scope("/public")
         .wrap(Cors::permissive())
-        .route("/version", web::get().to(version_endpoint));
+        .route("/version", web::get().to(version_endpoint))
+        .route("/roles", web::get().to(roles_endpoint));
+
+    // The JWKS discovery endpoint lives at the OIDC-standard `/.well-known/jwks.json`
+    // path (outside `/public`) but must share the same permissive CORS behavior as
+    // the other unauthenticated endpoints so browser-based clients can fetch it.
+    let well_known_scope = web::scope("/.well-known")
+        .wrap(Cors::permissive())
+        .route("/jwks.json", web::get().to(jwks_well_known));
 
     #[cfg(feature = "swagger-ui")]
     let public_scope = {
@@ -395,6 +335,7 @@ fn build_app(
 
     let app = app
         .service(public_scope)
+        .service(well_known_scope)
         .service(client_scope)
         .service(whoami_scope)
         .service(sessions_scope)

@@ -33,6 +33,10 @@ pub struct UserPass {
     pub username: String,
     pub password: Vec<u8>,
     pub change_password: bool,
+    /// RBAC roles assigned to this user (e.g. `["CryptoOfficer", "Auditor"]`).
+    /// Emitted in the JWT `roles` claim for OPA policy evaluation.
+    #[serde(default)]
+    pub roles: Vec<String>,
 }
 
 /// Authentication server admins.
