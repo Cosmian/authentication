@@ -217,8 +217,7 @@ fn build_app(
         .app_data(Data::new(jwt_token_config.clone()))
         .app_data(Data::new(jwks_data.clone()))
         .app_data(PayloadConfig::new(1_000_000))
-        .app_data(JsonConfig::default().limit(1_000_000))
-        .route("/.well-known/jwks.json", web::get().to(jwks_well_known));
+        .app_data(JsonConfig::default().limit(1_000_000));
 
     #[cfg(test)]
     let app = {
@@ -252,6 +251,13 @@ fn build_app(
         .wrap(Cors::permissive())
         .route("/version", web::get().to(version_endpoint))
         .route("/roles", web::get().to(roles_endpoint));
+
+    // The JWKS discovery endpoint lives at the OIDC-standard `/.well-known/jwks.json`
+    // path (outside `/public`) but must share the same permissive CORS behavior as
+    // the other unauthenticated endpoints so browser-based clients can fetch it.
+    let well_known_scope = web::scope("/.well-known")
+        .wrap(Cors::permissive())
+        .route("/jwks.json", web::get().to(jwks_well_known));
 
     #[cfg(feature = "swagger-ui")]
     let public_scope = {
@@ -329,6 +335,7 @@ fn build_app(
 
     let app = app
         .service(public_scope)
+        .service(well_known_scope)
         .service(client_scope)
         .service(whoami_scope)
         .service(sessions_scope)

@@ -1,6 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use x509_cert::Certificate;
+use x509_cert::der::DecodePem;
+use x509_cert::spki::SubjectPublicKeyInfoOwned;
 
 use crate::{AuthError, AuthScheme, models::ClientClaims};
 
@@ -12,142 +15,65 @@ pub struct JwksData(pub serde_json::Value);
 /// single EC P-256 `sig` key with a deterministic `kid` derived from the
 /// SHA-256 digest of the raw x‖y bytes.
 ///
+/// PEM parsing is delegated to the RustCrypto `x509-cert`/`spki` crates rather
+/// than hand-rolled DER scanning, so this implementation is identical regardless
+/// of the TLS backend feature (`openssl` or `rustls`).
+///
 /// Supported PEM types: `BEGIN CERTIFICATE`, `BEGIN PUBLIC KEY`.
-#[cfg(feature = "openssl")]
 pub fn build_jwks_from_pem(pem: &str) -> crate::AuthResult<JwksData> {
     use base64::Engine as _;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use sha2::{Digest, Sha256};
 
-    let xy = ec_xy_from_pem_openssl(pem)?;
+    let spki = spki_from_pem(pem)?;
+    let (x, y) = ec_p256_xy(&spki)?;
 
+    let mut xy = Vec::with_capacity(64);
+    xy.extend_from_slice(x);
+    xy.extend_from_slice(y);
     let kid = hex::encode(Sha256::digest(&xy));
+
     let jwk = serde_json::json!({
         "kty": "EC",
         "crv": "P-256",
         "use": "sig",
         "alg": "ES256",
         "kid": kid,
-        "x": URL_SAFE_NO_PAD.encode(&xy[0..32]),
-        "y": URL_SAFE_NO_PAD.encode(&xy[32..64]),
+        "x": URL_SAFE_NO_PAD.encode(x),
+        "y": URL_SAFE_NO_PAD.encode(y),
     });
     Ok(JwksData(serde_json::json!({ "keys": [jwk] })))
 }
 
-#[cfg(feature = "openssl")]
-fn ec_xy_from_pem_openssl(pem: &str) -> crate::AuthResult<Vec<u8>> {
+/// Extract the `SubjectPublicKeyInfo` from either an X.509 certificate PEM or a
+/// bare public-key PEM, reusing the RustCrypto parsers.
+fn spki_from_pem(pem: &str) -> crate::AuthResult<SubjectPublicKeyInfoOwned> {
     if pem.contains("BEGIN CERTIFICATE") {
-        let der = pem_to_der_bytes(pem, "CERTIFICATE")?;
-        let cert = openssl::x509::X509::from_der(&der)
+        let cert = Certificate::from_pem(pem)
             .map_err(|e| AuthError::Config(format!("Failed to parse X.509 certificate: {e}")))?;
-        let pkey = cert
-            .public_key()
-            .map_err(|e| AuthError::Config(format!("Failed to extract public key: {e}")))?;
-        ec_xy_from_pkey(&pkey)
+        Ok(cert.tbs_certificate.subject_public_key_info)
     } else {
-        let der = pem_to_der_bytes(pem, "PUBLIC KEY")?;
-        let pkey = openssl::pkey::PKey::public_key_from_der(&der)
-            .map_err(|e| AuthError::Config(format!("Failed to parse public key DER: {e}")))?;
-        ec_xy_from_pkey(&pkey)
+        SubjectPublicKeyInfoOwned::from_pem(pem)
+            .map_err(|e| AuthError::Config(format!("Failed to parse public key PEM: {e}")))
     }
 }
 
-#[cfg(feature = "openssl")]
-fn ec_xy_from_pkey(
-    pkey: &openssl::pkey::PKey<openssl::pkey::Public>,
-) -> crate::AuthResult<Vec<u8>> {
-    let ec = pkey
-        .ec_key()
-        .map_err(|e| AuthError::Config(format!("JWT key is not an EC key: {e}")))?;
-    let group = ec.group();
-    let point = ec.public_key();
-    let mut ctx = openssl::bn::BigNumContext::new()
-        .map_err(|e| AuthError::Config(format!("Failed to create BigNum context: {e}")))?;
-    let bytes = point
-        .to_bytes(
-            group,
-            openssl::ec::PointConversionForm::UNCOMPRESSED,
-            &mut ctx,
-        )
-        .map_err(|e| AuthError::Config(format!("Failed to export EC point: {e}")))?;
-    if bytes.len() != 65 || bytes[0] != 0x04 {
+/// Return the `(x, y)` 32-byte coordinates of an EC P-256 public key.
+///
+/// The `subject_public_key` BIT STRING of an EC `SubjectPublicKeyInfo` is the
+/// uncompressed point `0x04 ‖ x ‖ y` (RFC 5480 §2.2). A 65-byte length is unique
+/// to P-256, so non-P-256 keys (and non-EC keys such as RSA) are rejected here.
+fn ec_p256_xy(spki: &SubjectPublicKeyInfoOwned) -> crate::AuthResult<(&[u8], &[u8])> {
+    let point = spki.subject_public_key.as_bytes().ok_or_else(|| {
+        AuthError::Config("EC public key BIT STRING is not byte-aligned".to_string())
+    })?;
+    if point.len() != 65 || point[0] != 0x04 {
         return Err(AuthError::Config(format!(
             "Expected 65-byte uncompressed P-256 point, got {} bytes",
-            bytes.len()
+            point.len()
         )));
     }
-    Ok(bytes[1..].to_vec()) // 64 bytes: x‖y
-}
-
-/// Build a JWKS document from a PEM string.
-///
-/// This is the `rustls`-only (no OpenSSL) implementation. It parses the raw DER
-/// bytes to locate the uncompressed EC public-key point directly.
-#[cfg(all(feature = "rustls", not(feature = "openssl")))]
-pub fn build_jwks_from_pem(pem: &str) -> crate::AuthResult<JwksData> {
-    use base64::Engine as _;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use sha2::{Digest, Sha256};
-
-    let xy = ec_xy_from_pem_der(pem)?;
-
-    let kid = hex::encode(Sha256::digest(&xy));
-    let jwk = serde_json::json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "use": "sig",
-        "alg": "ES256",
-        "kid": kid,
-        "x": URL_SAFE_NO_PAD.encode(&xy[0..32]),
-        "y": URL_SAFE_NO_PAD.encode(&xy[32..64]),
-    });
-    Ok(JwksData(serde_json::json!({ "keys": [jwk] })))
-}
-
-/// Locate the 64-byte x‖y from a P-256 EC key embedded in raw DER bytes.
-///
-/// The uncompressed-point marker `0x04` is always the last content byte of the
-/// BitString that encodes the SubjectPublicKeyInfo's public key. In a P-256
-/// SubjectPublicKeyInfo the DER is exactly 91 bytes and `0x04` is at byte 26.
-/// In an X.509 certificate the same BitString appears near the end of the
-/// TBSCertificate, so scanning backwards for `0x00 0x04` (no unused bits +
-/// uncompressed marker) followed by exactly 64 bytes is reliable.
-#[cfg(all(feature = "rustls", not(feature = "openssl")))]
-fn ec_xy_from_pem_der(pem: &str) -> crate::AuthResult<[u8; 64]> {
-    let label = if pem.contains("BEGIN CERTIFICATE") {
-        "CERTIFICATE"
-    } else {
-        "PUBLIC KEY"
-    };
-    let der = pem_to_der_bytes(pem, label)?;
-
-    // Search for the last occurrence of [0x00, 0x04] (BitString no-unused-bits +
-    // uncompressed EC point marker) where 64 bytes follow.
-    let pos = der
-        .windows(2)
-        .enumerate()
-        .rev()
-        .find(|(i, w)| w[0] == 0x00 && w[1] == 0x04 && i + 2 + 64 <= der.len())
-        .map(|(i, _)| i + 2) // first byte of x
-        .ok_or_else(|| {
-            AuthError::Config("Cannot locate P-256 uncompressed point in DER".to_string())
-        })?;
-
-    let mut xy = [0u8; 64];
-    xy.copy_from_slice(&der[pos..pos + 64]);
-    Ok(xy)
-}
-
-fn pem_to_der_bytes(pem_str: &str, label: &str) -> crate::AuthResult<Vec<u8>> {
-    let parsed = pem::parse(pem_str)
-        .map_err(|e| AuthError::Config(format!("Failed to parse PEM ({label}): {e}")))?;
-    if parsed.tag() != label {
-        return Err(AuthError::Config(format!(
-            "Expected PEM label {label}, got {}",
-            parsed.tag()
-        )));
-    }
-    Ok(parsed.into_contents())
+    Ok((&point[1..33], &point[33..65]))
 }
 
 pub struct JwtTokenConfig {
@@ -306,5 +232,68 @@ mod tests {
         .unwrap();
         let result = validate_token(&token, config.algorithm, &config.decoding_key);
         assert!(result.is_err());
+    }
+
+    // A P-256 public key and a self-signed certificate carrying the *same* key.
+    const P256_PUBLIC_KEY_PEM: &str = "-----BEGIN PUBLIC KEY-----\n\
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEf4Qf+T241nT/Si3iYnKu0OdbyHYK\n\
+85nmNXsIULqwoRKchjztGT09/HQTwqFjST830dgYs39o+JAnr1JavtpK4A==\n\
+-----END PUBLIC KEY-----\n";
+
+    const P256_CERTIFICATE_PEM: &str = "-----BEGIN CERTIFICATE-----\n\
+MIIBfTCCASOgAwIBAgIUTXCH/ZiZBXgovaTauCujoOKmJYwwCgYIKoZIzj0EAwIw\n\
+FDESMBAGA1UEAwwJandrcy10ZXN0MB4XDTI2MDcwOTEzMTE1NFoXDTM2MDcwNjEz\n\
+MTE1NFowFDESMBAGA1UEAwwJandrcy10ZXN0MFkwEwYHKoZIzj0CAQYIKoZIzj0D\n\
+AQcDQgAEf4Qf+T241nT/Si3iYnKu0OdbyHYK85nmNXsIULqwoRKchjztGT09/HQT\n\
+wqFjST830dgYs39o+JAnr1JavtpK4KNTMFEwHQYDVR0OBBYEFDHJN0reH/ztPE8v\n\
+tmMw0bR9ORQ0MB8GA1UdIwQYMBaAFDHJN0reH/ztPE8vtmMw0bR9ORQ0MA8GA1Ud\n\
+EwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSAAwRQIhAJmBKHffIbYIACSdI6I7oXnB\n\
+9ccJ09vdLBdUcthO61hqAiBGz7Q6UFBkl2+9njGSHMdj67Bny4x1Gv/+QRG8kBO0\n\
+nQ==\n\
+-----END CERTIFICATE-----\n";
+
+    fn assert_valid_p256_jwk(jwks: &serde_json::Value) {
+        let jwk = &jwks["keys"][0];
+        assert_eq!(jwk["kty"], "EC");
+        assert_eq!(jwk["crv"], "P-256");
+        assert_eq!(jwk["use"], "sig");
+        assert_eq!(jwk["alg"], "ES256");
+        // kid is the hex SHA-256 of x‖y (64 bytes → 32-byte digest → 64 hex chars).
+        assert_eq!(jwk["kid"].as_str().unwrap().len(), 64);
+        // x and y are base64url(no-pad) of 32-byte coordinates (43 chars each).
+        assert_eq!(jwk["x"].as_str().unwrap().len(), 43);
+        assert_eq!(jwk["y"].as_str().unwrap().len(), 43);
+    }
+
+    #[test]
+    fn test_build_jwks_from_public_key_pem() {
+        let jwks = build_jwks_from_pem(P256_PUBLIC_KEY_PEM).unwrap();
+        assert_valid_p256_jwk(&jwks.0);
+    }
+
+    #[test]
+    fn test_build_jwks_from_certificate_pem() {
+        let jwks = build_jwks_from_pem(P256_CERTIFICATE_PEM).unwrap();
+        assert_valid_p256_jwk(&jwks.0);
+    }
+
+    #[test]
+    fn test_jwks_from_cert_matches_public_key() {
+        // The certificate embeds the same public key, so both inputs must yield
+        // identical JWK coordinates and key id.
+        let from_key = build_jwks_from_pem(P256_PUBLIC_KEY_PEM).unwrap().0;
+        let from_cert = build_jwks_from_pem(P256_CERTIFICATE_PEM).unwrap().0;
+        assert_eq!(from_key["keys"][0]["x"], from_cert["keys"][0]["x"]);
+        assert_eq!(from_key["keys"][0]["y"], from_cert["keys"][0]["y"]);
+        assert_eq!(from_key["keys"][0]["kid"], from_cert["keys"][0]["kid"]);
+    }
+
+    #[test]
+    fn test_build_jwks_rejects_non_ec_pem() {
+        // An RSA/garbage PEM must not be accepted as a P-256 key.
+        let result = build_jwks_from_pem(
+            "-----BEGIN PUBLIC KEY-----\nbm90LWEta2V5\n-----END PUBLIC KEY-----\n",
+        );
+        assert!(matches!(result, Err(AuthError::Config(_))));
     }
 }
