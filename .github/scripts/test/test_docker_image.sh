@@ -4,7 +4,7 @@
 # TLS is verified with --insecure because the image generates a self-signed certificate
 # at startup when no external configuration is provided.
 # To supply a custom config, set AUTH_SERVER_CONF inside the container or mount a TOML
-# at /etc/auth_verifier/auth_verifier.toml.
+# at /etc/cosmian/auth_verifier.toml.
 set -euo pipefail
 
 IMAGE_NAME="${DOCKER_IMAGE_NAME:-cosmian-auth-verifier:latest}"
