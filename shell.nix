@@ -28,7 +28,7 @@ let
 
 in
 pkgs.mkShell {
-  name = "auth-server-dev";
+  name = "auth-verifier-dev";
 
   buildInputs =
     [

@@ -42,7 +42,7 @@ use cosmian_logger::info;
 const TEST_JWT_REALM: &str = "jwt_test_realm";
 
 /// Issuer URI that matches the hardcoded value in the test server's dummy
-/// [`RsaIdp`] (see `auth_server.rs`, `#[cfg(test)]` block).
+/// [`RsaIdp`] (see `auth_verifier.rs`, `#[cfg(test)]` block).
 const TEST_JWT_ISSUER: &str = "test_auth_issuer";
 
 /// Audience expected by the test realm.

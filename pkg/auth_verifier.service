@@ -7,12 +7,12 @@ After=network.target
 Type=simple
 User=cosmian
 Group=cosmian
-ExecStart=/usr/sbin/auth_server /etc/cosmian/auth_server.toml
+ExecStart=/usr/sbin/auth_verifier /etc/cosmian/auth_verifier.toml
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=auth_server
+SyslogIdentifier=auth_verifier
 
 # Security hardening
 NoNewPrivileges=true

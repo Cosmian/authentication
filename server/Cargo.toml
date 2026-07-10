@@ -1,5 +1,5 @@
 [package]
-name = "auth_server"
+name = "auth_verifier"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -62,7 +62,7 @@ x509-cert = { workspace = true }
 path = "src/lib.rs"
 
 [[bin]]
-name = "auth_server"
+name = "auth_verifier"
 path = "src/main.rs"
 
 
@@ -80,30 +80,30 @@ priority = "optional"
 depends = ""
 assets = [
   [
-    "target/release/auth_server",
-    "usr/sbin/auth_server",
+    "target/release/auth_verifier",
+    "usr/sbin/auth_verifier",
     "500",
   ],
   [
     "../README.md",
-    "usr/share/doc/cosmian-auth-server/README.md",
+    "usr/share/doc/cosmian-auth-verifier/README.md",
     "644",
   ],
   [
-    "../server/auth_server.toml",
-    "etc/cosmian/auth_server.toml",
+    "../server/auth_verifier.toml",
+    "etc/cosmian/auth_verifier.toml",
     "400",
   ],
 ]
 systemd-units = [
-  { unit-name = "auth_server", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
+  { unit-name = "auth_verifier", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
 ]
 
 [package.metadata.generate-rpm]
 assets = [
-  { source = "target/release/auth_server", dest = "/usr/sbin/auth_server", mode = "0500" },
-  { source = "../README.md", dest = "/usr/share/doc/cosmian-auth-server/README.md", mode = "0644" },
-  { source = "../server/auth_server.toml", dest = "/etc/cosmian/auth_server.toml", mode = "0400" },
+  { source = "target/release/auth_verifier", dest = "/usr/sbin/auth_verifier", mode = "0500" },
+  { source = "../README.md", dest = "/usr/share/doc/cosmian-auth-verifier/README.md", mode = "0644" },
+  { source = "../server/auth_verifier.toml", dest = "/etc/cosmian/auth_verifier.toml", mode = "0400" },
 ]
 [package.metadata.generate-rpm.requires]
 

@@ -37,18 +37,18 @@ use crate::tls::openssl_config::{create_openssl_acceptor, extract_openssl_peer_c
 use crate::tls::rustls_config::{extract_rustls_peer_certificate, rustls_server_config};
 
 /// Inner function to start the test server asynchronously.
-pub async fn start_auth_server(
+pub async fn start_auth_verifier(
     server_params: Arc<ServerParams>,
-    auth_server_handle_tx: Option<mpsc::Sender<ServerHandle>>,
+    auth_verifier_handle_tx: Option<mpsc::Sender<ServerHandle>>,
 ) -> AuthResult<()> {
     // Log the server configuration
     info!("Authentication Server configuration: {server_params:#?}");
 
     // Instantiate and prepare the Authentication server
-    let (server, _collector_handle) = prepare_auth_server(server_params).await?;
+    let (server, _collector_handle) = prepare_auth_verifier(server_params).await?;
 
     // send the server handle to the caller
-    if let Some(tx) = &auth_server_handle_tx {
+    if let Some(tx) = &auth_verifier_handle_tx {
         info!("Sending the server handle to the caller...");
         tx.send(server.handle())
             .context("failed to send server handle")?;
@@ -68,7 +68,7 @@ pub async fn start_auth_server(
 /// # Returns
 /// A tuple containing the prepared Actix server
 /// and an optional JoinHandle for the stale session collector task (if applicable).
-async fn prepare_auth_server(
+async fn prepare_auth_verifier(
     params: Arc<ServerParams>,
 ) -> AuthResult<(actix_web::dev::Server, Option<tokio::task::JoinHandle<()>>)> {
     // Determine the address to bind the server to.
@@ -79,7 +79,7 @@ async fn prepare_auth_server(
     } else {
         DatabaseParams {
             backend: DatabaseBackend::SQLite,
-            connection_url: "sqlite::auth_server.db".to_string(),
+            connection_url: "sqlite::auth_verifier.db".to_string(),
             max_connections: 5,
             min_connections: 1,
             connect_timeout_secs: 5,

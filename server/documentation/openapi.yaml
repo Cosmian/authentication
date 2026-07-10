@@ -342,7 +342,7 @@ components:
       properties:
         iss:
           type: string
-          example: auth-server
+          example: auth-verifier
         sub:
           type: string
           example: alice
@@ -572,13 +572,13 @@ paths:
                     items:
                       type: object
                       properties:
-                        kty: { type: string }
-                        crv: { type: string }
-                        use: { type: string }
-                        alg: { type: string }
-                        kid: { type: string }
-                        x: { type: string }
-                        y: { type: string }
+                        kty: {type: string}
+                        crv: {type: string}
+                        use: {type: string}
+                        alg: {type: string}
+                        kid: {type: string}
+                        x: {type: string}
+                        y: {type: string}
               example:
                 keys:
                   - kty: EC
@@ -682,7 +682,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClientClaims'
               example:
-                iss: auth-server
+                iss: auth-verifier
                 sub: alice
                 aud: [my-service]
                 exp: 1745000000

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Functional tests for the auth_server Docker image.
-# The container is expected to expose the auth server over HTTPS on PORT (default 9005).
+# Functional tests for the auth_verifier Docker image.
+# The container is expected to expose the auth server over HTTPS on PORT (default 8443).
 # TLS is verified with --insecure because the image generates a self-signed certificate
 # at startup when no external configuration is provided.
 # To supply a custom config, set AUTH_SERVER_CONF inside the container or mount a TOML
-# at /etc/auth_server/auth_server.toml.
+# at /etc/auth_verifier/auth_verifier.toml.
 set -euo pipefail
 
-IMAGE_NAME="${DOCKER_IMAGE_NAME:-cosmian-auth-server:latest}"
-PORT="${AUTH_SERVER_PORT:-9005}"
+IMAGE_NAME="${DOCKER_IMAGE_NAME:-cosmian-auth-verifier:latest}"
+PORT="${AUTH_SERVER_PORT:-8443}"
 BASE_URL="https://127.0.0.1:${PORT}"
 
 # Default admin credentials seeded on first start (username=admin, password=change_me)

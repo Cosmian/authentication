@@ -21,17 +21,17 @@ cargo build --features rustls        # use rustls instead of OpenSSL
 
 # ── Test ─────────────────────────────────────────────────────────────────
 cargo test --workspace --lib         # run all library tests
-cargo test -p auth_server            # single crate
+cargo test -p auth_verifier            # single crate
 
 # ── Lint ─────────────────────────────────────────────────────────────────
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 
 # ── Run locally ──────────────────────────────────────────────────────────
-cargo run --bin auth_server -- auth_server.toml
+cargo run --bin auth_verifier -- auth_verifier.toml
 
 # ── Smoke-test (expect 200 or 404, not 500) ─────────────────────────────
-curl -s http://localhost:9005/health
+curl -s http://localhost:8443/health
 ```
 
 ### Pre-commit hooks
@@ -53,7 +53,7 @@ underlying issues instead.
 
 ```text
 client/             auth_client  — authentication client library
-server/             auth_server  — server binary + lib
+server/             auth_verifier  — server binary + lib
   src/
     main.rs         — binary entry point
     lib.rs          — library root
@@ -66,7 +66,7 @@ server/             auth_server  — server binary + lib
     tls/            — TLS helpers
 
 nix/                Nix build expressions and expected vendor hashes
-  auth-server.nix   — Nix derivation for auth_server binary
+  auth-verifier.nix   — Nix derivation for auth_verifier binary
   docker.nix        — Docker image derivation
   expected-hashes/  — expected sha256 hashes for reproducible builds
   signing-keys/     — GPG public keys for package verification
@@ -81,7 +81,7 @@ nix/                Nix build expressions and expected vendor hashes
   workflows/        — GitHub Actions workflows
   reusable_scripts/ — git submodule: shared scripts with Cosmian/reusable_scripts
 
-default.nix         — top-level Nix derivation (pins nixpkgs, builds auth-server)
+default.nix         — top-level Nix derivation (pins nixpkgs, builds auth-verifier)
 shell.nix           — Nix development shell
 Cargo.toml          — workspace manifest
 ```
@@ -111,7 +111,7 @@ Cargo.toml          — workspace manifest
 | Session management              | `server/src/session/`                        |
 | TOTP support                    | `server/src/totp.rs`                         |
 | **OpenAPI schema**              | **`server/documentation/openapi.yaml`**      |
-| Nix derivation                  | `nix/auth-server.nix`                        |
+| Nix derivation                  | `nix/auth-verifier.nix`                        |
 | Nix top-level                   | `default.nix`                                |
 | CI/packaging entrypoint         | `.github/scripts/nix.sh`                     |
 | Packaging scripts (DEB/RPM/DMG) | `.github/scripts/package/`                  |
@@ -125,7 +125,7 @@ Cargo.toml          — workspace manifest
 change that touches a route, request body, response body, or authentication
 requirement **must** be reflected in all three layers at the same time:
 
-```
+```text
 server/src/server/endpoints/   ←→   client/src/   ←→   server/documentation/openapi.yaml
 ```
 
@@ -134,7 +134,7 @@ server/src/server/endpoints/   ←→   client/src/   ←→   server/documentat
 | Layer | What to check |
 | ----- | ------------- |
 | **Server routes** (`server/src/server/endpoints/*.rs`) | HTTP method, URL path, path parameters, query parameters, request body type, response status codes |
-| **Server app** (`server/src/server/auth_server.rs`) | Scope prefix + middleware stack (which routes require `cookieAuth`) |
+| **Server app** (`server/src/server/auth_verifier.rs`) | Scope prefix + middleware stack (which routes require `cookieAuth`) |
 | **Client DTOs** (`client/src/dto/`, `client/src/models/`) | Struct field names and types that are serialized/deserialized over the wire |
 | **Client methods** (`client/src/client/auth_client.rs`) | URL format strings, HTTP methods, request/response types |
 | **OpenAPI schema** (`server/documentation/openapi.yaml`) | Paths, parameter names, schema component field names, security requirements, examples |
@@ -143,7 +143,7 @@ server/src/server/endpoints/   ←→   client/src/   ←→   server/documentat
 
 1. **Route change** (add, rename, remove a path or HTTP method):
    - Update the actix-web `#[get/post/put/delete("...")]` macro in the endpoint file.
-   - Update `auth_server.rs` scope registration if the path prefix changes.
+   - Update `auth_verifier.rs` scope registration if the path prefix changes.
    - Update the matching URL format string in `auth_client.rs`.
    - Add/rename/delete the corresponding path entry in `openapi.yaml`.
 
@@ -153,12 +153,12 @@ server/src/server/endpoints/   ←→   client/src/   ←→   server/documentat
    - Update any inline examples in `openapi.yaml` that use the changed field.
 
 3. **Authentication change** (a route gains or loses an auth requirement):
-   - Update the middleware wrap chain in `auth_server.rs`.
+   - Update the middleware wrap chain in `auth_verifier.rs`.
    - Update the `security:` list on the corresponding path in `openapi.yaml`.
 
 4. **New endpoint**:
    - Add the handler in the appropriate `*_endpoints.rs` file.
-   - Register it in `auth_server.rs`.
+   - Register it in `auth_verifier.rs`.
    - Add the client method in `auth_client.rs`.
    - Add the full path entry (summary, operationId, parameters, requestBody,
      responses, security, example) in `openapi.yaml`.
@@ -193,7 +193,7 @@ grep -r '#\[get\|#\[post\|#\[put\|#\[delete' server/src/server/endpoints/
 
 ## 5. Nix derivation
 
-`nix/auth-server.nix` builds the `auth_server` binary targeting glibc 2.34
+`nix/auth-verifier.nix` builds the `auth_verifier` binary targeting glibc 2.34
 (Rocky Linux 9 compatibility) on Linux. It uses:
 
 - **Pinned nixpkgs** `8b27c1239e5c421a2bbc2c65d52e4a6fbf2ff296` (matches KMS repo)
@@ -206,10 +206,10 @@ No FIPS / non-FIPS variants — the auth server has a single build variant.
 
 ```bash
 # Build static binary
-nix-build -A auth-server-static
+nix-build -A auth-verifier-static
 
 # Build dynamic binary
-nix-build -A auth-server-dynamic
+nix-build -A auth-verifier-dynamic
 
 # Build Docker image (Linux only)
 nix-build -A docker-image
@@ -236,14 +236,14 @@ bash .github/scripts/nix.sh docker --load
 | ------------------------------------------- | ------------------------------------------ |
 | `server.vendor.static.sha256`               | Cargo vendor hash for static builds        |
 | `server.vendor.dynamic.sha256`              | Cargo vendor hash for dynamic builds       |
-| `auth-server.<link>.<arch>.<os>.sha256`     | Expected binary hash for determinism check |
+| `auth-verifier.<link>.<arch>.<os>.sha256`     | Expected binary hash for determinism check |
 
 When `Cargo.lock` changes, the vendor hashes become stale. Regenerate:
 
 ```bash
 # Put fake hash, run build, read "got:" error, paste correct hash
 echo "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" > nix/expected-hashes/server.vendor.static.sha256
-nix-build -A auth-server-static 2>&1 | grep "got:"
+nix-build -A auth-verifier-static 2>&1 | grep "got:"
 ```
 
 ---
@@ -313,7 +313,7 @@ Every agent-driven change **must** be recorded in a new file under `CHANGELOG/`.
 - Each bullet must be a single complete sentence summarising **what** changed and **why**, sufficient for a human to understand without reading the diff.
 - Do not add a changelog entry for pure formatting/linting-only commits.
 
-```
+```text
 CHANGELOG/<short_slug>.md
 ```
 

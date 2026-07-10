@@ -320,7 +320,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "auth_server"
+name = "auth_verifier"
 version = "0.1.0"
 dependencies = [
  "actix-cors",

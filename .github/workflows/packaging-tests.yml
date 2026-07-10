@@ -72,11 +72,11 @@ jobs:
         shell: bash
         run: |
           set -ex
-          BIN="/usr/sbin/auth_server"
+          BIN="/usr/sbin/auth_verifier"
           if [ ! -x "$BIN" ]; then
-            BIN=$(find /usr -name 'auth_server' -type f 2>/dev/null | head -1)
+            BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
           fi
-          [ -x "$BIN" ] || { echo "ERROR: auth_server not found"; exit 1; }
+          [ -x "$BIN" ] || { echo "ERROR: auth_verifier not found"; exit 1; }
           ldd "$BIN" || true
           "$BIN" --version || "$BIN" --help || true
 
@@ -84,7 +84,7 @@ jobs:
         shell: bash
         run: |
           set -ex
-          BIN=$(find /usr -name 'auth_server' -type f 2>/dev/null | head -1)
+          BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
           if command -v readelf >/dev/null 2>&1 && [ -n "$BIN" ]; then
             MAX_GLIBC=$(readelf -sW "$BIN" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -n1 || true)
             echo "Max GLIBC: ${MAX_GLIBC:-none}"
@@ -100,16 +100,16 @@ jobs:
         shell: bash
         run: |
           set -ex
-          BIN="/usr/sbin/auth_server"
+          BIN="/usr/sbin/auth_verifier"
           if [ ! -x "$BIN" ]; then
-            BIN=$(find /usr -name 'auth_server' -type f 2>/dev/null | head -1)
+            BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
           fi
-          # auth_server requires a config file; running without one must exit
+          # auth_verifier requires a config file; running without one must exit
           # with a meaningful error — not a linker/runtime crash.
           output=$("$BIN" 2>&1 || true)
           echo "$output"
-          echo "$output" | grep -qiE 'failed to read|auth_server\.toml|configuration' \
-            || { echo "ERROR: unexpected output from auth_server"; exit 1; }
+          echo "$output" | grep -qiE 'failed to read|auth_verifier\.toml|configuration' \
+            || { echo "ERROR: unexpected output from auth_verifier"; exit 1; }
 
   systemd-packages-test:
     name: Use GH runners ${{ matrix.link }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
@@ -153,21 +153,21 @@ jobs:
         shell: bash
         run: |
           set -ex
-          BIN="/usr/sbin/auth_server"
+          BIN="/usr/sbin/auth_verifier"
           if [ ! -f "$BIN" ]; then
-            BIN=$(find /usr/sbin /usr/bin /usr/local/bin -name 'auth_server' -type f 2>/dev/null | head -1)
+            BIN=$(find /usr/sbin /usr/bin /usr/local/bin -name 'auth_verifier' -type f 2>/dev/null | head -1)
           fi
-          [ -f "$BIN" ] || { echo "ERROR: auth_server not found"; exit 1; }
+          [ -f "$BIN" ] || { echo "ERROR: auth_verifier not found"; exit 1; }
           sudo ldd "$BIN" || true
           # Verify the binary executes and exits with a config error (not a crash)
           # Binary is installed root-only (-r-x------); run via sudo
           output=$(sudo "$BIN" 2>&1 || true)
           echo "$output"
-          echo "$output" | grep -qiE 'failed to read|auth_server\.toml|configuration' \
-            || { echo "ERROR: unexpected output from auth_server"; exit 1; }
+          echo "$output" | grep -qiE 'failed to read|auth_verifier\.toml|configuration' \
+            || { echo "ERROR: unexpected output from auth_verifier"; exit 1; }
 
-      - name: systemd-analyze security auth_server.service
+      - name: systemd-analyze security auth_verifier.service
         shell: bash
         run: |
           set -ex
-          systemd-analyze security auth_server.service
+          systemd-analyze security auth_verifier.service

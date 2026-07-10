@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Smoke-test for the auth_server Debian package
+# Smoke-test for the auth_verifier Debian package
 # Verifies binary presence, ELF properties, and GLIBC version.
 set -euo pipefail
 
 DEB_FILE="${1:-}"
 if [ -z "$DEB_FILE" ] || [ ! -f "$DEB_FILE" ]; then
-  echo "Usage: $0 <path/to/auth_server.deb>" >&2
+  echo "Usage: $0 <path/to/auth_verifier.deb>" >&2
   exit 1
 fi
 
@@ -19,9 +19,9 @@ echo "==========================================="
 # Extract package
 dpkg-deb --extract "$DEB_FILE" "$TMPDIR_EXTRACT" || ar -x "$DEB_FILE" --output="$TMPDIR_EXTRACT" || true
 # Find binary
-BIN=$(find "$TMPDIR_EXTRACT" -type f -name 'auth_server' | head -1)
+BIN=$(find "$TMPDIR_EXTRACT" -type f -name 'auth_verifier' | head -1)
 if [ -z "$BIN" ]; then
-  echo "ERROR: auth_server binary not found inside $DEB_FILE" >&2
+  echo "ERROR: auth_verifier binary not found inside $DEB_FILE" >&2
   exit 1
 fi
 echo "Binary: $BIN"

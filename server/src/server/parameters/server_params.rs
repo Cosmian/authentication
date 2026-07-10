@@ -36,7 +36,7 @@ pub struct ServerParams {
     pub stale_session_collector_config: Option<StaleSessionCollectorConfig>,
 
     /// Optional development seed: creates a realm-admin account on first start.
-    /// Intended only for `auth_server.dev.toml` — do not use in production.
+    /// Intended only for `auth_verifier.dev.toml` — do not use in production.
     pub dev_seed: Option<DevSeedParams>,
 
     /// Path to the pre-built admin UI `dist/` directory.

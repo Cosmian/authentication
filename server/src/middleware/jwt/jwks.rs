@@ -24,7 +24,7 @@
 //! ```rust,no_run
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! use auth_server::JwksManager;
+//! use auth_verifier::JwksManager;
 //!
 //! // Create a new JWKS manager
 //! let manager = JwksManager::new(None).await;
@@ -256,7 +256,7 @@ impl JwksManager {
     /// ```rust,no_run
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use auth_server::JwksManager;
+    /// use auth_verifier::JwksManager;
     ///
     /// let manager = JwksManager::new(None).await;
     /// manager.upsert_realm("my-realm", vec!["https://idp.example.com/jwks".to_string()], None).await?;

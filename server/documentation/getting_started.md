@@ -19,10 +19,10 @@ This guide walks through deploying the Auth authentication server from scratch: 
 From the workspace root:
 
 ```bash
-cargo build --release --bin auth_server
+cargo build --release --bin auth_verifier
 ```
 
-The binary is placed at `target/release/auth_server`.
+The binary is placed at `target/release/auth_verifier`.
 
 ---
 
@@ -55,7 +55,7 @@ For production, use certificates issued by a trusted CA or an internal PKI.
 
 ## 3. Write the Configuration File
 
-Create `auth_server.toml`:
+Create `auth_verifier.toml`:
 
 ```toml
 host_name = "0.0.0.0"
@@ -68,7 +68,7 @@ server_ca_chain    = "ca.cert.pem"
 
 [database_params]
 backend        = "sqlite"
-connection_url = "sqlite://auth_server.db"
+connection_url = "sqlite://auth_verifier.db"
 ```
 
 See [server_configuration.md](server_configuration.md) for the full configuration reference.
@@ -83,7 +83,7 @@ On the **first startup**, set these environment variables to create the initial 
 export APP_REALM_ADMIN_USERNAME="admin"
 export APP_REALM_ADMIN_INITIAL_PASSWORD="change_me"
 
-./target/release/auth_server auth_server.toml
+./target/release/auth_verifier auth_verifier.toml
 ```
 
 The server hashes the password with **Argon2id** and stores it. Remove or unset these variables before any subsequent restarts — they are silently ignored if the admin already exists.

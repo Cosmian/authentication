@@ -4,7 +4,7 @@ set -euo pipefail
 
 DMG_FILE="${1:-}"
 if [ -z "$DMG_FILE" ] || [ ! -f "$DMG_FILE" ]; then
-  echo "Usage: $0 <path/to/auth_server.dmg>" >&2
+  echo "Usage: $0 <path/to/auth_verifier.dmg>" >&2
   exit 1
 fi
 
@@ -17,9 +17,9 @@ trap 'hdiutil detach "$MOUNT_POINT" 2>/dev/null || true; rm -rf "$MOUNT_POINT"' 
 
 hdiutil attach "$DMG_FILE" -mountpoint "$MOUNT_POINT" -nobrowse -quiet
 
-BIN=$(find "$MOUNT_POINT" -type f -name 'auth_server' | head -1)
+BIN=$(find "$MOUNT_POINT" -type f -name 'auth_verifier' | head -1)
 if [ -z "$BIN" ]; then
-  echo "ERROR: auth_server binary not found in DMG $DMG_FILE" >&2
+  echo "ERROR: auth_verifier binary not found in DMG $DMG_FILE" >&2
   exit 1
 fi
 echo "Binary: $BIN"

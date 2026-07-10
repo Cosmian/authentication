@@ -13,7 +13,7 @@ pub use middleware::*;
 
 mod server;
 pub use server::parameters::{DatabaseBackend, DatabaseParams, ServerParams};
-pub use server::start_auth_server;
+pub use server::start_auth_verifier;
 
 mod session;
 pub use session::{

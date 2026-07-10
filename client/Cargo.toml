@@ -10,7 +10,7 @@ description = "Authentication Client - shared models, DTOs and HTTP client for t
 
 [features]
 default = []
-# _server: additional types/impls used by auth_server
+# _server: additional types/impls used by auth_verifier
 #   - actix_web::ResponseError for AuthError
 _server = ["dep:actix-web"]
 

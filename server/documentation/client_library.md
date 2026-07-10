@@ -603,11 +603,11 @@ async fn protected_handler(
 
 /// Build the shared auth client at application startup.
 pub fn build_auth_client(
-    auth_server_url: &str,
+    auth_verifier_url: &str,
     ca_cert_pem: &str,
 ) -> Arc<AuthClient> {
     Arc::new(
-        AuthClient::new(auth_server_url, ca_cert_pem, AuthClientScheme::None)
+        AuthClient::new(auth_verifier_url, ca_cert_pem, AuthClientScheme::None)
             .expect("Failed to build auth client"),
     )
 }

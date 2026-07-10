@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Smoke-test for the auth_server RPM package
+# Smoke-test for the auth_verifier RPM package
 set -euo pipefail
 
 RPM_FILE="${1:-}"
 if [ -z "$RPM_FILE" ] || [ ! -f "$RPM_FILE" ]; then
-  echo "Usage: $0 <path/to/auth_server.rpm>" >&2
+  echo "Usage: $0 <path/to/auth_verifier.rpm>" >&2
   exit 1
 fi
 
@@ -17,9 +17,9 @@ echo "==========================================="
 
 # Extract RPM
 rpm2cpio "$RPM_FILE" | cpio -idmv -D "$TMPDIR_EXTRACT" 2>/dev/null || true
-BIN=$(find "$TMPDIR_EXTRACT" -type f -name 'auth_server' | head -1)
+BIN=$(find "$TMPDIR_EXTRACT" -type f -name 'auth_verifier' | head -1)
 if [ -z "$BIN" ]; then
-  echo "ERROR: auth_server binary not found inside $RPM_FILE" >&2
+  echo "ERROR: auth_verifier binary not found inside $RPM_FILE" >&2
   exit 1
 fi
 echo "Binary: $BIN"

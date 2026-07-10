@@ -1,6 +1,6 @@
 use crate::{
     AuthError, AuthResult,
-    server::{parameters::ServerParams, start_auth_server},
+    server::{parameters::ServerParams, start_auth_verifier},
     tests::{TestsContext, get_default_server_params},
 };
 use actix_web::dev::ServerHandle;
@@ -29,7 +29,7 @@ pub async fn start_test_server(server_params: ServerParams) -> AuthResult<TestsC
             })?;
 
         runtime
-            .block_on(start_auth_server(params, Some(tx)))
+            .block_on(start_auth_verifier(params, Some(tx)))
             .map_err(|e| {
                 error!("Error starting the Authentication server: {e:?}");
                 AuthError::Unexpected(e.to_string())
