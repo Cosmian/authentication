@@ -72,7 +72,7 @@ jobs:
         shell: bash
         run: |
           set -ex
-          BIN="/usr/sbin/auth_verifier"
+          BIN="/usr/bin/auth_verifier"
           if [ ! -x "$BIN" ]; then
             BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
           fi
@@ -100,7 +100,7 @@ jobs:
         shell: bash
         run: |
           set -ex
-          BIN="/usr/sbin/auth_verifier"
+          BIN="/usr/bin/auth_verifier"
           if [ ! -x "$BIN" ]; then
             BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
           fi
@@ -153,9 +153,9 @@ jobs:
         shell: bash
         run: |
           set -ex
-          BIN="/usr/sbin/auth_verifier"
+          BIN="/usr/bin/auth_verifier"
           if [ ! -f "$BIN" ]; then
-            BIN=$(find /usr/sbin /usr/bin /usr/local/bin -name 'auth_verifier' -type f 2>/dev/null | head -1)
+            BIN=$(find /usr/bin /usr/bin /usr/local/bin -name 'auth_verifier' -type f 2>/dev/null | head -1)
           fi
           [ -f "$BIN" ] || { echo "ERROR: auth_verifier not found"; exit 1; }
           sudo ldd "$BIN" || true

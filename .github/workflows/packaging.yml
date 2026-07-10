@@ -133,7 +133,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             cpu-arch: amd64
           - runner: macos-15
-            cpu-arch: arm64
+            cpu-arch: amd64
 
     steps:
       - name: Download artifacts
@@ -156,8 +156,11 @@ jobs:
           DESTINATION_DIR="/mnt/package/authentication/${BRANCH}"
           RESULT_DIR="result-${{ matrix.package-type }}-${{ matrix.link }}"
 
-          # rpm uses x86_64/aarch64 in file names; deb/dmg use the matrix cpu-arch
-          if [[ "${{ matrix.package-type }}" == "rpm" ]]; then
+          # cargo-packager outputs aarch64 for Apple Silicon;
+          # rpm uses x86_64/aarch64; deb uses the matrix cpu-arch
+          if [[ "${{ matrix.runner }}" == macos* ]]; then
+            PACKAGE_PATTERN="aarch64"
+          elif [[ "${{ matrix.package-type }}" == "rpm" ]]; then
             if [[ "${{ matrix.runner }}" == "ubuntu-24.04-arm" ]]; then
               PACKAGE_PATTERN="aarch64"
             else
