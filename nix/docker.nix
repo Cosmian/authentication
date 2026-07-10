@@ -107,7 +107,6 @@ EOF
       pkgs.tzdata
       pkgs.coreutils
       pkgs.bash
-      pkgs.openssl # required for self-signed cert generation at startup
     ];
   };
 
