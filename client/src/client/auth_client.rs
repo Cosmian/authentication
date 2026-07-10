@@ -15,7 +15,7 @@ use crate::{
         GetSessionsForClientsResponse, SessionsAction, TotpGenerateRequest, TotpGenerateResponse,
         TotpVerifyRequest, Version,
     },
-    models::{ClientClaims, LoginRequest, Realm, SessionData, User, UserPass},
+    models::{Admin, ClientClaims, LoginRequest, Realm, SessionData, UserPass},
 };
 use base64::Engine;
 use cookie_store::{Cookie, CookieDomain};
@@ -367,14 +367,14 @@ impl AuthClient {
 impl AuthClient {
     /// Create a new realm
     pub async fn create_realm(&self, realm: &Realm) -> AuthResult<()> {
-        let path = "/admin/realm".to_string();
+        let path = "/admins/realms".to_string();
         let _realm: Realm = self.post(&path, realm).await?;
         Ok(())
     }
 
     /// Delete a realm
     pub async fn delete_realm(&self, realm_name: &str) -> AuthResult<()> {
-        let url = format!("{}/admin/realm/{}", self.base_url, realm_name);
+        let url = format!("{}/admins/realms/{}", self.base_url, realm_name);
         let request = self.client.delete(&url);
 
         let response = request
@@ -399,7 +399,7 @@ impl AuthClient {
 
     /// List all realms
     pub async fn list_realms(&self) -> AuthResult<Vec<String>> {
-        self.get("/admin/realm").await
+        self.get("/admins/realms").await
     }
 }
 
@@ -408,7 +408,7 @@ impl AuthClient {
     /// Get session information by session ID.
     /// Returns `None` if the session does not exist or has expired.
     pub async fn get_session(&self, session_id: &str) -> AuthResult<Option<SessionData>> {
-        let path = format!("/sessions/session/{}", session_id);
+        let path = format!("/sessions/{}", session_id);
         self.get::<Option<SessionData>>(&path).await
     }
 
@@ -419,7 +419,7 @@ impl AuthClient {
         authenticated_clients: Vec<AuthenticatedClientScheme>,
         sessions_action: SessionsAction,
     ) -> AuthResult<Option<SessionData>> {
-        let path = format!("/sessions/session/{}", session_id);
+        let path = format!("/sessions/{}", session_id);
         let payload = GetSessionRequest {
             authenticated_clients,
             sessions_action: Some(sessions_action),
@@ -440,7 +440,7 @@ impl AuthClient {
         realm_id: &str,
         authenticated_clients: &[AuthenticatedClientScheme],
     ) -> AuthResult<Vec<String>> {
-        let path = format!("/sessions/session/realms/{}/clients", realm_id);
+        let path = format!("/sessions/realms/{}/clients", realm_id);
         let payload = GetSessionsForClientsRequest {
             authenticated_clients: authenticated_clients.to_vec(),
         };
@@ -450,7 +450,7 @@ impl AuthClient {
 
     /// Delete sessions by their session IDs.
     pub async fn delete_sessions(&self, session_ids: &[String]) -> AuthResult<()> {
-        let url = format!("{}/sessions/session", self.base_url);
+        let url = format!("{}/sessions", self.base_url);
         let payload = DeleteSessionsRequest {
             session_ids: session_ids.to_vec(),
         };
@@ -474,7 +474,7 @@ impl AuthClient {
 
     /// Delete all expired sessions
     pub async fn delete_expired_sessions(&self) -> AuthResult<()> {
-        let path = "/sessions/session/expired";
+        let path = "/sessions/expired";
         self.client
             .delete(format!("{}{}", self.base_url, path))
             .send()
@@ -487,7 +487,7 @@ impl AuthClient {
 
     /// Delete all sessions for a given realm
     pub async fn delete_sessions_for_realm(&self, realm_id: &str) -> AuthResult<()> {
-        let path = format!("/sessions/session/realms/{}", realm_id);
+        let path = format!("/sessions/realms/{}", realm_id);
         self.client
             .delete(format!("{}{}", self.base_url, path))
             .send()
@@ -503,20 +503,20 @@ impl AuthClient {
 impl AuthClient {
     /// Create a new realm
     pub async fn create_realm_as_super_admin(&self, realm: &Realm) -> AuthResult<()> {
-        let path = "/admin/realm".to_string();
+        let path = "/admins/realms".to_string();
         let _realm: Realm = self.post(&path, realm).await?;
         Ok(())
     }
 
     /// Get a realm by ID
     pub async fn get_realm_as_super_admin(&self, realm_id: &str) -> AuthResult<Realm> {
-        let path = format!("/admin/realm/{}", realm_id);
+        let path = format!("/admins/realms/{}", realm_id);
         self.get(&path).await
     }
 
     /// Delete a realm by ID
     pub async fn delete_realm_as_super_admin(&self, realm_id: &str) -> AuthResult<()> {
-        let url = format!("{}/admin/realm/{}", self.base_url, realm_id);
+        let url = format!("{}/admins/realms/{}", self.base_url, realm_id);
         let request = self.client.delete(&url);
         let response = request
             .send()
@@ -542,36 +542,40 @@ impl AuthClient {
         realm_id: &str,
         realm: &Realm,
     ) -> AuthResult<Realm> {
-        let path = format!("/admin/realm/{}", realm_id);
+        let path = format!("/admins/realms/{}", realm_id);
         self.put(&path, realm).await
     }
 
     /// List all realms
     pub async fn list_realms_as_super_admin(&self) -> AuthResult<Vec<Realm>> {
-        self.get("/admin/realms").await
+        self.get("/admins/realms").await
     }
 }
 
-/// User Management API
+/// Admin Management API
 impl AuthClient {
-    /// Create a new user.
-    pub async fn create_user_as_super_admin(&self, user: &User) -> AuthResult<User> {
-        self.post("/users/user", user).await
+    /// Create a new admin.
+    pub async fn create_admin_as_super_admin(&self, admin: &Admin) -> AuthResult<Admin> {
+        self.post("/admins", admin).await
     }
 
-    /// Retrieve a user by ID.
-    pub async fn get_user_as_super_admin(&self, user_id: &str) -> AuthResult<User> {
-        self.get(&format!("/users/user/{}", user_id)).await
+    /// Retrieve an admin by ID.
+    pub async fn get_admin_as_super_admin(&self, admin_id: &str) -> AuthResult<Admin> {
+        self.get(&format!("/admins/{}", admin_id)).await
     }
 
-    /// Update an existing user.
-    pub async fn update_user_as_super_admin(&self, user_id: &str, user: &User) -> AuthResult<User> {
-        self.put(&format!("/users/user/{}", user_id), user).await
+    /// Update an existing admin.
+    pub async fn update_admin_as_super_admin(
+        &self,
+        admin_id: &str,
+        admin: &Admin,
+    ) -> AuthResult<Admin> {
+        self.put(&format!("/admins/{}", admin_id), admin).await
     }
 
-    /// Delete a user by ID.
-    pub async fn delete_user_as_super_admin(&self, user_id: &str) -> AuthResult<()> {
-        let url = format!("{}/users/user/{}", self.base_url, user_id);
+    /// Delete an admin by ID.
+    pub async fn delete_admin_as_super_admin(&self, admin_id: &str) -> AuthResult<()> {
+        let url = format!("{}/admins/{}", self.base_url, admin_id);
         let request = self.client.delete(&url);
         let response = request
             .send()
@@ -590,34 +594,27 @@ impl AuthClient {
         Ok(())
     }
 
-    /// List all users.
-    pub async fn list_users_as_super_admin(&self) -> AuthResult<Vec<User>> {
-        self.get("/users").await
+    /// List all admins.
+    pub async fn list_admins_as_super_admin(&self) -> AuthResult<Vec<Admin>> {
+        self.get("/admins").await
     }
 
-    /// Add a user to a realm.
-    pub async fn add_user_to_realm_as_admin(
-        &self,
-        user_id: &str,
-        realm_id: &str,
-    ) -> AuthResult<User> {
+    /// Add an admin to a realm.
+    pub async fn add_admin_to_realm(&self, admin_id: &str, realm_id: &str) -> AuthResult<Admin> {
         self.put(
-            &format!("/users/user/{}/realm/{}", user_id, realm_id),
+            &format!("/admins/{}/realms/{}", admin_id, realm_id),
             &serde_json::Value::Null,
         )
         .await
     }
 
-    /// Remove a user from a realm.
-    pub async fn remove_user_from_realm_as_admin(
+    /// Remove an admin from a realm.
+    pub async fn remove_admin_from_realm(
         &self,
-        user_id: &str,
+        admin_id: &str,
         realm_id: &str,
-    ) -> AuthResult<User> {
-        let url = format!(
-            "{}/users/user/{}/realm/{}",
-            self.base_url, user_id, realm_id
-        );
+    ) -> AuthResult<Admin> {
+        let url = format!("{}/admins/{}/realms/{}", self.base_url, admin_id, realm_id);
         let request = self.client.delete(&url);
         let response = request
             .send()
@@ -626,53 +623,47 @@ impl AuthClient {
         Self::handle_response(response).await
     }
 
-    /// Create login credentials for a user in a given realm.
-    pub async fn create_user_credentials_in_realm(
+    /// Create login credentials for an admin in a given realm.
+    pub async fn create_admin_credentials_in_realm(
         &self,
         realm_id: &str,
         userpass: &UserPass,
     ) -> AuthResult<()> {
-        let path = format!("/realms/{}/userpass?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/userpass", realm_id);
         let _: serde_json::Value = self.post(&path, userpass).await?;
         Ok(())
     }
 
-    /// Retrieve login credentials for a user in a given realm.
-    pub async fn get_user_credentials_in_realm(
+    /// Retrieve login credentials for an admin in a given realm.
+    pub async fn get_admin_credentials_in_realm(
         &self,
         realm_id: &str,
         username: &str,
     ) -> AuthResult<UserPass> {
-        let path = format!(
-            "/realms/{}/userpass/{}?realm={}",
-            realm_id, username, realm_id
-        );
+        let path = format!("/realms/{}/userpass/{}", realm_id, username);
         self.get(&path).await
     }
 
-    /// Update login credentials for a user in a given realm.
-    pub async fn update_user_credentials_in_realm(
+    /// Update login credentials for an admin in a given realm.
+    pub async fn update_admin_credentials_in_realm(
         &self,
         realm_id: &str,
         username: &str,
         userpass: &UserPass,
     ) -> AuthResult<UserPass> {
-        let path = format!(
-            "/realms/{}/userpass/{}?realm={}",
-            realm_id, username, realm_id
-        );
+        let path = format!("/realms/{}/userpass/{}", realm_id, username);
         self.put(&path, userpass).await
     }
 
-    /// Delete login credentials for a user in a given realm.
-    pub async fn delete_user_credentials_in_realm(
+    /// Delete login credentials for an admin in a given realm.
+    pub async fn delete_admin_credentials_in_realm(
         &self,
         realm_id: &str,
         username: &str,
     ) -> AuthResult<()> {
         let url = format!(
-            "{}/realms/{}/userpass/{}?realm={}",
-            self.base_url, realm_id, username, realm_id
+            "{}/realms/{}/userpass/{}",
+            self.base_url, realm_id, username
         );
         let request = self.client.delete(&url);
         let response = request
@@ -693,17 +684,17 @@ impl AuthClient {
     }
 
     /// List all login credentials for a given realm.
-    pub async fn list_user_credentials_in_realm(
+    pub async fn list_admin_credentials_in_realm(
         &self,
         realm_id: &str,
     ) -> AuthResult<Vec<UserPass>> {
-        let path = format!("/realms/{}/userpass?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/userpass", realm_id);
         self.get(&path).await
     }
 
     /// List all userpass credentials across all realms. Super admins only.
     pub async fn list_all_userpass_as_super_admin(&self) -> AuthResult<Vec<UserPass>> {
-        self.get("/admin/userpass").await
+        self.get("/admins/userpass").await
     }
 }
 
@@ -716,7 +707,7 @@ impl AuthClient {
         username: &str,
         issuer: Option<String>,
     ) -> AuthResult<TotpGenerateResponse> {
-        let path = format!("/realms/{}/totp/generate?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/totp/generate", realm_id);
         self.post(
             &path,
             &TotpGenerateRequest {
@@ -736,7 +727,7 @@ impl AuthClient {
         token: &str,
         issuer: Option<String>,
     ) -> AuthResult<()> {
-        let path = format!("/realms/{}/totp/verify?realm={}", realm_id, realm_id);
+        let path = format!("/realms/{}/totp/verify", realm_id);
         let _: serde_json::Value = self
             .post(
                 &path,
@@ -753,10 +744,7 @@ impl AuthClient {
 
     /// Disable TOTP for a user, removing their stored secret.
     pub async fn disable_totp(&self, realm_id: &str, username: &str) -> AuthResult<()> {
-        let url = format!(
-            "{}/realms/{}/totp/{}?realm={}",
-            self.base_url, realm_id, username, realm_id
-        );
+        let url = format!("{}/realms/{}/totp/{}", self.base_url, realm_id, username);
         let request = self.client.delete(&url);
         let response = request
             .send()

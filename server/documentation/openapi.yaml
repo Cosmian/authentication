@@ -1,0 +1,1467 @@
+---
+openapi: 3.1.0
+
+info:
+  title: Cosmian Authentication Server
+  version: 1.0.0
+  description: |
+    High-performance authentication and session management server.
+    All endpoints are served over **HTTPS only**.
+
+    ## Authentication for admin endpoints
+    Admin endpoints require a session cookie obtained by logging into the `_` realm:
+    ```
+    POST /login?realm=_
+    Authorization: Basic <base64(username:password)>
+    ```
+    The server responds with `Set-Cookie: _ea_=<value>; HttpOnly; Secure; SameSite=Strict`.
+    Pass this cookie on every subsequent admin request.
+
+servers:
+  - url: https://localhost:8443
+    description: Local development
+
+tags:
+  - name: Public
+    description: No authentication required
+  - name: Auth
+    description: Login and session claims
+  - name: Sessions
+    description: Session store management
+  - name: Realms
+    description: Realm CRUD — super admin only for write operations
+  - name: Admins
+    description: Admin account management
+  - name: Credentials
+    description: Username/password credential management per realm
+  - name: TOTP
+    description: Two-factor authentication management
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: _ea_
+    basicAuth:
+      type: http
+      scheme: basic
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    mtls:
+      type: mutualTLS
+
+  schemas:
+
+    AuthScheme:
+      type: string
+      description: Wire representation of the authentication scheme.
+      enum: [up, jwt, cc, f2, dc]
+
+    AuthenticatedClientScheme:
+      type: object
+      required: [username, auth_scheme]
+      properties:
+        username:
+          type: string
+          example: alice
+        auth_scheme:
+          type: string
+          enum: [UsernamePassword, Jwt, ClientCertificate, Fido2, DigitalCredentials]
+      example:
+        username: alice
+        auth_scheme: UsernamePassword
+
+    SessionsAction:
+      type: string
+      enum: [LogoutOtherSessions, LogoutAllSessions]
+
+    AuthenticationNextStep:
+      type: string
+      enum: [Authenticated, TotpRequired, ChangePassword]
+
+    TotpAlgorithm:
+      type: string
+      enum: [SHA1, SHA256, SHA512]
+      default: SHA1
+
+    IdpParams:
+      type: object
+      required: [jwt_issuer_uri, jwks_uri]
+      properties:
+        jwt_issuer_uri:
+          type: string
+          format: uri
+          example: https://accounts.google.com
+        jwks_uri:
+          type: string
+          format: uri
+          example: https://www.googleapis.com/oauth2/v3/certs
+        jwt_audience:
+          type: string
+          nullable: true
+          example: my-client-id.apps.googleusercontent.com
+
+    JwtParams:
+      type: object
+      required: [idp_params]
+      properties:
+        idp_params:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdpParams'
+        smallest_refresh_interval_seconds:
+          type: integer
+          format: int64
+          nullable: true
+          example: 300
+
+    UsernamePasswordParams:
+      type: object
+      required: [allow_expired_passwords]
+      properties:
+        allow_expired_passwords:
+          type: boolean
+          example: false
+
+    TotpRealmParams:
+      type: object
+      properties:
+        algorithm:
+          $ref: '#/components/schemas/TotpAlgorithm'
+          # TODO : No enums ?
+        step:
+          type: integer
+          default: 30
+          example: 30
+
+    RealmAuthParams:
+      type: object
+      properties:
+        jwt_params:
+          allOf:
+            - $ref: '#/components/schemas/JwtParams'
+          nullable: true
+        username_password_params:
+          allOf:
+            - $ref: '#/components/schemas/UsernamePasswordParams'
+          nullable: true
+        totp_params:
+          allOf:
+            - $ref: '#/components/schemas/TotpRealmParams'
+          nullable: true
+
+    Realm:
+      type: object
+      required: [id, auth_params, session_max_age_seconds, session_max_stale_age_seconds]
+      properties:
+        id:
+          type: string
+          example: my-service
+        auth_params:
+          $ref: '#/components/schemas/RealmAuthParams'
+        session_max_age_seconds:
+          type: integer
+          format: int64
+          example: 3600
+        session_max_stale_age_seconds:
+          type: integer
+          format: int64
+          example: 1800
+      example:
+        id: my-service
+        auth_params:
+          username_password_params:
+            allow_expired_passwords: false
+        session_max_age_seconds: 3600
+        session_max_stale_age_seconds: 1800
+
+    Admin:
+      type: object
+      required: [id, realms]
+      properties:
+        id:
+          type: string
+          example: alice
+        realms:
+          type: array
+          items:
+            type: string
+          description: Realms this admin manages. Use ["_"] for super admin.
+          example: [my-service]
+        userpass:
+          type: string
+          nullable: true
+          description: Foreign key into the userpass table (username, not password).
+          example: alice
+        jwt:
+          type: string
+          nullable: true
+          example:
+        fido2:
+          type: string
+          nullable: true
+          example:
+        digital_credentials:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+          example:
+        client_certificate:
+          type: string
+          nullable: true
+          example:
+        totp_enabled:
+          type: boolean
+          nullable: true
+          example: false
+        totp_secret:
+          type: string
+          nullable: true
+          description: Base32-encoded TOTP secret. Read-only via GET.
+          example:
+        totp_auth_url:
+          type: string
+          nullable: true
+          description: otpauth:// URL for QR code enrollment. Read-only via GET.
+          example:
+      example:
+        id: alice
+        realms: [my-service]
+        userpass: alice
+        jwt:
+        fido2:
+        digital_credentials:
+        client_certificate:
+        totp_enabled: false
+        totp_secret:
+        totp_auth_url:
+
+    UserPass:
+      type: object
+      required: [realm, username, password, change_password]
+      properties:
+        realm:
+          type: string
+          example: my-service
+        username:
+          type: string
+          example: alice
+        password:
+          type: array
+          items:
+            type: integer
+          description: |
+            UTF-8 bytes of the plaintext password on write.
+            Always returned as an empty array on read (server stores only the Argon2id hash).
+          example: [115, 101, 99, 114, 101, 116]
+        change_password:
+          type: boolean
+          example: false
+        roles:
+          type: array
+          items:
+            type: string
+          description: |
+            RBAC roles assigned to this user (e.g. ["CryptoOfficer", "Auditor"]).
+            Emitted in the JWT `roles` claim for OPA policy evaluation.
+          default: []
+          example: [CryptoOfficer]
+    SessionData:
+      type: object
+      description: |
+        ⚠️  SECURITY NOTE: `cookie_string` contains the raw JWT stored in the session and
+        `session_id` is the opaque lookup key. These fields MUST NOT be returned by any
+        admin list endpoint — doing so would expose all active JWTs to any authenticated
+        admin, enabling session hijacking via Bearer token replay.
+        A future `SessionSummary` schema (see openapi TODO) must be defined for list
+        endpoints, omitting `cookie_string` and `session_id`.
+      required: [session_id, realm_id, username, auth_scheme, cookie_string, max_age_seconds, max_stale_age_seconds, created_at]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        realm_id:
+          type: string
+          example: my-service
+        username:
+          type: string
+          example: alice
+        auth_scheme:
+          $ref: '#/components/schemas/AuthScheme'
+        cookie_string:
+          type: string
+          example: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
+        max_age_seconds:
+          type: integer
+          format: int64
+          example: 3600
+        max_stale_age_seconds:
+          type: integer
+          format: int64
+          example: 1800
+        created_at:
+          type: integer
+          format: int64
+          description: Unix timestamp (seconds) when the session was created.
+          example: 1744996400
+
+    LoginRequest:
+      type: object
+      properties:
+        public_key_pem:
+          type: string
+          nullable: true
+          example:
+        totp_code:
+          type: string
+          nullable: true
+          description: 6-digit TOTP code. Required when the previous response returned TotpRequired.
+          example: '482913'
+
+    AuthenticationResult:
+      type: object
+      required: [next_step]
+      properties:
+        next_step:
+          $ref: '#/components/schemas/AuthenticationNextStep'
+        session_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Present only when next_step is Authenticated.
+          example: 550e8400-e29b-41d4-a716-446655440000
+
+    ClientClaims:
+      type: object
+      description: Flat JWT claims object returned by GET /whoami.
+      properties:
+        iss:
+          type: string
+          example: auth-verifier
+        sub:
+          type: string
+          example: alice
+        aud:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          example: [my-service]
+        exp:
+          type: integer
+          format: int64
+          example: 1745000000
+        nbf:
+          type: integer
+          format: int64
+          example: 1744996400
+        iat:
+          type: integer
+          format: int64
+          example: 1744996400
+        jti:
+          type: string
+          example: 7f000101-0001-0001-0001-000000000001
+        as_as:
+          $ref: '#/components/schemas/AuthScheme'
+        as_pk:
+          type: string
+          nullable: true
+          example:
+        as_rid:
+          type: string
+          example: my-service
+      additionalProperties: true
+
+    GetSessionRequest:
+      type: object
+      required: [authenticated_clients]
+      properties:
+        authenticated_clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthenticatedClientScheme'
+        sessions_action:
+          allOf:
+            - $ref: '#/components/schemas/SessionsAction'
+          nullable: true
+
+    GetSessionsForClientsRequest:
+      type: object
+      required: [authenticated_clients]
+      properties:
+        authenticated_clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuthenticatedClientScheme'
+
+    GetSessionsForClientsResponse:
+      type: object
+      required: [session_ids]
+      properties:
+        session_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          example:
+            - 550e8400-e29b-41d4-a716-446655440000
+            - 660f9511-f3ac-52e5-c827-557766551111
+
+    DeleteSessionsRequest:
+      type: object
+      required: [session_ids]
+      properties:
+        session_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          example:
+            - 550e8400-e29b-41d4-a716-446655440000
+
+    TotpGenerateRequest:
+      type: object
+      required: [username]
+      properties:
+        username:
+          type: string
+          example: alice
+        issuer:
+          type: string
+          nullable: true
+          example: My Application
+
+    TotpGenerateResponse:
+      type: object
+      required: [secret_base32, otpauth_url]
+      properties:
+        secret_base32:
+          type: string
+          example: JBSWY3DPEHPK3PXP
+        otpauth_url:
+          type: string
+          example: otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30
+
+    TotpVerifyRequest:
+      type: object
+      required: [username, token, secret]
+      properties:
+        username:
+          type: string
+          example: alice
+        token:
+          type: string
+          example: '482913'
+        secret:
+          type: string
+          example: JBSWY3DPEHPK3PXP
+        issuer:
+          type: string
+          nullable: true
+          example: My Application
+
+    Error:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Realm 'unknown' not found
+
+  responses:
+    NoContent:
+      description: Success — empty body.
+    Unauthorized:
+      description: Missing or invalid credentials.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but not authorised.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Resource already exists (duplicate ID).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  parameters:
+    realmId:
+      name: realm_id
+      in: path
+      required: true
+      schema:
+        type: string
+      example: my-service
+    adminId:
+      name: admin_id
+      in: path
+      required: true
+      schema:
+        type: string
+      example: alice
+    sessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      example: 550e8400-e29b-41d4-a716-446655440000
+    username:
+      name: username
+      in: path
+      required: true
+      schema:
+        type: string
+      example: alice
+
+paths:
+
+  /public/version:
+    get:
+      tags: [Public]
+      summary: Server version
+      operationId: getVersion
+      responses:
+        '200':
+          description: Version string.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version]
+                properties:
+                  version:
+                    type: string
+              example:
+                version: 1.0.0
+
+  /.well-known/jwks.json:
+    get:
+      tags: [Public]
+      summary: JSON Web Key Set
+      operationId: getJwks
+      responses:
+        '200':
+          description: JWKS document containing the server's EC P-256 signing public key.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kty: {type: string}
+                        crv: {type: string}
+                        use: {type: string}
+                        alg: {type: string}
+                        kid: {type: string}
+                        x: {type: string}
+                        y: {type: string}
+              example:
+                keys:
+                  - kty: EC
+                    crv: P-256
+                    use: sig
+                    alg: ES256
+                    kid: a3f1c2d4e5b6...
+                    x: f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU
+                    y: x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0
+
+  /login:
+    post:
+      tags: [Auth]
+      summary: Authenticate and issue a session cookie
+      operationId: login
+      description: |
+        Authenticates via Authorization header (Basic or Bearer) or TLS client certificate.
+        The realm query parameter selects the authentication domain.
+
+        On success sets Set-Cookie: _ea_=<value>; HttpOnly; Secure; SameSite=Strict.
+
+        When TOTP is enabled the first response has next_step: TotpRequired.
+        Re-submit the same request with totp_code filled in.
+      parameters:
+        - name: realm
+          in: query
+          required: true
+          schema:
+            type: string
+          example: my-service
+      security:
+        - basicAuth: []
+        - bearerAuth: []
+        - mtls: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              standard:
+                summary: Normal login
+                value:
+                  public_key_pem:
+                  totp_code:
+              withTotp:
+                summary: Second step with TOTP code
+                value:
+                  public_key_pem:
+                  totp_code: '482913'
+      responses:
+        '200':
+          description: |
+            Authentication result. Check next_step:
+            - Authenticated — session cookie set, session_id present.
+            - TotpRequired — re-submit with totp_code.
+            - ChangePassword — login succeeded but password has expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationResult'
+              examples:
+                authenticated:
+                  summary: Fully authenticated
+                  value:
+                    next_step: Authenticated
+                    session_id: 550e8400-e29b-41d4-a716-446655440000
+                totpRequired:
+                  summary: TOTP required
+                  value:
+                    next_step: TotpRequired
+                    session_id:
+                changePassword:
+                  summary: Password expired
+                  value:
+                    next_step: ChangePassword
+                    session_id:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /whoami:
+    get:
+      tags: [Auth]
+      summary: Return JWT claims for the current session
+      operationId: whoami
+      parameters:
+        - name: realm
+          in: query
+          required: true
+          schema:
+            type: string
+          example: my-service
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: JWT claims for the authenticated session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientClaims'
+              example:
+                iss: auth-verifier
+                sub: alice
+                aud: [my-service]
+                exp: 1745000000
+                iat: 1744996400
+                as_as: up
+                as_rid: my-service
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sessions:
+    post:
+      tags: [Sessions]
+      summary: Create or update a session (internal)
+      operationId: upsertSession
+      description: Internal server-to-server endpoint. Creates or replaces a session in the store.
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, realm, authenticated_client, session_value]
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                  example: 550e8400-e29b-41d4-a716-446655440000
+                realm:
+                  $ref: '#/components/schemas/Realm'
+                authenticated_client:
+                  $ref: '#/components/schemas/AuthenticatedClientScheme'
+                session_value:
+                  type: string
+                  example: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags: [Sessions]
+      summary: Delete sessions by ID (explicit logout)
+      operationId: deleteSessions
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteSessionsRequest'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sessions/expired:
+    delete:
+      tags: [Sessions]
+      summary: Purge all expired sessions
+      operationId: deleteExpiredSessions
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sessions/{session_id}:
+    get:
+      tags: [Sessions]
+      summary: Retrieve session data by ID
+      description: Returns null (HTTP 200, not 404) when the session does not exist or has expired.
+      operationId: getSessionById
+      parameters:
+        - $ref: '#/components/parameters/sessionId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Session data or null if not found.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SessionData'
+                  - type: 'null'
+              examples:
+                found:
+                  summary: Session found
+                  value:
+                    session_id: 550e8400-e29b-41d4-a716-446655440000
+                    realm_id: my-service
+                    username: alice
+                    auth_scheme: up
+                    cookie_string: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
+                    max_age_seconds: 3600
+                    max_stale_age_seconds: 1800
+                    created_at: 1744996400
+                notFound:
+                  summary: Not found
+                  value:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Sessions]
+      summary: Retrieve session data and optionally perform bulk logout
+      operationId: getSession
+      parameters:
+        - $ref: '#/components/parameters/sessionId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetSessionRequest'
+            examples:
+              fetchOnly:
+                summary: Fetch only
+                value:
+                  authenticated_clients: []
+                  sessions_action:
+              logoutOthers:
+                summary: Keep this session, logout all others for alice
+                value:
+                  authenticated_clients:
+                    - username: alice
+                      auth_scheme: UsernamePassword
+                  sessions_action: LogoutOtherSessions
+              logoutAll:
+                summary: Logout everywhere
+                value:
+                  authenticated_clients:
+                    - username: alice
+                      auth_scheme: UsernamePassword
+                  sessions_action: LogoutAllSessions
+      responses:
+        '200':
+          description: Session data (returned before deletion when LogoutAllSessions).
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SessionData'
+                  - type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /sessions/realms/{realm_id}/clients:
+    post:
+      tags: [Sessions]
+      summary: Get all session IDs for a set of clients in a realm
+      operationId: getSessionsForClients
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GetSessionsForClientsRequest'
+            example:
+              - username: alice
+                auth_scheme: UsernamePassword
+              - username: alice
+                auth_scheme: Jwt
+      responses:
+        '200':
+          description: Session IDs for the given clients.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GetSessionsForClientsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /sessions/realms/{realm_id}:
+    delete:
+      tags: [Sessions]
+      summary: Revoke all sessions for a realm (administrative bulk logout)
+      operationId: deleteSessionsForRealm
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admins/realms:
+    post:
+      tags: [Realms]
+      summary: Create a realm (super admin only)
+      operationId: createRealm
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Realm'
+            example:
+              id: my-service
+              auth_params:
+                username_password_params:
+                  allow_expired_passwords: false
+              session_max_age_seconds: 3600
+              session_max_stale_age_seconds: 1800
+      responses:
+        '201':
+          description: Created realm.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Realm'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    get:
+      tags: [Realms]
+      summary: List realms
+      description: Super admins see all; realm admins see only their administered realms.
+      operationId: listRealms
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of realms.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Realm'
+              example:
+                - id: _
+                  auth_params: {}
+                  session_max_age_seconds: 3600
+                  session_max_stale_age_seconds: 3600
+                - id: my-service
+                  auth_params:
+                    username_password_params:
+                      allow_expired_passwords: false
+                  session_max_age_seconds: 3600
+                  session_max_stale_age_seconds: 1800
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /admins/realms/{realm_id}:
+    get:
+      tags: [Realms]
+      summary: Get a realm by ID
+      description: Realm admins may only retrieve realms they administer.
+      operationId: getRealm
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Realm record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Realm'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Realms]
+      summary: Replace a realm's configuration (super admin only)
+      operationId: updateRealm
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Realm'
+      responses:
+        '200':
+          description: Updated realm.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Realm'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Realms]
+      summary: Delete a realm and all associated data (super admin only)
+      operationId: deleteRealm
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admins/userpass:
+    get:
+      tags: [Realms]
+      summary: List all userpass credentials across all realms (super admin only)
+      operationId: listAllUserpass
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of UserPass objects. password is always empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserPass'
+              example:
+                - realm: my-service
+                  username: alice
+                  password: []
+                  change_password: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admins:
+    post:
+      tags: [Admins]
+      summary: Create an admin
+      description: |
+        Super admins may create any admin. Realm admins may create an admin only if every
+        realm in the new admin's realms list is one they administer.
+      operationId: createAdmin
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Admin'
+            example:
+              id: bob
+              realms: [my-service]
+              userpass: bob
+              jwt:
+              fido2:
+              digital_credentials:
+              client_certificate:
+              totp_enabled: false
+      responses:
+        '201':
+          description: Created admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Admin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    get:
+      tags: [Admins]
+      summary: List all admins (super admin only)
+      operationId: listAdmins
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of Admin objects.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Admin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admins/{admin_id}:
+    get:
+      tags: [Admins]
+      summary: Get an admin by ID
+      operationId: getAdmin
+      parameters:
+        - $ref: '#/components/parameters/adminId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Admin record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Admin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Admins]
+      summary: Replace an admin record
+      description: |
+        The admin_id path parameter is authoritative — the id field in the body is overwritten.
+        Realm admins are subject to the exclusive-ownership rule on both current and incoming
+        realms lists (prevents privilege escalation).
+      operationId: updateAdmin
+      parameters:
+        - $ref: '#/components/parameters/adminId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Admin'
+      responses:
+        '200':
+          description: Updated admin.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Admin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Admins]
+      summary: Delete an admin record
+      description: Associated userpass credentials are cascade-deleted.
+      operationId: deleteAdmin
+      parameters:
+        - $ref: '#/components/parameters/adminId'
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admins/{admin_id}/realms/{realm_id}:
+    put:
+      tags: [Admins]
+      summary: Add a realm to an admin's realms list
+      operationId: addAdminToRealm
+      parameters:
+        - $ref: '#/components/parameters/adminId'
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Updated admin record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Admin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Admins]
+      summary: Remove a realm from an admin's realms list
+      operationId: removeAdminFromRealm
+      parameters:
+        - $ref: '#/components/parameters/adminId'
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Updated admin record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Admin'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /realms/{realm_id}/userpass:
+    post:
+      tags: [Credentials]
+      summary: Create a username/password credential
+      operationId: createUserpass
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPass'
+            example:
+              realm: my-service
+              username: alice
+              password: [115, 101, 99, 114, 101, 116]
+              change_password: false
+      responses:
+        '201':
+          description: Created credential. password returned as empty array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPass'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+    get:
+      tags: [Credentials]
+      summary: List credentials in a realm
+      operationId: listUserpass
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of UserPass objects. password is always empty.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserPass'
+              example:
+                - realm: my-service
+                  username: alice
+                  password: []
+                  change_password: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /realms/{realm_id}/userpass/{username}:
+    get:
+      tags: [Credentials]
+      summary: Retrieve a single credential
+      operationId: getUserpass
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - $ref: '#/components/parameters/username'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: UserPass object. password is always empty.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPass'
+              example:
+                realm: my-service
+                username: alice
+                password: []
+                change_password: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Credentials]
+      summary: Update a credential
+      description: Typically used to change the password or toggle change_password.
+      operationId: updateUserpass
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - $ref: '#/components/parameters/username'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPass'
+            example:
+              realm: my-service
+              username: alice
+              password: [110, 101, 119, 115, 101, 99, 114, 101, 116]
+              change_password: false
+      responses:
+        '200':
+          description: Updated credential. password returned as empty array.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPass'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Credentials]
+      summary: Delete a credential
+      operationId: deleteUserpass
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - $ref: '#/components/parameters/username'
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /realms/{realm_id}/totp/generate:
+    post:
+      tags: [TOTP]
+      summary: Generate a TOTP secret
+      description: |
+        Returns a secret and otpauth:// URL for QR code display.
+        The secret is NOT stored until verify is called successfully.
+      operationId: totpGenerate
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpGenerateRequest'
+            example:
+              username: alice
+              issuer: My Application
+      responses:
+        '200':
+          description: TOTP secret and otpauth URL.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TotpGenerateResponse'
+              example:
+                secret_base32: JBSWY3DPEHPK3PXP
+                otpauth_url: otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /realms/{realm_id}/totp/verify:
+    post:
+      tags: [TOTP]
+      summary: Verify a TOTP code and enable TOTP for the user
+      description: |
+        Verifies the code against the provided secret. If valid, stores the secret and enables TOTP.
+        Call this after generate once the user has scanned the QR code.
+      operationId: totpVerify
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TotpVerifyRequest'
+            example:
+              username: alice
+              token: '482913'
+              secret: JBSWY3DPEHPK3PXP
+              issuer: My Application
+      responses:
+        '200':
+          description: TOTP enabled. Empty body.
+        '400':
+          description: Invalid TOTP token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /realms/{realm_id}/totp/{username}:
+    delete:
+      tags: [TOTP]
+      summary: Disable TOTP for a user
+      description: Removes the stored secret and sets totp_enabled = false.
+      operationId: totpDisable
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - $ref: '#/components/parameters/username'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: TOTP disabled. Empty body.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'

@@ -1,5 +1,5 @@
 use crate::{
-    AuthError, database::Database, models::UserPass, server::endpoints::user_from_request,
+    AuthError, database::Database, models::UserPass, server::endpoints::admin_from_request,
 };
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// Create a new user password entry.
 ///
 /// The requester must administer the realm specified in the path.
-#[post("/{realm}/userpass")]
+#[post("/{realm_id}/userpass")]
 pub async fn create_userpass(
     req: HttpRequest,
     realm: Path<String>,
@@ -19,7 +19,7 @@ pub async fn create_userpass(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -43,14 +43,14 @@ pub async fn create_userpass(
 /// Get a user password entry by realm and username.
 ///
 /// The requester must administer the realm specified in the path.
-#[get("/{realm}/userpass/{username}")]
+#[get("/{realm_id}/userpass/{username}")]
 pub async fn get_userpass(
     req: HttpRequest,
     params: Path<(String, String)>,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm) {
         return Err(AuthError::Forbidden(format!(
@@ -75,7 +75,7 @@ pub async fn get_userpass(
 /// Update an existing user password entry.
 ///
 /// The requester must administer the realm specified in the path.
-#[put("/{realm}/userpass/{username}")]
+#[put("/{realm_id}/userpass/{username}")]
 pub async fn update_userpass(
     req: HttpRequest,
     params: Path<(String, String)>,
@@ -83,7 +83,7 @@ pub async fn update_userpass(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm) {
         return Err(AuthError::Forbidden(format!(
@@ -108,14 +108,14 @@ pub async fn update_userpass(
 /// Delete a user password entry by realm and username.
 ///
 /// The requester must administer the realm specified in the path.
-#[delete("/{realm}/userpass/{username}")]
+#[delete("/{realm_id}/userpass/{username}")]
 pub async fn delete_userpass(
     req: HttpRequest,
     params: Path<(String, String)>,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let (realm, username) = params.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm) {
         return Err(AuthError::Forbidden(format!(
@@ -136,14 +136,14 @@ pub async fn delete_userpass(
 /// List all user password entries for a specific realm.
 ///
 /// The requester must administer the realm specified in the path.
-#[get("/{realm}/userpass")]
+#[get("/{realm_id}/userpass")]
 pub async fn list_userpass_by_realm(
     req: HttpRequest,
     realm: Path<String>,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.can_administer_realm(&realm_id) {
         return Err(AuthError::Forbidden(format!(
@@ -163,7 +163,7 @@ pub async fn list_all_userpass(
     req: HttpRequest,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
-    let requester = user_from_request(&req)?;
+    let requester = admin_from_request(&req)?;
 
     if !requester.is_super_admin() {
         return Err(AuthError::Forbidden(

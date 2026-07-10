@@ -1,0 +1,17 @@
+---
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ci:
+    uses: ./.github/workflows/main_base.yml
+    secrets: inherit
+    with:
+      toolchain: stable

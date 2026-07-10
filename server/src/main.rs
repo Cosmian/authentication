@@ -5,14 +5,14 @@
 //! # Usage
 //!
 //! ```text
-//! # Using the default config file (./auth_server.toml in the working directory):
-//! auth_server
+//! # Using the default config file (./auth_verifier.toml in the working directory):
+//! auth_verifier
 //!
 //! # Specifying a custom config file path:
-//! auth_server /path/to/my-config.toml
+//! auth_verifier /path/to/my-config.toml
 //! ```
 
-use auth_server::{ServerParams, start_auth_server};
+use auth_verifier::{ServerParams, start_auth_verifier};
 use cosmian_logger::info;
 use std::{path::PathBuf, sync::Arc};
 
@@ -21,11 +21,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cosmian_logger::log_init(None);
 
     // The first positional argument is the config file path.
-    // Default: auth_server.toml in the current working directory.
+    // Default: auth_verifier.toml in the current working directory.
     let config_path: PathBuf = std::env::args()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("auth_server.toml"));
+        .unwrap_or_else(|| PathBuf::from("auth_verifier.toml"));
 
     info!(
         "Loading Auth Authentication Server configuration from: {}",
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Configuration loaded successfully");
 
-    start_auth_server(Arc::new(server_params), None)
+    start_auth_verifier(Arc::new(server_params), None)
         .await
         .map_err(|e| format!("Authentication server error: {e}").into())
 }

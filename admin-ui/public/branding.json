@@ -1,0 +1,27 @@
+{
+    "title": "Auth Admin",
+    "faviconUrl": "",
+    "logoAlt": "Authentication Server",
+    "logoLightUrl": "",
+    "logoDarkUrl": "",
+    "loginTitle": "Auth Admin",
+    "loginSubtitle": "",
+    "backgroundImageUrl": "",
+    "loginCardColor": "",
+    "menuTheme": "light",
+    "tokens": {
+        "light": {
+            "colorPrimary": "#e34319",
+            "colorText": "#292f52"
+        },
+        "dark": {
+            "colorPrimary": "#9e6eff",
+            "colorText": "#e4dddd",
+            "colorBgBase": "#2a2d30"
+        }
+    },
+    "superAdminBanner": {
+        "light": { "backgroundColor": "#fff1f0", "borderColor": "#ff675f", "color": "#a8071a" },
+        "dark": { "backgroundColor": "#3b0a0a", "borderColor": "#ff4d4f", "color": "#ffb3b0" }
+    }
+}

@@ -6,28 +6,28 @@ This document explains Auth's two-tier authorization model, how super admins and
 
 ## Overview
 
-Every `User` record in the database represents an administrator — either a super admin or a realm admin. There are no purely client-facing account types: if a `User` record exists it has administrative authority over at least one realm. Clients authenticate against `/login` and receive a session cookie, but the associated `User` record determines what administrative operations they may perform.
+Every `Admin` record in the database represents an administrator — either a super admin or a realm admin. There are no purely client-facing account types: if a `Admin` record exists it has administrative authority over at least one realm. Clients authenticate against `/login` and receive a session cookie, but the associated `Admin` record determines what administrative operations they may perform.
 
 The two tiers are:
 
-| Tier | Sentinel | Condition |
-|------|----------|-----------|
-| **Super Admin** | `User.realms` contains `"_"` | Can administer all realms and all users |
-| **Realm Admin** | `User.realms` contains one or more realm IDs | Can administer only the listed realms (and their users) |
+| Tier            | Sentinel                                      | Condition                                                |
+| --------------- | --------------------------------------------- | -------------------------------------------------------- |
+| **Super Admin** | `Admin.realms` contains `"_"`                 | Can administer all realms and all users                  |
+| **Realm Admin** | `Admin.realms` contains one or more realm IDs | Can administer only the listed realms (and their admins) |
 
 ```mermaid
 graph TD
-    SA["Super Admin<br/>realms: [\"_\"]"]
-    RA1["Realm Admin A<br/>realms: [\"finance\"]"]
-    RA2["Realm Admin B<br/>realms: [\"hr\",\"payroll\"]"]
+    SA["Super Admin<br/>realms: [#quot;_#quot;]"]
+    RA1["Realm Admin A<br/>realms: [#quot;finance#quot;]"]
+    RA2["Realm Admin B<br/>realms: [#quot;hr#quot;, #quot;payroll#quot;]"]
 
-    SA -->|"can_administer_realm(\"_\")"| ADMIN_REALM["Realm: _"]
-    SA -->|"can_administer_realm(any)"| FINANCE["Realm: finance"]
-    SA -->|"can_administer_realm(any)"| HR["Realm: hr"]
-    SA -->|"can_administer_realm(any)"| PAYROLL["Realm: payroll"]
-    RA1 -->|"can_administer_realm(\"finance\")"| FINANCE
-    RA2 -->|"can_administer_realm(\"hr\")"| HR
-    RA2 -->|"can_administer_realm(\"payroll\")"| PAYROLL
+    SA -->|can_administer_realm #quot;_#quot;| ADMIN_REALM["Realm: _"]
+    SA -->|can_administer_realm any| FINANCE["Realm: finance"]
+    SA -->|can_administer_realm any| HR["Realm: hr"]
+    SA -->|can_administer_realm any| PAYROLL["Realm: payroll"]
+    RA1 -->|can_administer_realm #quot;finance#quot;| FINANCE
+    RA2 -->|can_administer_realm #quot;hr#quot;| HR
+    RA2 -->|can_administer_realm #quot;payroll#quot;| PAYROLL
 ```
 
 ---
@@ -37,21 +37,21 @@ graph TD
 The string `"_"` is the `ADMIN_REALM` constant. It is a real realm stored in the database and has two purposes:
 
 1. **Authentication domain** — all administrator clients log in via `POST /login?realm=_`. The resulting `_ea_` session cookie is scoped to `_` and authorises all admin API calls.
-2. **Super-admin sentinel** — a `User` record whose `realms` field contains `"_"` is recognised as a super admin.
+2. **Super-admin sentinel** — a `Admin` record whose `realms` field contains `"_"` is recognised as a super admin.
 
 ---
 
 ## Authorization Helper Methods
 
-The `User` struct provides two methods used by every endpoint handler:
+The `Admin` struct provides two methods used by every endpoint handler:
 
 ```rust
-/// Returns true if this User record represents a super admin.
+/// Returns true if this Admin record represents a super admin.
 pub fn is_super_admin(&self) -> bool {
     self.realms.contains(&ADMIN_REALM.to_string())  // "_"
 }
 
-/// Returns true if this User record may administer the given realm.
+/// Returns true if this Admin record may administer the given realm.
 /// Super admins always satisfy this for every realm.
 pub fn can_administer_realm(&self, realm: &str) -> bool {
     self.realms.contains(&ADMIN_REALM.to_string())
@@ -69,15 +69,15 @@ flowchart TD
     B -- No --> Z[HTTP 401 Unauthorized]
     B -- Yes --> C{Endpoint category}
 
-    C -- "Super-admin-only\n/admin/realm POST|PUT|DELETE\n/users GET\n/admin/userpass GET" --> D{is_super_admin?}
+    C -- "Super-admin-only\n/admins/realms POST|PUT|DELETE\n/admins GET\n/admins/userpass GET" --> D{is_super_admin?}
     D -- No --> E[HTTP 403 Forbidden]
     D -- Yes --> F[Proceed]
 
-    C -- "Realm-scoped\n/realms/{realm}/…\n/admin/realm/{id} GET\n/sessions/…" --> G{"can_administer_realm\n(realm)?"}
+    C -- "Realm-scoped\n/realms/{realm}/…\n/admins/realms/{id} GET\n/sessions/…" --> G{"can_administer_realm\n(realm)?"}
     G -- No --> E
     G -- Yes --> F
 
-    C -- "User CRUD\n/users/user POST|GET|PUT|DELETE" --> SA{is_super_admin?}
+    C -- "Admin CRUD\n/admins POST|GET|PUT|DELETE" --> SA{is_super_admin?}
     SA -- Yes --> F
     SA -- No --> OWN{"target.realms non-empty\nAND all realms in target\nadministered by requester?"}
     OWN -- No --> E
@@ -85,7 +85,7 @@ flowchart TD
     PUTCHECK -- No --> E
     PUTCHECK -- Yes --> F
 
-    C -- "GET /admin/realms" --> H{is_super_admin?}
+    C -- "GET /admins/realms" --> H{is_super_admin?}
     H -- Yes --> I[Return all realms]
     H -- No --> J["Return only realms in\nUser.realms list"]
 ```
@@ -96,61 +96,61 @@ flowchart TD
 
 ### Realm Management
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `POST` | `/admin/realm` | ✅ | ❌ |
-| `GET` | `/admin/realm/{id}` | ✅ | ✅ if `can_administer_realm(id)` |
-| `PUT` | `/admin/realm/{id}` | ✅ | ❌ |
-| `DELETE` | `/admin/realm/{id}` | ✅ | ❌ |
-| `GET` | `/admin/realms` | ✅ all | ✅ filtered |
+| Method   | Endpoint              | Super Admin |           Realm Admin           |
+| -------- | --------------------- | :---------: | :-----------------------------: |
+| `POST`   | `/admins/realms`      |      ✅      |                ❌                |
+| `GET`    | `/admins/realms/{id}` |      ✅      | ✅ if `can_administer_realm(id)` |
+| `PUT`    | `/admins/realms/{id}` |      ✅      |                ❌                |
+| `DELETE` | `/admins/realms/{id}` |      ✅      |                ❌                |
+| `GET`    | `/admins/realms`      |    ✅ all    |           ✅ filtered            |
 
-### User Management
+### Admin Management
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `POST` | `/users/user` | ✅ | ✅ if owns all target realms |
-| `GET` | `/users/user/{id}` | ✅ | ✅ if owns all target realms |
-| `PUT` | `/users/user/{id}` | ✅ | ✅ if owns current AND new realms |
-| `DELETE` | `/users/user/{id}` | ✅ | ✅ if owns all target realms |
-| `GET` | `/users` | ✅ | ❌ |
-| `PUT` | `/users/user/{id}/realm/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
-| `DELETE` | `/users/user/{id}/realm/{realm_id}` | ✅ | ✅ if `can_administer_realm(realm_id)` |
+| Method   | Endpoint                         | Super Admin |              Realm Admin              |
+| -------- | -------------------------------- | :---------: | :-----------------------------------: |
+| `POST`   | `/admins`                        |      ✅      |      ✅ if owns all target realms      |
+| `GET`    | `/admins/{id}`                   |      ✅      |      ✅ if owns all target realms      |
+| `PUT`    | `/admins/{id}`                   |      ✅      |   ✅ if owns current AND new realms    |
+| `DELETE` | `/admins/{id}`                   |      ✅      |      ✅ if owns all target realms      |
+| `GET`    | `/admins`                        |      ✅      |                   ❌                   |
+| `PUT`    | `/admins/{id}/realms/{realm_id}` |      ✅      | ✅ if `can_administer_realm(realm_id)` |
+| `DELETE` | `/admins/{id}/realms/{realm_id}` |      ✅      | ✅ if `can_administer_realm(realm_id)` |
 
 ### Credential Management
 
 All `/realms/{realm}/userpass` endpoints require `can_administer_realm(realm)`.
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `POST` | `/realms/{realm}/userpass` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `GET` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `PUT` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `DELETE` | `/realms/{realm}/userpass/{username}` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `GET` | `/realms/{realm}/userpass` | ✅ | ✅ if `can_administer_realm(realm)` |
-| `GET` | `/admin/userpass` | ✅ all | ❌ |
+| Method   | Endpoint                              | Super Admin |            Realm Admin             |
+| -------- | ------------------------------------- | :---------: | :--------------------------------: |
+| `POST`   | `/realms/{realm}/userpass`            |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `GET`    | `/realms/{realm}/userpass/{username}` |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `PUT`    | `/realms/{realm}/userpass/{username}` |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `DELETE` | `/realms/{realm}/userpass/{username}` |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `GET`    | `/realms/{realm}/userpass`            |      ✅      | ✅ if `can_administer_realm(realm)` |
+| `GET`    | `/admins/userpass`                    |    ✅ all    |                 ❌                  |
 
 ### Session Management
 
-| Method | Endpoint | Super Admin | Realm Admin |
-|--------|---------|:-----------:|:-----------:|
-| `GET` | `/sessions/{session_id}` | ✅ | ✅ if session is in an administered realm |
-| `DELETE` | `/sessions/{session_id}` | ✅ | ✅ if session is in an administered realm |
-| `GET` | `/sessions` | ✅ | ✅ filtered to administered realms |
+| Method   | Endpoint                 | Super Admin |               Realm Admin                |
+| -------- | ------------------------ | :---------: | :--------------------------------------: |
+| `GET`    | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
+| `DELETE` | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
+| `GET`    | `/sessions`              |      ✅      |    ✅ filtered to administered realms     |
 
 ### Public / unauthenticated
 
-| Method | Endpoint | Anyone |
-|--------|---------|:------:|
-| `GET` | `/public/version` | ✅ |
-| `GET` | `/public/jwks` | ✅ |
-| `POST` | `/login` | ✅ |
-| `GET` | `/whoami` | ✅ (no `UserAuth`) |
+| Method | Endpoint                 |       Anyone       |
+| ------ | ------------------------ | :----------------: |
+| `GET`  | `/public/version`        |         ✅          |
+| `GET`  | `/.well-known/jwks.json` |         ✅          |
+| `POST` | `/login`                 |         ✅          |
+| `GET`  | `/whoami`                | ✅ (no `AdminAuth`) |
 
 ---
 
 ## The Exclusive-Ownership Rule
 
-The most important protection for realm admins is the **exclusive-ownership rule**: a realm admin may only CRUD a `User` record if **every realm in that record's `realms` list** is administered by the requester.
+The most important protection for realm admins is the **exclusive-ownership rule**: a realm admin may only CRUD a `Admin` record if **every realm in that record's `realms` list** is administered by the requester.
 
 ```
 allowed iff:
@@ -160,12 +160,10 @@ allowed iff:
 
 The intent is:
 
-- A realm admin cannot view or modify `User` records that span multiple realms from different admins.
-- A realm admin cannot delete a super admin (`User` records for super admins have `"_"` in their `realms` list, and realm admins cannot administer `"_"`).
+- A realm admin cannot view or modify `Admin` records that span multiple realms from different admins.
+- A realm admin cannot delete a super admin (`Admin` records for super admins have `"_"` in their `realms` list, and realm admins cannot administer `"_"`).
 
-### Double-check on PUT
-
-`PUT /users/user/{id}` runs the rule **twice**:
+### `PUT /admins/{id}` runs the rule **twice**:
 
 ```
 Check 1 (current state): requester can own the user as it is now.
@@ -191,16 +189,16 @@ The `/realms/{realm}/userpass` endpoints read the session cookie and check that 
 
 The first super admin is seeded at server startup from two environment variables:
 
-| Variable | Description |
-|----------|-------------|
-| `APP_REALM_ADMIN_USERNAME` | Username for the initial super admin |
+| Variable                           | Description                                       |
+| ---------------------------------- | ------------------------------------------------- |
+| `APP_REALM_ADMIN_USERNAME`         | Username for the initial super admin              |
 | `APP_REALM_ADMIN_INITIAL_PASSWORD` | Plaintext password (hashed with Argon2id at boot) |
 
 At startup the server:
 
 1. Creates the `_` realm if it does not exist.
 2. Creates a `UserPass` entry for `APP_REALM_ADMIN_USERNAME` in realm `_`.
-3. Creates a `User` record with `realms: ["_"]` and `userpass: APP_REALM_ADMIN_USERNAME`.
+3. Creates a `Admin` record with `realms: ["_"]` and `userpass: APP_REALM_ADMIN_USERNAME`.
 
 After bootstrapping, rotate or remove `APP_REALM_ADMIN_INITIAL_PASSWORD` from the environment.
 
@@ -216,22 +214,22 @@ sequenceDiagram
     participant SA as Super Admin
     participant EA as Auth Server
 
-    SA->>EA: POST /admin/realm<br/>{"id":"my_realm","name":"My Realm",…}
+    SA->>EA: POST /admins/realms<br/>{"id":"my_realm","name":"My Realm",…}
     EA-->>SA: 201 Created
 
     SA->>EA: POST /realms/_/userpass<br/>{"realm":"_","username":"alice","password":"<hashed>","change_password":false}
     note over EA: Stores Argon2id hash of alice's password in realm _
     EA-->>SA: 201 Created
 
-    SA->>EA: POST /users/user<br/>{"id":"alice_user","realms":["my_realm"],"userpass":"alice"}
-    note over EA: Creates User record\nuserpass → foreign key into userpass table
+    SA->>EA: POST /admins<br/>{"id":"alice_user","realms":["my_realm"],"userpass":"alice"}
+    note over EA: Creates Admin record\nuserpass → foreign key into userpass table
     EA-->>SA: 201 Created
 
     note over SA: Realm admin alice is ready.
     SA->>EA: POST /login?realm=_<br/>{"username":"alice","password":"<plain>"}
     EA-->>SA: 200 OK + Set-Cookie: _ea_=…<br/>{"next_step":"Authenticated","session_id":"…"}
 
-    SA->>EA: GET /admin/realm/my_realm<br/>Cookie: _ea_=…
+    SA->>EA: GET /admins/realms/my_realm<br/>Cookie: _ea_=…
     EA-->>SA: 200 OK — realm details
 ```
 
@@ -240,25 +238,25 @@ sequenceDiagram
 Alice's cookie (from `POST /login?realm=_`) authorises:
 
 - `GET/POST/PUT/DELETE /realms/_/userpass/*` (credential management **in `_`**)
-- `GET /admin/realm/my_realm`
-- `POST /users/user` with `realms: ["my_realm"]`
+- `GET /admins/realms/my_realm`
+- `POST /admins` with `realms: ["my_realm"]`
 - CRUD on any user whose `realms` is a subset of `["my_realm"]`
 
 Alice **cannot**:
 
 - Create or delete realms
-- Access `/users` (list all users)
+- Access `/admins` (list all users)
 - Manage any other realm
 - Manage users whose `realms` includes something other than `my_realm`
 
 ---
 
-## Promoting a User to Super Admin
+## Promoting an Admin to Super Admin
 
 Only a super admin can promote another user to super admin. Assign `"_"` to the target user's `realms` list:
 
 ```http
-PUT /users/user/{alice_user_id}
+PUT /admins/{alice_user_id}
 Content-Type: application/json
 Cookie: _ea_=<super_admin_cookie>
 
@@ -275,21 +273,21 @@ Cookie: _ea_=<super_admin_cookie>
 
 ## Credentials and the `userpass` Foreign Key
 
-The `User.userpass` field is a **username** (not a password) that acts as a foreign key into the `userpass` table. There can be multiple `UserPass` rows with the same username if the same person authenticates in multiple realms.
+The `Admin.userpass` field is a **username** (not a password) that acts as a foreign key into the `userpass` table. There can be multiple `UserPass` rows with the same username if the same person authenticates in multiple realms.
 
-When a `User` record is deleted, all associated `UserPass` credentials are **cascade-deleted** automatically (any orphaned credentials with the same username as `user.userpass` are removed from all realms).
+When a `Admin` record is deleted, all associated `UserPass` credentials are **cascade-deleted** automatically (any orphaned credentials with the same username as `admin.userpass` are removed from all realms).
 
 ---
 
 ## Limitations and Known Caveats
 
-### `GET /whoami` has no `UserAuth`
+### `GET /whoami` has no `AdminAuth`
 
-`GET /whoami` returns the caller's identity from the session cookie but **does not use the `UserAuth` middleware**. It cannot return a full `User` record — only the session claims (realm, username, and any custom claims) belonging to the authenticated **client** are available. It is not subject to realm-admin authorization checks.
+`GET /whoami` returns the caller's identity from the session cookie but **does not use the `AdminAuth` middleware**. It cannot return a full `Admin` record — only the session claims (realm, username, and any custom claims) belonging to the authenticated **client** are available. It is not subject to realm-admin authorization checks.
 
 ### No non-admin client accounts
 
-There is no built-in concept of a client whose presence in the database does not confer administrative rights. Any `User` record that exists with at least one realm in its `realms` list is a realm admin for that realm. Applications that need non-admin client accounts should model that distinction at the application level, outside the authentication server.
+There is no built-in concept of a client whose presence in the database does not confer administrative rights. Any `Admin` record that exists with at least one realm in its `realms` list is a realm admin for that realm. Applications that need non-admin client accounts should model that distinction at the application level, outside the authentication server.
 
 ### Concurrent realm admin creation
 

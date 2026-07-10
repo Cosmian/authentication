@@ -12,7 +12,7 @@ All endpoints are served over **HTTPS only**. The base URL is `https://{host}:{p
 - [Authentication — Login and Session Claims](#authentication--login-and-session-claims)
 - [Session Management](#session-management)
 - [Realm Administration](#realm-administration)
-- [User Administration](#user-administration)
+- [Admin Administration](#admin-administration)
 - [Credential Management](#credential-management)
 - [TOTP Management](#totp-management)
 - [Common Response Codes](#common-response-codes)
@@ -40,7 +40,7 @@ Content-Type: text/plain
 
 ---
 
-### `GET /public/jwks`
+### `GET /.well-known/jwks.json`
 
 Returns the JSON Web Key Set containing the server's public key(s) for JWT signature verification.
 
@@ -72,11 +72,11 @@ Authenticate a client and issue a session cookie. The authentication method is d
 
 **Authentication methods:**
 
-| Method | How to supply credentials |
-|--------|---------------------------|
-| Username/Password | `Authorization: Basic <base64(username:password)>` |
-| JWT Bearer | `Authorization: Bearer <jwt_token>` |
-| Client Certificate | Client certificate in TLS handshake |
+| Method             | How to supply credentials                          |
+| ------------------ | -------------------------------------------------- |
+| Username/Password  | `Authorization: Basic <base64(username:password)>` |
+| JWT Bearer         | `Authorization: Bearer <jwt_token>`                |
+| Client Certificate | Client certificate in TLS handshake                |
 
 **Request body** (optional — for public-key FIDO2 challenge or TOTP code)
 
@@ -87,10 +87,10 @@ Authenticate a client and issue a session cookie. The authentication method is d
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
+| Field            | Type               | Description                                           |
+| ---------------- | ------------------ | ----------------------------------------------------- |
 | `public_key_pem` | `String` \| `null` | Client public key (FIDO2 / digital credentials flows) |
-| `totp_code` | `String` \| `null` | TOTP verification code for 2FA step |
+| `totp_code`      | `String` \| `null` | TOTP verification code for 2FA step                   |
 
 **Response — `200 OK`**
 
@@ -103,10 +103,10 @@ Authenticate a client and issue a session cookie. The authentication method is d
 
 Set-Cookie header: `_ea_=<cookie_string>; HttpOnly; Secure; SameSite=Strict`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `next_step` | `"Authenticated"` \| `"TotpRequired"` \| `"ChangePassword"` | What the client should do next |
-| `session_id` | `String` \| `null` | UUID of the new session (only present when `Authenticated`) |
+| Field        | Type                                                        | Description                                                 |
+| ------------ | ----------------------------------------------------------- | ----------------------------------------------------------- |
+| `next_step`  | `"Authenticated"` \| `"TotpRequired"` \| `"ChangePassword"` | What the client should do next                              |
+| `session_id` | `String` \| `null`                                          | UUID of the new session (only present when `Authenticated`) |
 
 **Response — `401 Unauthorized`** — credentials invalid or missing.
 
@@ -142,7 +142,7 @@ See [Data Types — ClientClaims](#clientclaims) for the full field reference.
 
 ## Session Management
 
-### `GET /sessions/session/{session_id}`
+### `GET /sessions/{session_id}`
 
 Retrieve session data by session ID. Returns `null` (not an error) when the session does not exist or has expired.
 
@@ -169,7 +169,7 @@ null
 
 ---
 
-### `POST /sessions/session/{session_id}`
+### `POST /sessions/{session_id}`
 
 Retrieve session data and optionally apply a bulk logout action in the same request.
 
@@ -184,23 +184,23 @@ Retrieve session data and optionally apply a bulk logout action in the same requ
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `authenticated_clients` | `AuthenticatedClientScheme[]` | Clients whose sessions may be affected |
-| `sessions_action` | `"LogoutOtherSessions"` \| `"LogoutAllSessions"` \| `null` | Action to perform alongside the lookup |
+| Field                   | Type                                                       | Description                            |
+| ----------------------- | ---------------------------------------------------------- | -------------------------------------- |
+| `authenticated_clients` | `AuthenticatedClientScheme[]`                              | Clients whose sessions may be affected |
+| `sessions_action`       | `"LogoutOtherSessions"` \| `"LogoutAllSessions"` \| `null` | Action to perform alongside the lookup |
 
 **`sessions_action` values:**
 
-| Value | Effect |
-|-------|--------|
-| `"LogoutOtherSessions"` | Delete all sessions for the given clients **except** the queried one |
-| `"LogoutAllSessions"` | Delete **all** sessions for the given clients (including the queried one); session data is returned before deletion |
+| Value                   | Effect                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `"LogoutOtherSessions"` | Delete all sessions for the given clients **except** the queried one                                                |
+| `"LogoutAllSessions"`   | Delete **all** sessions for the given clients (including the queried one); session data is returned before deletion |
 
-**Response — `200 OK`** — same shape as `GET /sessions/session/{id}`.
+**Response — `200 OK`** — same shape as `GET /sessions/{id}`.
 
 ---
 
-### `POST /sessions/session/realms/{realm_id}/clients`
+### `POST /sessions/realms/{realm_id}/clients`
 
 Return all session IDs for a set of authenticated clients in a realm.
 
@@ -226,7 +226,7 @@ Return all session IDs for a set of authenticated clients in a realm.
 
 ---
 
-### `DELETE /sessions/session`
+### `DELETE /sessions`
 
 Delete sessions by ID.
 
@@ -240,33 +240,33 @@ Delete sessions by ID.
 }
 ```
 
-**Response — `200 OK`** — empty body.
+**Response — `204 No Content`** — empty body.
 
 ---
 
-### `DELETE /sessions/session/expired`
+### `DELETE /sessions/expired`
 
 Delete all expired sessions from the session store.
 
-**Response — `200 OK`** — empty body.
+**Response — `204 No Content`** — empty body.
 
 ---
 
-### `DELETE /sessions/session/realms/{realm_id}`
+### `DELETE /sessions/realms/{realm_id}`
 
 Delete all sessions for a given realm (administrative bulk logout).
 
-**Response — `200 OK`** — empty body.
+**Response — `204 No Content`** — empty body.
 
 ---
 
 ## Realm Administration
 
-All endpoints under `/admin` require the caller to be authenticated as a **super admin** (a `User` whose `realms` list contains `"_"`).
+Realm CRUD endpoints live under `/admins/realms`. Creating, updating, and deleting realms requires **super admin** privileges. Listing and getting a single realm is accessible to any authenticated admin (filtered to their administered realms).
 
-### `POST /admin/realm`
+### `POST /admins/realms`
 
-Create a new realm.
+Create a new realm. Super admin only.
 
 **Request body**
 
@@ -283,15 +283,15 @@ Create a new realm.
 }
 ```
 
-**Response — `200 OK`** — empty body on success.
+**Response — `201 Created`** — created `Realm` object.
 
 **Response — `409 Conflict`** — realm ID already exists.
 
 ---
 
-### `GET /admin/realm/{realm_id}`
+### `GET /admins/realms/{realm_id}`
 
-Retrieve a realm by ID.
+Retrieve a realm by ID. Realm admins may only retrieve realms they administer.
 
 **Response — `200 OK`**
 
@@ -308,27 +308,27 @@ Retrieve a realm by ID.
 
 ---
 
-### `PUT /admin/realm/{realm_id}`
+### `PUT /admins/realms/{realm_id}`
 
-Replace a realm's configuration. Returns the updated realm.
+Replace a realm's configuration. Super admin only. Returns the updated realm.
 
-**Request body** — same shape as `POST /admin/realm`.
+**Request body** — same shape as `POST /admins/realms`.
 
 **Response — `200 OK`** — updated `Realm` object.
 
 ---
 
-### `DELETE /admin/realm/{realm_id}`
+### `DELETE /admins/realms/{realm_id}`
 
-Delete a realm and all associated data.
+Delete a realm and all associated data. Super admin only.
 
-**Response — `200 OK`** — empty body.
+**Response — `204 No Content`** — empty body.
 
 ---
 
-### `GET /admin/realms`
+### `GET /admins/realms`
 
-List all realms.
+List all realms. Super admins see all realms; realm admins see only their administered realms.
 
 **Response — `200 OK`**
 
@@ -349,19 +349,19 @@ List all realms.
 
 ---
 
-### `GET /admin/userpass`
+### `GET /admins/userpass`
 
-List all username/password credentials across every realm (super admin only).
+List all username/password credentials across every realm. Super admin only.
 
 **Response — `200 OK`** — array of `UserPass` objects. The `password` field is always returned as an empty byte array.
 
 ---
 
-## User Administration
+## Admin Administration
 
-### `POST /users/user`
+### `POST /admins`
 
-Create a new `User` record. Super admin only.
+Create a new `Admin` record. Super admins may create any admin. Realm admins may create an admin only if every realm in the new admin's `realms` list is one they administer.
 
 **Request body**
 
@@ -380,72 +380,72 @@ Create a new `User` record. Super admin only.
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `String` | Unique user identifier |
-| `realms` | `String[]` | Realms this user administers. Use `["_"]` for super admin. |
-| `userpass` | `String` \| `null` | Username key referencing the `userpass` credential table |
-| `jwt` | `String` \| `null` | JWT subject identifier |
-| `fido2` | `String` \| `null` | FIDO2 identifier (future) |
-| `digital_credentials` | `Object` \| `null` | Key-value map of digital credential identifiers (future) |
-| `client_certificate` | `String` \| `null` | Client certificate identifier |
-| `totp_enabled` | `bool` \| `null` | Whether TOTP is active for this user |
-| `totp_secret` | `String` \| `null` | Base32-encoded TOTP secret (read-only via API) |
-| `totp_auth_url` | `String` \| `null` | `otpauth://` URL for QR code enrollment (read-only) |
+| Field                 | Type               | Description                                                |
+| --------------------- | ------------------ | ---------------------------------------------------------- |
+| `id`                  | `String`           | Unique user identifier                                     |
+| `realms`              | `String[]`         | Realms this user administers. Use `["_"]` for super admin. |
+| `userpass`            | `String` \| `null` | Username key referencing the `userpass` credential table   |
+| `jwt`                 | `String` \| `null` | JWT subject identifier                                     |
+| `fido2`               | `String` \| `null` | FIDO2 identifier (future)                                  |
+| `digital_credentials` | `Object` \| `null` | Key-value map of digital credential identifiers (future)   |
+| `client_certificate`  | `String` \| `null` | Client certificate identifier                              |
+| `totp_enabled`        | `bool` \| `null`   | Whether TOTP is active for this user                       |
+| `totp_secret`         | `String` \| `null` | Base32-encoded TOTP secret (read-only via API)             |
+| `totp_auth_url`       | `String` \| `null` | `otpauth://` URL for QR code enrollment (read-only)        |
 
-**Response — `200 OK`** — created `User` object.
-
----
-
-### `GET /users/user/{user_id}`
-
-Retrieve a user by ID.
-
-**Response — `200 OK`** — `User` object.
-
-**Response — `404 Not Found`** — user does not exist.
+**Response — `201 Created`** — created `Admin` object.
 
 ---
 
-### `PUT /users/user/{user_id}`
+### `GET /admins/{admin_id}`
 
-Replace a user record. Returns the updated user.
+Retrieve an admin by ID.
 
-**Request body** — same shape as `POST /users/user`.
+**Response — `200 OK`** — `Admin` object.
 
-**Response — `200 OK`** — updated `User` object.
-
----
-
-### `DELETE /users/user/{user_id}`
-
-Delete a user record.
-
-**Response — `200 OK`** — empty body.
+**Response — `404 Not Found`** — admin does not exist.
 
 ---
 
-### `GET /users`
+### `PUT /admins/{admin_id}`
 
-List all users. Super admin only.
+Replace an admin record. Returns the updated admin.
 
-**Response — `200 OK`** — array of `User` objects.
+**Request body** — same shape as `POST /admins`.
 
----
-
-### `PUT /users/user/{user_id}/realm/{realm_id}`
-
-Add a realm to a user's `realms` list.
-
-**Response — `200 OK`** — updated `User` object.
+**Response — `200 OK`** — updated `Admin` object.
 
 ---
 
-### `DELETE /users/user/{user_id}/realm/{realm_id}`
+### `DELETE /admins/{admin_id}`
 
-Remove a realm from a user's `realms` list.
+Delete an admin record.
 
-**Response — `200 OK`** — updated `User` object.
+**Response — `204 No Content`** — empty body.
+
+---
+
+### `GET /admins`
+
+List all admins. Super admin only.
+
+**Response — `200 OK`** — array of `Admin` objects.
+
+---
+
+### `PUT /admins/{admin_id}/realms/{realm_id}`
+
+Add a realm to an admin's `realms` list.
+
+**Response — `200 OK`** — updated `Admin` object.
+
+---
+
+### `DELETE /admins/{admin_id}/realms/{realm_id}`
+
+Remove a realm from an admin's `realms` list.
+
+**Response — `200 OK`** — updated `Admin` object.
 
 ---
 
@@ -468,14 +468,14 @@ Create a username/password credential in a realm.
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `realm` | `String` | Realm ID (must match path parameter) |
-| `username` | `String` | Credential username |
-| `password` | `u8[]` | UTF-8 bytes of the plaintext password. The server hashes with Argon2id. |
-| `change_password` | `bool` | When `true`, the next login returns `"ChangePassword"` next step |
+| Field             | Type     | Description                                                             |
+| ----------------- | -------- | ----------------------------------------------------------------------- |
+| `realm`           | `String` | Realm ID (must match path parameter)                                    |
+| `username`        | `String` | Credential username                                                     |
+| `password`        | `u8[]`   | UTF-8 bytes of the plaintext password. The server hashes with Argon2id. |
+| `change_password` | `bool`   | When `true`, the next login returns `"ChangePassword"` next step        |
 
-**Response — `200 OK`** — empty body.
+**Response — `201 Created`** — created `UserPass` object.
 
 ---
 
@@ -511,7 +511,7 @@ Update a credential (typically to change the password or set `change_password`).
 
 Delete a credential.
 
-**Response — `200 OK`** — empty body.
+**Response — `204 No Content`** — empty body.
 
 ---
 
@@ -580,21 +580,21 @@ Disable TOTP for a user.
 
 ## Common Response Codes
 
-| Code | Meaning |
-|------|---------|
-| `200 OK` | Success |
-| `400 Bad Request` | Malformed request body or invalid parameter |
-| `401 Unauthorized` | Missing or invalid credentials |
-| `403 Forbidden` | Authenticated but not authorised (e.g., realm admin trying to modify another realm) |
-| `404 Not Found` | Resource does not exist |
-| `409 Conflict` | Resource already exists (duplicate ID) |
-| `500 Internal Server Error` | Unexpected server error |
+| Code                        | Meaning                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `200 OK`                    | Success                                                                             |
+| `400 Bad Request`           | Malformed request body or invalid parameter                                         |
+| `401 Unauthorized`          | Missing or invalid credentials                                                      |
+| `403 Forbidden`             | Authenticated but not authorised (e.g., realm admin trying to modify another realm) |
+| `404 Not Found`             | Resource does not exist                                                             |
+| `409 Conflict`              | Resource already exists (duplicate ID)                                              |
+| `500 Internal Server Error` | Unexpected server error                                                             |
 
 ---
 
 ## Authentication for Admin Endpoints
 
-Admin endpoints (`/admin`, `/users`, `/realms`) require a valid session cookie obtained by logging into the `_` realm (super admin) or the target realm (realm admin).
+Admin endpoints (`/admins`, `/admins/realms`, `/realms`) require a valid session cookie obtained by logging into the `_` realm (super admin) or the target realm (realm admin).
 
 ```bash
 # Log in as super admin
@@ -606,7 +606,7 @@ curl --cacert ca.cert.pem \
 # Use the session cookie for admin calls
 curl --cacert ca.cert.pem \
      -b cookies.txt \
-     https://localhost:8443/admin/realms
+     https://localhost:8443/admins/realms
 ```
 
 See [authorization_and_administration.md](authorization_and_administration.md) for the full authorization matrix.
@@ -639,7 +639,7 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 }
 ```
 
-### `User`
+### `Admin`
 
 ```json
 {
@@ -684,8 +684,8 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 }
 ```
 
-| Field | Description |
-|-------|-------------|
+| Field         | Description                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
 | `auth_scheme` | `"up"` username/password · `"jwt"` JWT · `"cc"` client cert · `"f2"` FIDO2 · `"dc"` digital credentials |
 
 ### `AuthenticatedClientScheme`
@@ -700,15 +700,15 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 
 The JWT payload returned by `GET /whoami`:
 
-| Claim | Type | Description |
-|-------|------|-------------|
-| `iss` | `String` | Issuer |
-| `sub` | `String` | Subject (authenticated username) |
-| `aud` | `String[]` | Audience list |
-| `exp` | `i64` | Expiration (Unix seconds) |
-| `nbf` | `i64` | Not-before (Unix seconds) |
-| `iat` | `i64` | Issued-at (Unix seconds) |
-| `jti` | `String` | JWT ID |
-| `as_as` | `String` | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`) |
-| `as_pk` | `String` | Client public key PEM (when applicable) |
-| `as_rid` | `String` | Realm ID |
+| Claim    | Type       | Description                                  |
+| -------- | ---------- | -------------------------------------------- |
+| `iss`    | `String`   | Issuer                                       |
+| `sub`    | `String`   | Subject (authenticated username)             |
+| `aud`    | `String[]` | Audience list                                |
+| `exp`    | `i64`      | Expiration (Unix seconds)                    |
+| `nbf`    | `i64`      | Not-before (Unix seconds)                    |
+| `iat`    | `i64`      | Issued-at (Unix seconds)                     |
+| `jti`    | `String`   | JWT ID                                       |
+| `as_as`  | `String`   | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`) |
+| `as_pk`  | `String`   | Client public key PEM (when applicable)      |
+| `as_rid` | `String`   | Realm ID                                     |

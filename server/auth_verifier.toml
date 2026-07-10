@@ -2,12 +2,12 @@
 # Auth Authentication Server — Sample Configuration File
 # =============================================================================
 #
-# Copy this file to auth_server.toml (or any path of your choosing) and
+# Copy this file to auth_verifier.toml (or any path of your choosing) and
 # adjust every value marked with <REQUIRED> before starting the server.
 #
 # Start the server with:
-#   auth_server                         # reads ./auth_server.toml by default
-#   auth_server /path/to/config.toml    # explicit path
+#   auth_verifier                         # reads ./auth_verifier.toml by default
+#   auth_verifier /path/to/config.toml    # explicit path
 #
 # All paths are resolved relative to the working directory unless they are
 # absolute paths.
@@ -29,6 +29,21 @@ host_port = 8443 # <REQUIRED>
 # from this username.  Useful for local development only — never set in
 # production.
 # default_username = "dev_user"
+
+
+# Optional: path to the pre-built admin UI dist/ directory.
+# When set and the server is built with the `admin-ui` feature, static files
+# are served at /admin-ui with a SPA fallback for client-side routing.
+# admin_ui_path = "/usr/share/auth_verifier/admin-ui"
+
+
+# -----------------------------------------------------------------------------
+# RBAC roles
+# -----------------------------------------------------------------------------
+# Available role names exposed via GET /public/roles.
+# The admin UI role-selection dropdowns are populated from this list.
+# This must match the roles expected by your OPA policy.
+roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
 
 
 # -----------------------------------------------------------------------------
@@ -75,7 +90,7 @@ server_ca_chain = "src/tests/certificates/ec/auth.ca.pem" # <REQUIRED>
 # -----------------------------------------------------------------------------
 # Primary database (users, realms, credentials, …)
 # -----------------------------------------------------------------------------
-# When omitted, an SQLite file named auth_server.db is created in the
+# When omitted, an SQLite file named auth_verifier.db is created in the
 # working directory.
 
 [database_params]
@@ -88,7 +103,7 @@ backend = "sqlite"
 #               sqlite::memory:  (in-memory, data lost on restart)
 #   PostgreSQL: postgresql://user:password@host:5432/dbname
 #   MySQL:      mysql://user:password@host:3306/dbname
-connection_url = "sqlite://auth_server.db"
+connection_url = "sqlite://auth_verifier.db"
 
 # Maximum number of pooled connections (default: 10).
 # max_connections = 10

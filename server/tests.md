@@ -1,5 +1,13 @@
 # Test Coverage Reference
 
+<!-- TODO(staleness): This file is not linked from documentation/index.md, AGENTS.md, or
+     copilot-instructions.md. It predates the "Reworked REST API" commit (df357f2) and the
+     User->Admin rename (548c9c0): several endpoint paths quoted below still used
+     `/admin/realm*`, `/admin/userpass`, and `/admins/admin` from before those changes. Paths
+     have been corrected here to match the current routes in server/src/server/auth_verifier.rs,
+     but this file should be re-verified against the actual test suite (grep test names in
+     server/src/tests/) before being relied on, since test names/behaviors may also have drifted. -->
+
 This document catalogs every integration test in the `auth_authentication` crate, describes what it verifies
 in functional terms, then identifies scenarios and attack vectors that are not yet covered.
 
@@ -72,7 +80,7 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 
 | Test | What it verifies |
 |------|------------------|
-| `test_list_realms` | A super admin sees at least the seeded `_` realm in `GET /admin/realms`. |
+| `test_list_realms` | A super admin sees at least the seeded `_` realm in `GET /admins/realms`. |
 | `test_get_realm` | Fetching the `_` realm by ID returns the expected object. |
 | `test_get_realm_not_found` | Fetching a non-existent realm ID returns an error. |
 | `test_update_realm` | Updating `session_max_age_seconds` on a realm persists and is visible on a subsequent GET. |
@@ -83,8 +91,8 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 
 | Test | What it verifies |
 |------|------------------|
-| `test_update_realm_requires_super_admin` | A realm admin attempting `PUT /admin/realm/{id}` receives HTTP 403. |
-| `test_delete_realm_requires_super_admin` | A realm admin attempting `DELETE /admin/realm/{id}` receives HTTP 403. |
+| `test_update_realm_requires_super_admin` | A realm admin attempting `PUT /admins/realms/{id}` receives HTTP 403. |
+| `test_delete_realm_requires_super_admin` | A realm admin attempting `DELETE /admins/realms/{id}` receives HTTP 403. |
 | `test_list_realms_filtered_for_realm_admin` | A realm admin only sees the realms they administer; realms belonging to other admins and `_` are hidden. |
 
 #### Credential (UserPass) Management
@@ -93,13 +101,13 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 |------|------------------|
 | `test_userpass_endpoints_require_realm_admin` | A realm admin for realm `X` cannot create credentials in realm `_` (403), even though their cookie decrypts via `_`'s key. |
 | `test_userpass_crud_by_super_admin` | A super admin can create, retrieve, update, delete, list-by-realm, and list-all credentials in `_`. Exercises every CRUD endpoint including the previously-fixed `update_userpass` path. |
-| `test_list_all_userpass_requires_super_admin` | A realm admin calling `GET /admin/userpass` receives HTTP 403. |
+| `test_list_all_userpass_requires_super_admin` | A realm admin calling `GET /admins/userpass` receives HTTP 403. |
 
 #### Unauthenticated Access
 
 | Test | What it verifies |
 |------|------------------|
-| `test_unauthenticated_access_to_admin_endpoints` | `GET /admin/realm/_`, `GET /admin/realms`, and `GET /admin/userpass` all return HTTP 401 for a client that has never authenticated. |
+| `test_unauthenticated_access_to_admin_endpoints` | `GET /admins/realms/_`, `GET /admins/realms`, and `GET /admins/userpass` all return HTTP 401 for a client that has never authenticated. |
 | `test_unauthenticated_access_to_realms_endpoints` | `GET /realms/_/userpass/…` and `GET /realms/_/userpass` return HTTP 401 for an unauthenticated client. |
 
 #### Security Properties
@@ -111,14 +119,14 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 
 ---
 
-### `user_api` — User CRUD & Realm Membership
+### `admin_api` — Admin CRUD & Realm Membership
 
 #### Basic CRUD (super admin)
 
 | Test | What it verifies |
 |------|------------------|
-| `test_list_users_contains_admin` | `GET /users` returns at least the seeded `admin` user. |
-| `test_create_user` | A valid `POST /users/user` creates the user and a subsequent GET returns it. |
+| `test_list_users_contains_admin` | `GET /admins` returns at least the seeded `admin` user. |
+| `test_create_user` | A valid `POST /admins` creates the user and a subsequent GET returns it. |
 | `test_create_duplicate_user_fails` | Creating a user whose ID already exists returns an error. |
 | `test_get_user_existing` | Fetching the seeded `admin` user by ID succeeds. |
 | `test_get_user_not_found` | Fetching a non-existent user ID returns an error. |
@@ -126,7 +134,7 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 | `test_update_user_path_id_is_authoritative` | If the JSON body contains a different `id` than the URL, the URL wins. |
 | `test_delete_user` | Deleting a user removes it; a subsequent GET returns an error. |
 | `test_delete_nonexistent_user_is_idempotent` | Deleting a user that never existed is a no-op. |
-| `test_user_endpoints_require_authentication` | An unauthenticated client receives HTTP 401 on any `/users` endpoint. |
+| `test_admin_endpoints_require_authentication` | An unauthenticated client receives HTTP 401 on any `/admins` endpoint. |
 
 #### Authorization Enforcement
 
@@ -135,7 +143,7 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 | `test_get_user_requires_super_admin` | A realm admin cannot GET a user with `realms=["_"]` (doesn't administer `_`). HTTP 403. |
 | `test_update_user_requires_super_admin` | A realm admin cannot update a user with an empty `realms` list (ownership check fails). HTTP 403. |
 | `test_delete_user_requires_super_admin` | A realm admin cannot delete a user with an empty `realms` list. HTTP 403. |
-| `test_list_users_requires_super_admin` | A realm admin calling `GET /users` receives HTTP 403. |
+| `test_list_users_requires_super_admin` | A realm admin calling `GET /admins` receives HTTP 403. |
 
 #### Realm Admin — create_user
 
@@ -181,16 +189,16 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 |------|------------------|
 | `test_add_user_to_realm_prevents_super_admin_escalation` | A realm admin cannot call `add_user_to_realm(user, "_")` to grant super-admin rights; `can_administer_realm("_")` is false → HTTP 403. |
 | `test_create_user_with_super_admin_realm_forbidden` | A realm admin cannot create a user whose `realms` list includes `"_"`. The exclusive-ownership check blocks it → HTTP 403. |
-| `test_update_user_cannot_escalate_via_body` | A realm admin cannot use the `update_user` body to inject `"_"` into a user's `realms` list. The **body-realms check** (added to the endpoint) rejects this → HTTP 403. |
+| `test_update_user_cannot_escalate_via_body` | A realm admin cannot use the `update_admin` body to inject `"_"` into a user's `realms` list. The **body-realms check** (added to the endpoint) rejects this → HTTP 403. |
 | `test_update_user_cannot_add_foreign_realm_via_body` | A realm admin cannot silently extend a user's realm membership to a foreign realm via the update body. HTTP 403. |
 
-#### Security Properties
+#### Session Invalidation Properties
 
 | Test | What it verifies |
 |------|------------------|
 | `test_realm_admin_self_removal_revokes_access` | After a realm admin removes themselves from their own realm, subsequent calls requiring realm-admin rights for that realm are rejected with HTTP 403. |
-| `test_session_invalidated_after_user_deletion` | Deleting a user's record immediately invalidates their ability to call any `UserAuth`-guarded endpoint. The `UserAuth` middleware does a live DB lookup (`find_users_by_auth_scheme`) on every request, so no session-store wipe is needed. HTTP 401 after deletion. |
-| `test_delete_user_cascades_credentials` | Deleting a User whose `userpass` is set also removes the corresponding `UserPass` credential row from the database. Verifies the cascade-delete added to `delete_user`. |
+| `test_session_invalidated_after_user_deletion` | Deleting a user's record immediately invalidates their ability to call any `AdminAuth`-guarded endpoint. The `AdminAuth` middleware does a live DB lookup (`find_admins_by_auth_scheme`) on every request, so no session-store wipe is needed. HTTP 401 after deletion. |
+| `test_delete_admin_cascades_credentials` | Deleting an Admin whose `userpass` is set also removes the corresponding `UserPass` credential row from the database. Verifies the cascade-delete added to `delete_admin`. |
 | `test_session_replay_after_logout` | After a user's session is explicitly deleted, presenting the old session ID to `GET /sessions/{id}` returns `None`. Confirms the session store does not retain the entry and that the cookie cannot be replayed. |
 | `test_oversized_user_id_rejected` | A 1 000-character user ID submitted in a URL path does not cause an HTTP 500. The server handles it gracefully (404 or 400). |
 | `test_realm_id_with_special_characters` | A realm ID containing `..%2F_` (URL-encoded path traversal attempt) does not cause an HTTP 500. The router's `Path` extractor handles it gracefully. |
@@ -237,13 +245,13 @@ End-to-end integration tests using a real in-memory-SQLite test server.
 
 ## Architecture Notes
 
-### `/users` scope uses `InjectAdminRealm`
+### `/admins` scope uses `InjectAdminRealm`
 
-The `/users` scope (which hosts the user CRUD and realm-membership endpoints) uses `InjectAdminRealm`, not `ExtractRealm`. This means the scope always authenticates callers using the `_` (admin) realm's cookie key. All administrators — both super admins and realm admins — log into `_` and receive a `_`-encrypted session cookie. This design intentionally centralises authentication for all administrative operations through the admin realm.
+The `/admins` scope (which hosts the user CRUD and realm-membership endpoints) uses `InjectAdminRealm`, not `ExtractRealm`. This means the scope always authenticates callers using the `_` (admin) realm's cookie key. All administrators — both super admins and realm admins — log into `_` and receive a `_`-encrypted session cookie. This design intentionally centralises authentication for all administrative operations through the admin realm.
 
-### `whoami` has no `UserAuth` layer
+### `whoami` has no `AdminAuth` layer
 
-The `/whoami` endpoint uses only `CookieAuthSameServer` + `ExtractRealm`. It does **not** include `UserAuth`, so it reflects the session cookie's claims without performing a database lookup. Consequently, a deleted user's `/whoami` request still succeeds (the session claims are intact). Only `UserAuth`-guarded endpoints (`/users`, `/admin`, `/realms`) properly reject requests from deleted users.
+The `/whoami` endpoint uses only `CookieAuthSameServer` + `ExtractRealm`. It does **not** include `AdminAuth`, so it reflects the session cookie's claims without performing a database lookup. Consequently, a deleted user's `/whoami` request still succeeds (the session claims are intact). Only `AdminAuth`-guarded endpoints (`/admins`, `/admins/realms`, `/realms`) properly reject requests from deleted users.
 
 ### `AuthError::Cookie` returns HTTP 401
 

@@ -1,5 +1,5 @@
 [package]
-name = "auth_server"
+name = "auth_verifier"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ repository.workspace = true
 description = "API Server"
 
 [features]
-default = ["openssl", "database"]
+default = ["openssl", "database", "admin-ui"]
 openssl = ["actix-web/openssl", "dep:openssl"]
 rustls = ["actix-web/rustls-0_23", "dep:rustls"]
 # no_jwt_validation: only useful for tests, do not enable in production
@@ -17,17 +17,21 @@ rustls = ["actix-web/rustls-0_23", "dep:rustls"]
 no_jwt_validation = []
 # Database support - all backends are available at runtime based on DatabaseParams
 database = ["dep:sqlx", "sqlx?/postgres", "sqlx?/sqlite", "sqlx?/mysql"]
+# Expose /public/swagger-ui and /public/openapi.yaml routes (dev/staging only)
+swagger-ui = []
+# Serve the pre-built admin UI static files at /admin-ui
+admin-ui = ["dep:actix-files"]
 
 [dependencies]
 actix-cors = { workspace = true }
+actix-files = { workspace = true, optional = true }
 actix-tls = { workspace = true }
 actix-web = { workspace = true, features = ["macros", "cookies"] }
 argon2 = { workspace = true }
 async-trait = { workspace = true }
-base32 = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
-cosmian_logger = { workspace = true, features = ["full"] }
+cosmian_logger = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs", "use_pem"] }
@@ -48,19 +52,65 @@ sqlx = { workspace = true, features = [
 ], optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-auth_client = { path = "../client", features = ["_server"] }
+auth_client = { path = "../client", version = "0.1.0", features = ["_server"] }
 toml = { workspace = true }
 totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
 url = { workspace = true }
+x509-cert = { workspace = true }
 
 [lib]
 path = "src/lib.rs"
 
 [[bin]]
-name = "auth_server"
+name = "auth_verifier"
 path = "src/main.rs"
 
 
 [dev-dependencies]
 openssl = { workspace = true, features = ["vendored"] }
 tokio = { workspace = true }
+
+[package.metadata.deb]
+maintainer = "Cosmian support team <tech@cosmian.com>"
+maintainer-scripts = "../pkg/deb/"
+copyright = "2026, Cosmian Tech SAS <tech@cosmian.com>"
+license-file = ["../LICENSE", "0"]
+section = "security"
+priority = "optional"
+depends = ""
+assets = [
+  [
+    "target/release/auth_verifier",
+    "usr/bin/auth_verifier",
+    "500",
+  ],
+  [
+    "../README.md",
+    "usr/share/doc/cosmian-auth-verifier/README.md",
+    "644",
+  ],
+  [
+    "../server/auth_verifier.toml",
+    "etc/cosmian/auth_verifier.toml",
+    "400",
+  ],
+]
+systemd-units = [
+  { unit-name = "auth_verifier", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
+]
+
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/auth_verifier", dest = "/usr/bin/auth_verifier", mode = "0500" },
+  { source = "../README.md", dest = "/usr/share/doc/cosmian-auth-verifier/README.md", mode = "0644" },
+  { source = "../server/auth_verifier.toml", dest = "/etc/cosmian/auth_verifier.toml", mode = "0400" },
+]
+[package.metadata.generate-rpm.requires]
+
+[package.metadata.packager]
+name = "Cosmian Authentication Server"
+identifier = "com.cosmian.authentication"
+description = "Cosmian Authentication Server"
+homepage = "https://github.com/Cosmian/authentication"
+license-file = "../LICENSE"
+formats = ["dmg"]

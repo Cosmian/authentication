@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    database::{AuthDbResult, hash_password_with_argon2, r#trait::Database},
-    models::{AuthScheme, Realm, User, UserPass},
+    database::{AuthDbError, AuthDbResult, hash_password_with_argon2, r#trait::Database},
+    models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
 use sqlx::{PgPool, Row};
@@ -43,6 +43,7 @@ impl Database for PostgresDatabase {
                 username TEXT NOT NULL,
                 password BYTEA NOT NULL,
                 change_password BOOLEAN NOT NULL DEFAULT FALSE,
+                roles TEXT NOT NULL DEFAULT '[]',
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -51,10 +52,23 @@ impl Database for PostgresDatabase {
         .execute(&self.pool)
         .await?;
 
-        // Create users table - users in this context are the realms'admins
+        // Migration: add roles column if missing (existing databases)
+        let has_roles: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='userpass' AND column_name='roles')",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+        if !has_roles {
+            sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
+                .execute(&self.pool)
+                .await?;
+        }
+
+        // Create admin table
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS user (
+            CREATE TABLE IF NOT EXISTS admin (
                 id TEXT PRIMARY KEY,
                 userpass TEXT,
                 jwt TEXT,
@@ -75,11 +89,11 @@ impl Database for PostgresDatabase {
         // Create user_realms join table
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS user_realms (
-                user_id TEXT NOT NULL,
+            CREATE TABLE IF NOT EXISTS admin_realms (
+                admin_id TEXT NOT NULL,
                 realm_id TEXT NOT NULL,
-                PRIMARY KEY (user_id, realm_id),
-                FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE,
+                PRIMARY KEY (admin_id, realm_id),
+                FOREIGN KEY (admin_id) REFERENCES admin(id) ON DELETE CASCADE,
                 FOREIGN KEY (realm_id) REFERENCES realm(id) ON DELETE CASCADE
             )
             "#,
@@ -228,16 +242,19 @@ impl Database for PostgresDatabase {
     // ===== UserPass CRUD operations =====
 
     async fn create_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
+        let roles_json = serde_json::to_string(&userpass.roles)
+            .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO userpass (realm, username, password, change_password, roles)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
         .bind(&userpass.password)
         .bind(userpass.change_password)
+        .bind(&roles_json)
         .execute(&self.pool)
         .await?;
 
@@ -247,7 +264,7 @@ impl Database for PostgresDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password
+            SELECT realm, username, change_password, roles
             FROM userpass
             WHERE realm = $1 AND username = $2
             "#,
@@ -259,11 +276,18 @@ impl Database for PostgresDatabase {
 
         match row {
             Some(row) => {
+                let roles_json: String = row.try_get("roles").unwrap_or_default();
+                let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize roles for user '{username}': {e}"
+                    ))
+                })?;
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,
                     password: vec![], // do not return the password hash
                     change_password: row.try_get("change_password")?,
+                    roles,
                 };
                 Ok(Some(userpass))
             }
@@ -272,10 +296,12 @@ impl Database for PostgresDatabase {
     }
 
     async fn update_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
+        let roles_json = serde_json::to_string(&userpass.roles)
+            .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = $3, change_password = $4
+            SET password = $3, change_password = $4, roles = $5
             WHERE realm = $1 AND username = $2
             "#,
         )
@@ -283,6 +309,7 @@ impl Database for PostgresDatabase {
         .bind(&userpass.username)
         .bind(&userpass.password)
         .bind(userpass.change_password)
+        .bind(&roles_json)
         .execute(&self.pool)
         .await?;
 
@@ -321,7 +348,7 @@ impl Database for PostgresDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password
+            SELECT realm, username, password, change_password, roles
             FROM userpass
             WHERE realm = $1
             ORDER BY username
@@ -333,11 +360,19 @@ impl Database for PostgresDatabase {
 
         let mut userpass_list = Vec::new();
         for row in rows {
+            let roles_json: String = row.try_get("roles").unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                let username: String = row.try_get("username").unwrap_or_default();
+                AuthDbError::Unexpected(format!(
+                    "failed to deserialize roles for user '{username}': {e}"
+                ))
+            })?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
+                roles,
             });
         }
 
@@ -347,7 +382,7 @@ impl Database for PostgresDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password
+            SELECT realm, username, password, change_password, roles
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -357,11 +392,19 @@ impl Database for PostgresDatabase {
 
         let mut userpass_list = Vec::new();
         for row in rows {
+            let roles_json: String = row.try_get("roles").unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                let username: String = row.try_get("username").unwrap_or_default();
+                AuthDbError::Unexpected(format!(
+                    "failed to deserialize roles for user '{username}': {e}"
+                ))
+            })?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
+                roles,
             });
         }
 
@@ -402,10 +445,10 @@ impl Database for PostgresDatabase {
         }
     }
 
-    // ===== User CRUD operations =====
+    // ===== Admin CRUD operations =====
 
-    async fn create_user(&self, user: &User) -> AuthDbResult<()> {
-        let digital_credentials_json = user
+    async fn create_admin(&self, admin: &Admin) -> AuthDbResult<()> {
+        let digital_credentials_json = admin
             .digital_credentials
             .as_ref()
             .map(|digital_credentials| {
@@ -417,34 +460,34 @@ impl Database for PostgresDatabase {
             })
             .transpose()?;
 
-        // Insert into user table
+        // Insert into admin table
         sqlx::query(
             r#"
-            INSERT INTO user (id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url)
+            INSERT INTO admin (id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             "#,
         )
-        .bind(&user.id)
-        .bind(&user.userpass)
-        .bind(&user.jwt)
-        .bind(&user.fido2)
+        .bind(&admin.id)
+        .bind(&admin.userpass)
+        .bind(&admin.jwt)
+        .bind(&admin.fido2)
         .bind(digital_credentials_json)
-        .bind(&user.client_certificate)
-        .bind(user.totp_enabled)
-        .bind(&user.totp_secret)
-        .bind(&user.totp_auth_url)
+        .bind(&admin.client_certificate)
+        .bind(admin.totp_enabled)
+        .bind(&admin.totp_secret)
+        .bind(&admin.totp_auth_url)
         .execute(&self.pool)
         .await?;
 
         // Insert into user_realms join table
-        for realm_id in &user.realms {
+        for realm_id in &admin.realms {
             sqlx::query(
                 r#"
-                INSERT INTO user_realms (user_id, realm_id)
+                INSERT INTO admin_realms (admin_id, realm_id)
                 VALUES ($1, $2)
                 "#,
             )
-            .bind(&user.id)
+            .bind(&admin.id)
             .bind(realm_id)
             .execute(&self.pool)
             .await?;
@@ -453,11 +496,11 @@ impl Database for PostgresDatabase {
         Ok(())
     }
 
-    async fn get_user(&self, id: &str) -> AuthDbResult<Option<User>> {
+    async fn get_admin(&self, id: &str) -> AuthDbResult<Option<Admin>> {
         let row = sqlx::query(
             r#"
             SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
-            FROM user
+            FROM admin
             WHERE id = $1
             "#,
         )
@@ -471,8 +514,8 @@ impl Database for PostgresDatabase {
                 let realm_rows = sqlx::query(
                     r#"
                     SELECT realm_id
-                    FROM user_realms
-                    WHERE user_id = $1
+                    FROM admin_realms
+                    WHERE admin_id = $1
                     "#,
                 )
                 .bind(id)
@@ -495,7 +538,7 @@ impl Database for PostgresDatabase {
                     })
                     .transpose()?;
 
-                let user = User {
+                let admin = Admin {
                     id: row.try_get("id")?,
                     realms,
                     userpass: row.try_get("userpass")?,
@@ -507,14 +550,14 @@ impl Database for PostgresDatabase {
                     totp_secret: row.try_get("totp_secret")?,
                     totp_auth_url: row.try_get("totp_auth_url")?,
                 };
-                Ok(Some(user))
+                Ok(Some(admin))
             }
             None => Ok(None),
         }
     }
 
-    async fn update_user(&self, user: &User) -> AuthDbResult<()> {
-        let digital_credentials_json = user
+    async fn update_admin(&self, admin: &Admin) -> AuthDbResult<()> {
+        let digital_credentials_json = admin
             .digital_credentials
             .as_ref()
             .map(|dc| {
@@ -526,46 +569,46 @@ impl Database for PostgresDatabase {
             })
             .transpose()?;
 
-        // Update user table
+        // Update admin table
         sqlx::query(
             r#"
-            UPDATE user
+            UPDATE admin
             SET userpass= $2, jwt = $3, fido2 = $4, digital_credentials = $5, certificate = $6,
                 totp_enabled = $7, totp_secret = $8, totp_auth_url = $9
             WHERE id = $1
             "#,
         )
-        .bind(&user.id)
-        .bind(&user.userpass)
-        .bind(&user.jwt)
-        .bind(&user.fido2)
+        .bind(&admin.id)
+        .bind(&admin.userpass)
+        .bind(&admin.jwt)
+        .bind(&admin.fido2)
         .bind(digital_credentials_json)
-        .bind(&user.client_certificate)
-        .bind(user.totp_enabled)
-        .bind(&user.totp_secret)
-        .bind(&user.totp_auth_url)
+        .bind(&admin.client_certificate)
+        .bind(admin.totp_enabled)
+        .bind(&admin.totp_secret)
+        .bind(&admin.totp_auth_url)
         .execute(&self.pool)
         .await?;
 
         // Delete existing realm associations
         sqlx::query(
             r#"
-            DELETE FROM user_realms WHERE user_id = $1
+            DELETE FROM admin_realms WHERE admin_id = $1
             "#,
         )
-        .bind(&user.id)
+        .bind(&admin.id)
         .execute(&self.pool)
         .await?;
 
         // Insert new realm associations
-        for realm_id in &user.realms {
+        for realm_id in &admin.realms {
             sqlx::query(
                 r#"
-                INSERT INTO user_realms (user_id, realm_id)
+                INSERT INTO admin_realms (admin_id, realm_id)
                 VALUES ($1, $2)
                 "#,
             )
-            .bind(&user.id)
+            .bind(&admin.id)
             .bind(realm_id)
             .execute(&self.pool)
             .await?;
@@ -574,10 +617,10 @@ impl Database for PostgresDatabase {
         Ok(())
     }
 
-    async fn delete_user(&self, id: &str) -> AuthDbResult<()> {
+    async fn delete_admin(&self, id: &str) -> AuthDbResult<()> {
         sqlx::query(
             r#"
-            DELETE FROM user WHERE id = $1
+            DELETE FROM admin WHERE id = $1
             "#,
         )
         .bind(id)
@@ -587,30 +630,30 @@ impl Database for PostgresDatabase {
         Ok(())
     }
 
-    async fn list_users(&self) -> AuthDbResult<Vec<User>> {
+    async fn list_admins(&self) -> AuthDbResult<Vec<Admin>> {
         let rows = sqlx::query(
             r#"
             SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
-            FROM user
+            FROM admin
             ORDER BY id
             "#,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let mut users = Vec::new();
+        let mut admins = Vec::new();
         for row in rows {
-            let user_id: String = row.try_get("id")?;
+            let admin_id: String = row.try_get("id")?;
 
             // Fetch realms from join table
             let realm_rows = sqlx::query(
                 r#"
                 SELECT realm_id
-                FROM user_realms
-                WHERE user_id = $1
+                FROM admin_realms
+                WHERE admin_id = $1
                 "#,
             )
-            .bind(&user_id)
+            .bind(&admin_id)
             .fetch_all(&self.pool)
             .await?;
 
@@ -630,8 +673,8 @@ impl Database for PostgresDatabase {
                 })
                 .transpose()?;
 
-            users.push(User {
-                id: user_id,
+            admins.push(Admin {
+                id: admin_id,
                 realms,
                 userpass: row.try_get("userpass")?,
                 jwt: row.try_get("jwt")?,
@@ -644,23 +687,24 @@ impl Database for PostgresDatabase {
             });
         }
 
-        Ok(users)
+        Ok(admins)
     }
 
-    // Find Users by authentication method (e.g. userpass, jwt, fido2, vp, certificate) and value (e.g. username for userpass, subject for jwt, etc.)
-    async fn find_users_by_auth_scheme(
+    // Find Admins by authentication method (e.g. userpass, jwt, fido2, vp, certificate) and value (e.g. username for userpass, subject for jwt, etc.)
+    async fn find_admins_by_auth_scheme(
         &self,
         auth_method: AuthScheme,
         value: &str,
-    ) -> AuthDbResult<Vec<User>> {
+    ) -> AuthDbResult<Vec<Admin>> {
         let (query, bind_value) = match auth_method {
-            AuthScheme::UsernamePassword => {
-                ("SELECT id FROM user WHERE userpass = $1", value.to_string())
-            }
-            AuthScheme::Jwt => ("SELECT id FROM user WHERE jwt = $1", value.to_string()),
-            AuthScheme::Fido2 => ("SELECT id FROM user WHERE fido2 = $1", value.to_string()),
+            AuthScheme::UsernamePassword => (
+                "SELECT id FROM admin WHERE userpass = $1",
+                value.to_string(),
+            ),
+            AuthScheme::Jwt => ("SELECT id FROM admin WHERE jwt = $1", value.to_string()),
+            AuthScheme::Fido2 => ("SELECT id FROM admin WHERE fido2 = $1", value.to_string()),
             AuthScheme::DigitalCredentials => (
-                "SELECT id FROM user WHERE digital_credentials @> $1::jsonb",
+                "SELECT id FROM admin WHERE digital_credentials @> $1::jsonb",
                 serde_json::to_string(&vec![value]).map_err(|e| {
                     crate::database::AuthDbError::Unexpected(format!(
                         "Failed to serialize VP query value: {e} for value: {value}"
@@ -668,7 +712,7 @@ impl Database for PostgresDatabase {
                 })?,
             ),
             AuthScheme::ClientCertificate => (
-                "SELECT id FROM user WHERE certificate = $1",
+                "SELECT id FROM admin WHERE certificate = $1",
                 value.to_string(),
             ),
         };
@@ -678,14 +722,14 @@ impl Database for PostgresDatabase {
             .fetch_all(&self.pool)
             .await?;
 
-        let mut users = Vec::new();
+        let mut admins = Vec::new();
         for row in rows {
-            if let Some(user) = self.get_user(row.try_get("id")?).await? {
-                users.push(user);
+            if let Some(admin) = self.get_admin(row.try_get("id")?).await? {
+                admins.push(admin);
             }
         }
 
-        Ok(users)
+        Ok(admins)
     }
 
     // ===== TOTP/2FA operations =====
@@ -722,7 +766,7 @@ impl Database for PostgresDatabase {
 
         sqlx::query(
             r#"
-            UPDATE user
+            UPDATE admin
             SET totp_enabled = true,
                 totp_secret = $1,
                 totp_auth_url = $2
@@ -747,7 +791,7 @@ impl Database for PostgresDatabase {
 
         sqlx::query(
             r#"
-            UPDATE user
+            UPDATE admin
             SET totp_enabled = false,
                 totp_secret = NULL,
                 totp_auth_url = NULL
@@ -765,7 +809,7 @@ impl Database for PostgresDatabase {
         let row = sqlx::query(
             r#"
             SELECT totp_secret
-            FROM user
+            FROM admin
             WHERE id = $1 AND (userpass IS NOT NULL OR jwt IS NOT NULL)
             "#,
         )
@@ -783,7 +827,7 @@ impl Database for PostgresDatabase {
         let row = sqlx::query(
             r#"
             SELECT totp_enabled
-            FROM user
+            FROM admin
             WHERE id = $1 AND (userpass IS NOT NULL OR jwt IS NOT NULL)
             "#,
         )

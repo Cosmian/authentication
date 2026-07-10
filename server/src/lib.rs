@@ -3,6 +3,9 @@ pub use auth_client::*;
 // Macros must be re-exported explicitly
 pub use auth_client::{auth_bail, auth_ensure, auth_error};
 
+pub mod error;
+pub use error::{ServerError, ServerResult};
+
 mod database;
 
 mod middleware;
@@ -10,14 +13,14 @@ pub use middleware::*;
 
 mod server;
 pub use server::parameters::{DatabaseBackend, DatabaseParams, ServerParams};
-pub use server::start_auth_server;
+pub use server::start_auth_verifier;
 
 mod session;
-pub use session::{build_cookie, delete_cookie};
 pub use session::{
-    create_session_store_with_collector, start_stale_session_collector, SessionStore,
-    StaleSessionCollectorConfig,
+    SessionStore, StaleSessionCollectorConfig, create_session_store_with_collector,
+    start_stale_session_collector,
 };
+pub use session::{build_cookie, delete_cookie};
 
 pub mod tls;
 
@@ -28,9 +31,9 @@ pub mod client {
 }
 pub mod models {
     pub use auth_client::{
-        AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme, AuthenticationNextStep,
-        AuthenticationResult, ClientClaims, LoginRequest, Realm, RegisteredClaims, SessionData,
-        User, UserPass, ADMIN_REALM,
+        ADMIN_REALM, Admin, AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme,
+        AuthenticationNextStep, AuthenticationResult, AuthorizationClaims, ClientClaims,
+        LoginRequest, Realm, RegisteredClaims, SessionData, UserPass,
     };
 }
 

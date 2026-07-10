@@ -1,4 +1,4 @@
-use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
+use argon2::{Argon2, PasswordHasher, password_hash::SaltString};
 use auth_client::{AuthError, AuthResult};
 use sha2::Digest;
 

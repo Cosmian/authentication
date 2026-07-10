@@ -1,5 +1,5 @@
 use crate::database::{AuthDbError, AuthDbResult, hash_password_with_argon2};
-use crate::models::{ADMIN_REALM, AuthScheme, Realm, User, UserPass};
+use crate::models::{ADMIN_REALM, Admin, AuthScheme, Realm, UserPass};
 use crate::{RealmAuthParams, UsernamePasswordParams};
 use async_trait::async_trait;
 
@@ -50,10 +50,11 @@ pub trait Database: Send + Sync {
                     AuthDbError::Init(format!("failed to set the app admin initial password: {e}"))
                 })?,
                 change_password: true,
+                roles: Vec::new(),
             };
             self.create_userpass(&app_user_pass).await?;
-            // create the admin user in the user table
-            let admin_user = User {
+            // create the admin in the admin table
+            let admin = Admin {
                 id: APP_REALM_ADMIN_USERNAME.to_string(),
                 realms: vec![ADMIN_REALM.to_string()],
                 userpass: Some(APP_REALM_ADMIN_USERNAME.to_owned()),
@@ -65,7 +66,7 @@ pub trait Database: Send + Sync {
                 totp_secret: None,
                 totp_auth_url: None,
             };
-            self.create_user(&admin_user).await?;
+            self.create_admin(&admin).await?;
         }
 
         Ok(())
@@ -101,7 +102,7 @@ pub trait Database: Send + Sync {
     async fn delete_userpass(&self, realm: &str, username: &str) -> AuthDbResult<()>;
 
     /// Delete all user password entries for a username across all realms.
-    /// Used to cascade-delete credentials when a User record is deleted.
+    /// Used to cascade-delete credentials when an Admin record is deleted.
     async fn delete_userpass_by_username(&self, username: &str) -> AuthDbResult<()>;
 
     /// List all user password entries for a specific realm
@@ -122,29 +123,29 @@ pub trait Database: Send + Sync {
         password: &str,
     ) -> AuthDbResult<bool>;
 
-    // ===== User CRUD operations =====
+    // ===== Admin CRUD operations =====
 
-    /// Create a new user
-    async fn create_user(&self, user: &User) -> AuthDbResult<()>;
+    /// Create a new admin
+    async fn create_admin(&self, admin: &Admin) -> AuthDbResult<()>;
 
-    /// Read a user by ID
-    async fn get_user(&self, id: &str) -> AuthDbResult<Option<User>>;
+    /// Read an admin by ID
+    async fn get_admin(&self, id: &str) -> AuthDbResult<Option<Admin>>;
 
-    /// Update an existing user
-    async fn update_user(&self, user: &User) -> AuthDbResult<()>;
+    /// Update an existing admin
+    async fn update_admin(&self, admin: &Admin) -> AuthDbResult<()>;
 
-    /// Delete a user by ID
-    async fn delete_user(&self, id: &str) -> AuthDbResult<()>;
+    /// Delete an admin by ID
+    async fn delete_admin(&self, id: &str) -> AuthDbResult<()>;
 
-    /// List all users
-    async fn list_users(&self) -> AuthDbResult<Vec<User>>;
+    /// List all admins
+    async fn list_admins(&self) -> AuthDbResult<Vec<Admin>>;
 
-    // Find Users by authentication scheme (e.g. userpass, jwt, fido2, vp, certificate) and value (e.g. username for userpass, subject for jwt, etc.)
-    async fn find_users_by_auth_scheme(
+    // Find Admins by authentication scheme (e.g. userpass, jwt, fido2, vp, certificate) and value (e.g. username for userpass, subject for jwt, etc.)
+    async fn find_admins_by_auth_scheme(
         &self,
         auth_scheme: AuthScheme,
         value: &str,
-    ) -> AuthDbResult<Vec<User>>;
+    ) -> AuthDbResult<Vec<Admin>>;
 
     // ===== TOTP/2FA operations =====
 

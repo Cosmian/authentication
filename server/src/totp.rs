@@ -80,6 +80,7 @@ impl Totps {
         params: Option<TotpParams>,
     ) -> AuthResult<Self> {
         let params = params.unwrap_or_default();
+        // Why is the value stored in base and not in bytes directly?
         let secret_bytes = Secret::Encoded(secret_base32.to_string())
             .to_bytes()
             .map_err(|e| AuthError::Totp(format!("Invalid Base32 secret: {e}")))?;

@@ -11,7 +11,7 @@ This document covers the session lifecycle, the three strategies for validating 
   - [The Session Cookie](#the-session-cookie)
   - [Session Lifecycle](#session-lifecycle)
   - [Session Validation Strategies](#session-validation-strategies)
-    - [Strategy 1 — Auth Server Session Endpoint (recommended)](#strategy-1--auth-server-session-endpoint-recommended)
+    - [Strategy 1 — Auth Server Session Endpoint (recommended)](#strategy-1--auth-verifier-session-endpoint-recommended)
     - [Strategy 2 — Direct Session Store Query](#strategy-2--direct-session-store-query)
     - [Strategy 3 — Offline JWT Validation](#strategy-3--offline-jwt-validation)
   - [Session Actions — Bulk Logout](#session-actions--bulk-logout)
@@ -60,7 +60,7 @@ stateDiagram-v2
     Active --> Expired : session_max_age_seconds\nelapsed since creation\n(absolute lifetime)
     Expired --> [*] : Stale-session collector\nremoves it
 
-    Active --> Invalidated : DELETE /sessions/session\n(explicit logout)
+    Active --> Invalidated : DELETE /sessions\n(explicit logout)
     Invalidated --> [*] : Immediately rejected\non next request
 ```
 
@@ -81,11 +81,11 @@ Your API server can validate incoming sessions using three strategies. Choose ba
 Client ──► Your API ──► Validate Session ──► Auth Server
 ```
 
-### Strategy 1 — Auth Server Session Endpoint (recommended)
+### Strategy 1 — Auth Verifier Session Endpoint (recommended)
 
-Call `GET /sessions/session/{session_id}` on the auth server for every request. This is the most secure strategy: session revocations take effect immediately.
+Call `GET /sessions/{session_id}` on the auth server for every request. This is the most secure strategy: session revocations take effect immediately.
 
-**Pros:** Immediate invalidation. No local state. Simple implementation.  
+**Pros:** Immediate invalidation. No local state. Simple implementation.
 **Cons:** One additional HTTPS round-trip per request.
 
 ```rust
@@ -116,7 +116,7 @@ Bypass the auth server HTTP API and query the session store directly. Requires y
 
 This strategy reduces latency but requires shared database access and couples the API server to the session store schema.
 
-**Pros:** Lower latency (no auth-server round-trip). Immediate invalidation still possible.  
+**Pros:** Lower latency (no auth-verifier round-trip). Immediate invalidation still possible.
 **Cons:** Requires database access from the API server. Schema coupling.
 
 ---
@@ -196,7 +196,7 @@ auth.delete_sessions(&session_ids).await?;
 
 For SQL-backed session stores, a background task periodically purges sessions that have exceeded their `max_age_seconds` or `max_stale_age_seconds`.
 
-Configure the cleanup interval in `auth_server.toml`:
+Configure the cleanup interval in `auth_verifier.toml`:
 
 ```toml
 [stale_session_collector_config]

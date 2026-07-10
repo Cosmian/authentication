@@ -123,7 +123,7 @@ impl IdP for EcIdp {
         let header = JwtHeader {
             alg: "ES256".to_string(),
             typ: "JWT".to_string(),
-            kid: "auth-server-key".to_string(),
+            kid: "auth-verifier-key".to_string(),
         };
 
         let claims = JwtClaims {
@@ -147,7 +147,7 @@ impl IdP for EcIdp {
         let header = JwtHeader {
             alg: "ES256".to_string(),
             typ: "JWT".to_string(),
-            kid: "auth-server-key".to_string(),
+            kid: "auth-verifier-key".to_string(),
         };
 
         let claims = JwtClaims {
@@ -251,7 +251,7 @@ fn create_jwk_from_cert(cert_der: &[u8]) -> AuthResult<serde_json::Value> {
         "x": x_b64,
         "y": y_b64,
         "use": "sig",
-        "kid": "auth-server-key",
+        "kid": "auth-verifier-key",
         "alg": "ES256"
     });
 

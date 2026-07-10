@@ -17,12 +17,14 @@ The `auth_client` crate provides an HTTP client and shared types for interacting
 - [Session Actions — Log Out Everywhere](#session-actions--log-out-everywhere)
 - [Logging In](#logging-in)
 - [Realm Management](#realm-management)
-- [User Management](#user-management)
+- [Admin Management](#admin-management)
 - [Credential Management](#credential-management)
 - [TOTP Management](#totp-management)
 - [Public Endpoints](#public-endpoints)
 - [Error Handling](#error-handling)
 - [Types Reference](#types-reference)
+  - [`ClientClaims`](#clientclaims)
+    - [Reading roles from a validated session](#reading-roles-from-a-validated-session)
 - [Actix-web Integration Example](#actix-web-integration-example)
 
 ---
@@ -58,7 +60,7 @@ let client = AuthClient::new(
 println!("Base URL: {}", client.base_url());
 ```
 
-`AuthClient::new` returns `AuthResult<AuthClient>`. It fails if the CA certificate is malformed or the authentication scheme configuration is invalid (e.g., unparseable PKCS#12 archive).
+`AuthClient::new` returns `AuthResult<AuthClient>`. It fails if the CA certificate is malformed or the authentication scheme configuration is invalid (e.g., unparsable PKCS#12 archive).
 
 ---
 
@@ -125,7 +127,7 @@ match session {
 }
 ```
 
-`get_session` maps to `GET /sessions/session/{id}`. It returns `None` — not an error — when the session is not found.
+`get_session` maps to `GET /sessions/{session_id}`. It returns `None` — not an error — when the session is not found.
 
 ### `SessionData` fields
 
@@ -290,13 +292,13 @@ admin.delete_realm_as_super_admin("my-service").await?;
 
 ---
 
-## User Management
+## Admin Management
 
 ```rust
-use auth_client::User;
+use auth_client::Admin;
 
 // Create a realm admin (can manage "my-service" and "other-service")
-let user = User {
+let user = Admin {
     id: "bob".to_string(),
     realms: vec!["my-service".to_string(), "other-service".to_string()],
     userpass: Some("bob".to_string()),
@@ -308,21 +310,21 @@ let user = User {
     totp_secret: None,
     totp_auth_url: None,
 };
-let created: User = admin.create_user_as_super_admin(&user).await?;
+let created: Admin = admin.create_admin_as_super_admin(&user).await?;
 
 // Check admin roles
 assert!(created.can_administer_realm("my-service"));
 assert!(!created.is_super_admin());
 
 // List all users
-let all: Vec<User> = admin.list_users_as_super_admin().await?;
+let all: Vec<Admin> = admin.list_admins_as_super_admin().await?;
 
 // Add / remove realm from user
-admin.add_user_to_realm_as_admin("bob", "another-realm").await?;
-admin.remove_user_from_realm_as_admin("bob", "another-realm").await?;
+admin.add_admin_to_realm("bob", "another-realm").await?;
+admin.remove_admin_from_realm("bob", "another-realm").await?;
 
 // Delete
-admin.delete_user_as_super_admin("bob").await?;
+admin.delete_admin_as_super_admin("bob").await?;
 ```
 
 ---
@@ -335,22 +337,23 @@ Passwords are hashed with **Argon2id** server-side. Pass the plaintext password 
 use auth_client::UserPass;
 
 // Create credentials
-admin.create_user_credentials_in_realm(
+admin.create_admin_credentials_in_realm(
     "my-service",
     &UserPass {
         realm: "my-service".to_string(),
         username: "alice".to_string(),
         password: b"hunter2".to_vec(),  // plaintext — server hashes with Argon2id
         change_password: false,
+        roles: vec!["CryptoOfficer".to_string()],
     },
 ).await?;
 
 // Read back — password is always empty
-let stored: UserPass = admin.get_user_credentials_in_realm("my-service", "alice").await?;
+let stored: UserPass = admin.get_admin_credentials_in_realm("my-service", "alice").await?;
 assert!(stored.password.is_empty());
 
 // Force password change on next login
-admin.update_user_credentials_in_realm(
+admin.update_admin_credentials_in_realm(
     "my-service",
     "alice",
     &UserPass {
@@ -358,14 +361,15 @@ admin.update_user_credentials_in_realm(
         username: "alice".to_string(),
         password: b"new-password".to_vec(),
         change_password: true,
+        roles: vec!["CryptoOfficer".to_string()],
     },
 ).await?;
 
 // List all credentials in a realm
-let all: Vec<UserPass> = admin.list_user_credentials_in_realm("my-service").await?;
+let all: Vec<UserPass> = admin.list_admin_credentials_in_realm("my-service").await?;
 
 // Delete
-admin.delete_user_credentials_in_realm("my-service", "alice").await?;
+admin.delete_admin_credentials_in_realm("my-service", "alice").await?;
 ```
 
 ---
@@ -440,7 +444,7 @@ match client.get_session("bad-id").await {
 | Variant | Meaning |
 |---------|---------|
 | `AuthError::FailedHttpStatus(msg)` | Non-2xx response; `msg` contains status code and body |
-| `AuthError::SessionNotFound` | `GET /sessions/session/{id}` returned 404 |
+| `AuthError::SessionNotFound` | `GET /sessions/{id}` returned 404 |
 | `AuthError::Config(msg)` | Client misconfiguration (bad URL, certificate parse error, etc.) |
 | `AuthError::JWT(msg)` | JWT signing or validation failure |
 | `AuthError::Generic(msg)` | Network or serialization error |
@@ -480,18 +484,20 @@ pub enum AuthClientScheme {
 
 ### `ClientClaims`
 
-Returned by `whoami()`. The struct has two flattened sub-structs:
+Returned by `whoami()`. The struct has three flattened sub-structs — the JWT is a
+**flat JSON object** on the wire; the sub-struct boundaries exist only in Rust:
 
 ```rust
 pub struct ClientClaims {
-    pub registered: RegisteredClaims,  // RFC 7519 §4.1
-    pub private:    AuthPrivateClaims, // Auth-specific
-    pub extra:      HashMap<String, Value>,
+    pub registered:    RegisteredClaims,    // RFC 7519 §4.1
+    pub authorization: AuthorizationClaims, // RFC 9068 §2.2.3.1
+    pub private:       AuthPrivateClaims,   // Auth-specific
+    pub extra:         HashMap<String, Value>,
 }
 
 pub struct RegisteredClaims {
     pub iss: Option<String>,      // Issuer
-    pub sub: Option<String>,      // Subject
+    pub sub: Option<String>,      // Subject (username)
     pub aud: Option<Vec<String>>, // Audience
     pub exp: Option<i64>,         // Expiry (Unix secs)
     pub nbf: Option<i64>,         // Not-before (Unix secs)
@@ -499,15 +505,52 @@ pub struct RegisteredClaims {
     pub jti: Option<String>,      // JWT ID
 }
 
+/// Authorization claims (RFC 9068 §2.2.3.1 / RFC 7643 §4.1.2).
+pub struct AuthorizationClaims {
+    // "roles" — RBAC roles assigned to the user at credential level.
+    // Omitted when empty (fail-closed in OPA and downstream consumers).
+    pub roles: Option<Vec<String>>,
+}
+
 pub struct AuthPrivateClaims {
     // "as_as" — auth scheme: "up" | "jwt" | "cc" | "f2" | "dc"
     pub auth_scheme: Option<AuthScheme>,
     // "as_pk" — client public key PEM (when using mTLS)
     pub public_key: Option<String>,
-    // "as_rid" — realm ID
+    // "as_rid" — realm ID (also used as the OPA domain scope)
     pub realm_id: Option<String>,
 }
 ```
+
+#### Reading roles from a validated session
+
+```rust
+let claims: ClientClaims = client.whoami("my-service").await?;
+
+let roles = claims.authorization.roles.as_deref().unwrap_or(&[]);
+if roles.contains(&"CryptoOfficer".to_string()) {
+    // grant access to crypto operations
+}
+```
+
+#### Wire format example
+
+A token issued for a user with the `CryptoOfficer` role in realm `acme` looks like:
+
+```json
+{
+  "sub": "alice",
+  "exp": 1893456000,
+  "iat": 1893452400,
+  "roles": ["CryptoOfficer"],
+  "as_as": "up",
+  "as_rid": "acme"
+}
+```
+
+The `roles` claim is absent (not `[]`) when the credential has no roles assigned,
+so downstream OPA policies can treat absence as fail-closed without an explicit
+empty-array check.
 
 ---
 
@@ -560,11 +603,11 @@ async fn protected_handler(
 
 /// Build the shared auth client at application startup.
 pub fn build_auth_client(
-    auth_server_url: &str,
+    auth_verifier_url: &str,
     ca_cert_pem: &str,
 ) -> Arc<AuthClient> {
     Arc::new(
-        AuthClient::new(auth_server_url, ca_cert_pem, AuthClientScheme::None)
+        AuthClient::new(auth_verifier_url, ca_cert_pem, AuthClientScheme::None)
             .expect("Failed to build auth client"),
     )
 }

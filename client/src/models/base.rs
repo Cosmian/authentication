@@ -33,15 +33,19 @@ pub struct UserPass {
     pub username: String,
     pub password: Vec<u8>,
     pub change_password: bool,
+    /// RBAC roles assigned to this user (e.g. `["CryptoOfficer", "Auditor"]`).
+    /// Emitted in the JWT `roles` claim for OPA policy evaluation.
+    #[serde(default)]
+    pub roles: Vec<String>,
 }
 
-/// Authentication server users.
-/// These are the users that have a role on this server and its endpoints.
+/// Authentication server admins.
+/// These are the administrators that have a role on this server and its endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct User {
+pub struct Admin {
     pub id: String,
-    /// Realms that the user administers.
-    /// A user administering the ADMIN_REALM is a super admin and can administer all realms.
+    /// Realms that the admin administers.
+    /// An admin administering the ADMIN_REALM is a super admin and can administer all realms.
     pub realms: Vec<String>,
     pub userpass: Option<String>,
     pub jwt: Option<String>,
@@ -58,7 +62,7 @@ pub struct User {
     pub totp_auth_url: Option<String>, // otpauth:// URL for QR code generation
 }
 
-impl User {
+impl Admin {
     pub fn is_super_admin(&self) -> bool {
         self.realms.contains(&ADMIN_REALM.to_string())
     }

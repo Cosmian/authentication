@@ -1,4 +1,5 @@
 use crate::server::parameters::TlsParams;
+use crate::tls::PeerCertificate;
 use crate::{AuthError, AuthResult};
 use actix_web::dev::Extensions;
 use cosmian_logger::debug;
@@ -10,14 +11,6 @@ use openssl::{
     x509::{X509, store::X509StoreBuilder},
 };
 use std::any::Any;
-/// The extension struct holding the peer certificate during the connection.
-///
-/// This struct stores the peer certificate in the request context.
-#[derive(Debug, Clone)]
-pub struct PeerCertificate {
-    /// The peer certificate.
-    pub cert: X509,
-}
 
 /// Extract the peer certificate from the TLS stream and pass it to middleware.
 ///
@@ -36,7 +29,12 @@ pub fn extract_openssl_peer_certificate(cnx: &dyn Any, extensions: &mut Extensio
                 "Extracted peer certificate from TLS connection: {:?}",
                 cert.subject_name()
             );
-            extensions.insert(PeerCertificate { cert });
+            match cert.to_der() {
+                Ok(cert_der) => {
+                    extensions.insert(PeerCertificate { cert_der });
+                }
+                Err(e) => error!("Failed to DER-encode peer certificate: {e}"),
+            }
         } else {
             debug!("No peer certificate presented by client");
         }

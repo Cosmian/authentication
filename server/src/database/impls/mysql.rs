@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    database::{AuthDbResult, hash_password_with_argon2, r#trait::Database},
-    models::{AuthScheme, Realm, User, UserPass},
+    database::{AuthDbError, AuthDbResult, hash_password_with_argon2, r#trait::Database},
+    models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
 use sqlx::{MySqlPool, Row};
@@ -44,6 +44,7 @@ impl Database for MySqlDatabase {
                 username VARCHAR(255) NOT NULL,
                 password BLOB NOT NULL,
                 change_password BOOLEAN NOT NULL DEFAULT FALSE,
+                roles TEXT NOT NULL,
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -52,10 +53,32 @@ impl Database for MySqlDatabase {
         .execute(&self.pool)
         .await?;
 
-        // Create users table - users in this context are the realms'admins
+        // Migration: add roles column if missing (existing databases)
+        let has_roles: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='userpass' AND column_name='roles'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map(|c: i64| c > 0)
+        .unwrap_or(false);
+        if !has_roles {
+            // MySQL TEXT columns do not support DEFAULT values in many versions.
+            // Use a three-step migration: add nullable, backfill, then enforce NOT NULL.
+            sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT")
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("UPDATE userpass SET roles = '[]' WHERE roles IS NULL")
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("ALTER TABLE userpass MODIFY COLUMN roles TEXT NOT NULL")
+                .execute(&self.pool)
+                .await?;
+        }
+
+        // Create admin table
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS user (
+            CREATE TABLE IF NOT EXISTS admin (
                 id VARCHAR(255) PRIMARY KEY,
                 userpass VARCHAR(255),
                 jwt TEXT,
@@ -75,11 +98,11 @@ impl Database for MySqlDatabase {
         // Create user_realms join table
         sqlx::query(
             r#"
-            CREATE TABLE IF NOT EXISTS user_realms (
-                user_id VARCHAR(255) NOT NULL,
+            CREATE TABLE IF NOT EXISTS admin_realms (
+                admin_id VARCHAR(255) NOT NULL,
                 realm_id VARCHAR(255) NOT NULL,
-                PRIMARY KEY (user_id, realm_id),
-                FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE,
+                PRIMARY KEY (admin_id, realm_id),
+                FOREIGN KEY (admin_id) REFERENCES admin(id) ON DELETE CASCADE,
                 FOREIGN KEY (realm_id) REFERENCES realm(id) ON DELETE CASCADE
             )
             "#,
@@ -227,16 +250,19 @@ impl Database for MySqlDatabase {
     // ===== UserPass CRUD operations =====
 
     async fn create_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
+        let roles_json = serde_json::to_string(&userpass.roles)
+            .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO userpass (realm, username, password, change_password, roles)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
         .bind(&userpass.password)
         .bind(userpass.change_password)
+        .bind(&roles_json)
         .execute(&self.pool)
         .await?;
 
@@ -246,7 +272,7 @@ impl Database for MySqlDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password
+            SELECT realm, username, change_password, roles
             FROM userpass
             WHERE realm = ? AND username = ?
             "#,
@@ -258,11 +284,18 @@ impl Database for MySqlDatabase {
 
         match row {
             Some(row) => {
+                let roles_json: String = row.try_get("roles").unwrap_or_default();
+                let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize roles for user '{username}': {e}"
+                    ))
+                })?;
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,
                     password: vec![], // do not return the password hash
                     change_password: row.try_get("change_password")?,
+                    roles,
                 };
                 Ok(Some(userpass))
             }
@@ -271,15 +304,18 @@ impl Database for MySqlDatabase {
     }
 
     async fn update_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
+        let roles_json = serde_json::to_string(&userpass.roles)
+            .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = ?, change_password = ?
+            SET password = ?, change_password = ?, roles = ?
             WHERE realm = ? AND username = ?
             "#,
         )
         .bind(&userpass.password)
         .bind(userpass.change_password)
+        .bind(&roles_json)
         .bind(&userpass.realm)
         .bind(&userpass.username)
         .execute(&self.pool)
@@ -320,7 +356,7 @@ impl Database for MySqlDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password
+            SELECT realm, username, password, change_password, roles
             FROM userpass
             WHERE realm = ?
             ORDER BY username
@@ -332,11 +368,19 @@ impl Database for MySqlDatabase {
 
         let mut userpass_list = Vec::new();
         for row in rows {
+            let roles_json: String = row.try_get("roles").unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                let username: String = row.try_get("username").unwrap_or_default();
+                AuthDbError::Unexpected(format!(
+                    "failed to deserialize roles for user '{username}': {e}"
+                ))
+            })?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
+                roles,
             });
         }
 
@@ -346,7 +390,7 @@ impl Database for MySqlDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password
+            SELECT realm, username, password, change_password, roles
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -356,11 +400,19 @@ impl Database for MySqlDatabase {
 
         let mut userpass_list = Vec::new();
         for row in rows {
+            let roles_json: String = row.try_get("roles").unwrap_or_default();
+            let roles: Vec<String> = serde_json::from_str(&roles_json).map_err(|e| {
+                let username: String = row.try_get("username").unwrap_or_default();
+                AuthDbError::Unexpected(format!(
+                    "failed to deserialize roles for user '{username}': {e}"
+                ))
+            })?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
+                roles,
             });
         }
 
@@ -401,10 +453,10 @@ impl Database for MySqlDatabase {
         }
     }
 
-    // ===== User CRUD operations =====
+    // ===== Admin CRUD operations =====
 
-    async fn create_user(&self, user: &User) -> AuthDbResult<()> {
-        let digital_credentials_json = user
+    async fn create_admin(&self, admin: &Admin) -> AuthDbResult<()> {
+        let digital_credentials_json = admin
             .digital_credentials
             .as_ref()
             .map(|digital_credentials| {
@@ -416,34 +468,34 @@ impl Database for MySqlDatabase {
             })
             .transpose()?;
 
-        // Insert into user table
+        // Insert into admin table
         sqlx::query(
             r#"
-            INSERT INTO user (id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url)
+            INSERT INTO admin (id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
-        .bind(&user.id)
-        .bind(&user.userpass)
-        .bind(&user.jwt)
-        .bind(&user.fido2)
+        .bind(&admin.id)
+        .bind(&admin.userpass)
+        .bind(&admin.jwt)
+        .bind(&admin.fido2)
         .bind(digital_credentials_json)
-        .bind(&user.client_certificate)
-        .bind(user.totp_enabled)
-        .bind(&user.totp_secret)
-        .bind(&user.totp_auth_url)
+        .bind(&admin.client_certificate)
+        .bind(admin.totp_enabled)
+        .bind(&admin.totp_secret)
+        .bind(&admin.totp_auth_url)
         .execute(&self.pool)
         .await?;
 
         // Insert into user_realms join table
-        for realm_id in &user.realms {
+        for realm_id in &admin.realms {
             sqlx::query(
                 r#"
-                INSERT INTO user_realms (user_id, realm_id)
+                INSERT INTO admin_realms (admin_id, realm_id)
                 VALUES (?, ?)
                 "#,
             )
-            .bind(&user.id)
+            .bind(&admin.id)
             .bind(realm_id)
             .execute(&self.pool)
             .await?;
@@ -452,11 +504,11 @@ impl Database for MySqlDatabase {
         Ok(())
     }
 
-    async fn get_user(&self, id: &str) -> AuthDbResult<Option<User>> {
+    async fn get_admin(&self, id: &str) -> AuthDbResult<Option<Admin>> {
         let row = sqlx::query(
             r#"
             SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
-            FROM user
+            FROM admin
             WHERE id = ?
             "#,
         )
@@ -470,8 +522,8 @@ impl Database for MySqlDatabase {
                 let realm_rows = sqlx::query(
                     r#"
                     SELECT realm_id
-                    FROM user_realms
-                    WHERE user_id = ?
+                    FROM admin_realms
+                    WHERE admin_id = ?
                     "#,
                 )
                 .bind(id)
@@ -495,7 +547,7 @@ impl Database for MySqlDatabase {
                     })
                     .transpose()?;
 
-                let user = User {
+                let admin = Admin {
                     id: row.try_get("id")?,
                     realms,
                     userpass: row.try_get("userpass")?,
@@ -507,14 +559,14 @@ impl Database for MySqlDatabase {
                     totp_secret: row.try_get("totp_secret")?,
                     totp_auth_url: row.try_get("totp_auth_url")?,
                 };
-                Ok(Some(user))
+                Ok(Some(admin))
             }
             None => Ok(None),
         }
     }
 
-    async fn update_user(&self, user: &User) -> AuthDbResult<()> {
-        let digital_credentials_json = user
+    async fn update_admin(&self, admin: &Admin) -> AuthDbResult<()> {
+        let digital_credentials_json = admin
             .digital_credentials
             .as_ref()
             .map(|digital_credentials| {
@@ -526,46 +578,46 @@ impl Database for MySqlDatabase {
             })
             .transpose()?;
 
-        // Update user table
+        // Update admin table
         sqlx::query(
             r#"
-            UPDATE user
+            UPDATE admin
             SET userpass= ?, jwt = ?, fido2 = ?, digital_credentials = ?, certificate = ?,
                 totp_enabled = ?, totp_secret = ?, totp_auth_url = ?
             WHERE id = ?
             "#,
         )
-        .bind(&user.userpass)
-        .bind(&user.jwt)
-        .bind(&user.fido2)
+        .bind(&admin.userpass)
+        .bind(&admin.jwt)
+        .bind(&admin.fido2)
         .bind(digital_credentials_json)
-        .bind(&user.client_certificate)
-        .bind(user.totp_enabled)
-        .bind(&user.totp_secret)
-        .bind(&user.totp_auth_url)
-        .bind(&user.id)
+        .bind(&admin.client_certificate)
+        .bind(admin.totp_enabled)
+        .bind(&admin.totp_secret)
+        .bind(&admin.totp_auth_url)
+        .bind(&admin.id)
         .execute(&self.pool)
         .await?;
 
         // Delete existing realm associations
         sqlx::query(
             r#"
-            DELETE FROM user_realms WHERE user_id = ?
+            DELETE FROM admin_realms WHERE admin_id = ?
             "#,
         )
-        .bind(&user.id)
+        .bind(&admin.id)
         .execute(&self.pool)
         .await?;
 
         // Insert new realm associations
-        for realm_id in &user.realms {
+        for realm_id in &admin.realms {
             sqlx::query(
                 r#"
-                INSERT INTO user_realms (user_id, realm_id)
+                INSERT INTO admin_realms (admin_id, realm_id)
                 VALUES (?, ?)
                 "#,
             )
-            .bind(&user.id)
+            .bind(&admin.id)
             .bind(realm_id)
             .execute(&self.pool)
             .await?;
@@ -574,10 +626,10 @@ impl Database for MySqlDatabase {
         Ok(())
     }
 
-    async fn delete_user(&self, id: &str) -> AuthDbResult<()> {
+    async fn delete_admin(&self, id: &str) -> AuthDbResult<()> {
         sqlx::query(
             r#"
-            DELETE FROM user WHERE id = ?
+            DELETE FROM admin WHERE id = ?
             "#,
         )
         .bind(id)
@@ -587,30 +639,30 @@ impl Database for MySqlDatabase {
         Ok(())
     }
 
-    async fn list_users(&self) -> AuthDbResult<Vec<User>> {
+    async fn list_admins(&self) -> AuthDbResult<Vec<Admin>> {
         let rows = sqlx::query(
             r#"
             SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
-            FROM user
+            FROM admin
             ORDER BY id
             "#,
         )
         .fetch_all(&self.pool)
         .await?;
 
-        let mut users = Vec::new();
+        let mut admins = Vec::new();
         for row in rows {
-            let user_id: String = row.try_get("id")?;
+            let admin_id: String = row.try_get("id")?;
 
             // Fetch realms from join table
             let realm_rows = sqlx::query(
                 r#"
                 SELECT realm_id
-                FROM user_realms
-                WHERE user_id = ?
+                FROM admin_realms
+                WHERE admin_id = ?
                 "#,
             )
-            .bind(&user_id)
+            .bind(&admin_id)
             .fetch_all(&self.pool)
             .await?;
 
@@ -630,8 +682,8 @@ impl Database for MySqlDatabase {
                 })
                 .transpose()?;
 
-            users.push(User {
-                id: user_id,
+            admins.push(Admin {
+                id: admin_id,
                 realms,
                 userpass: row.try_get("userpass")?,
                 jwt: row.try_get("jwt")?,
@@ -644,23 +696,23 @@ impl Database for MySqlDatabase {
             });
         }
 
-        Ok(users)
+        Ok(admins)
     }
 
-    // Find Users by authentication method (e.g. userpass, jwt, fido2, vp, certificate) and value (e.g. username for userpass, subject for jwt, etc.)
-    async fn find_users_by_auth_scheme(
+    // Find Admins by authentication method (e.g. userpass, jwt, fido2, vp, certificate) and value (e.g. username for userpass, subject for jwt, etc.)
+    async fn find_admins_by_auth_scheme(
         &self,
         auth_method: AuthScheme,
         value: &str,
-    ) -> AuthDbResult<Vec<User>> {
+    ) -> AuthDbResult<Vec<Admin>> {
         let (query, query_value) = match auth_method {
             AuthScheme::UsernamePassword => {
-                ("SELECT id FROM user WHERE userpass = ?", value.to_string())
+                ("SELECT id FROM admin WHERE userpass = ?", value.to_string())
             }
-            AuthScheme::Jwt => ("SELECT id FROM user WHERE jwt = ?", value.to_string()),
-            AuthScheme::Fido2 => ("SELECT id FROM user WHERE fido2 = ?", value.to_string()),
+            AuthScheme::Jwt => ("SELECT id FROM admin WHERE jwt = ?", value.to_string()),
+            AuthScheme::Fido2 => ("SELECT id FROM admin WHERE fido2 = ?", value.to_string()),
             AuthScheme::DigitalCredentials => (
-                "SELECT id FROM user WHERE digital_credentials LIKE ?",
+                "SELECT id FROM admin WHERE digital_credentials LIKE ?",
                 serde_json::to_string(&vec![value]).map_err(|e| {
                     crate::database::AuthDbError::Unexpected(format!(
                         "Failed to serialize digital_credentials query value: {e} for value: {value}"
@@ -668,7 +720,7 @@ impl Database for MySqlDatabase {
                 })?,
             ),
             AuthScheme::ClientCertificate => (
-                "SELECT id FROM user WHERE certificate = ?",
+                "SELECT id FROM admin WHERE certificate = ?",
                 value.to_string(),
             ),
         };
@@ -678,14 +730,14 @@ impl Database for MySqlDatabase {
             .fetch_all(&self.pool)
             .await?;
 
-        let mut users = Vec::new();
+        let mut admins = Vec::new();
         for row in rows {
-            if let Some(user) = self.get_user(row.try_get("id")?).await? {
-                users.push(user);
+            if let Some(admin) = self.get_admin(row.try_get("id")?).await? {
+                admins.push(admin);
             }
         }
 
-        Ok(users)
+        Ok(admins)
     }
 
     // ===== TOTP/2FA operations =====
@@ -722,7 +774,7 @@ impl Database for MySqlDatabase {
 
         sqlx::query(
             r#"
-            UPDATE user
+            UPDATE admin
             SET totp_enabled = true,
                 totp_secret = ?,
                 totp_auth_url = ?
@@ -747,7 +799,7 @@ impl Database for MySqlDatabase {
 
         sqlx::query(
             r#"
-            UPDATE user
+            UPDATE admin
             SET totp_enabled = false,
                 totp_secret = NULL,
                 totp_auth_url = NULL
@@ -765,7 +817,7 @@ impl Database for MySqlDatabase {
         let row = sqlx::query(
             r#"
             SELECT totp_secret
-            FROM user
+            FROM admin
             WHERE id = ? AND (userpass IS NOT NULL OR jwt IS NOT NULL)
             "#,
         )
@@ -783,7 +835,7 @@ impl Database for MySqlDatabase {
         let row = sqlx::query(
             r#"
             SELECT totp_enabled
-            FROM user
+            FROM admin
             WHERE id = ? AND (userpass IS NOT NULL OR jwt IS NOT NULL)
             "#,
         )

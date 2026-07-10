@@ -1,4 +1,4 @@
-//! Integration tests for the User CRUD endpoints (`/users/*`).
+//! Integration tests for the Admin CRUD endpoints (`/admins/*`).
 //!
 //! Each test:
 //! 1. Starts a fresh in-memory test server.
@@ -9,83 +9,46 @@
 use crate::{
     AuthResult, AuthenticationNextStep, Realm, RealmAuthParams,
     client::AuthClientScheme,
-    database::{
-        APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, hash_password_with_argon2,
+    database::APP_REALM_ADMIN_USERNAME,
+    models::ADMIN_REALM,
+    tests::{
+        helpers::{
+            authenticate_as_admin, create_and_authenticate_realm_admin, create_userpass,
+            test_admin, test_realm,
+        },
+        init_test_logging, start_default_test_server,
     },
-    models::{ADMIN_REALM, User, UserPass},
-    tests::{init_test_logging, start_default_test_server},
 };
 use cosmian_logger::info;
 
-fn admin_scheme() -> AuthClientScheme {
-    AuthClientScheme::UsernamePassword {
-        username: APP_REALM_ADMIN_USERNAME.to_string(),
-        password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
-    }
-}
-
-/// Build a minimal `User` suitable for testing.
-fn test_user(id: &str) -> User {
-    User {
-        id: id.to_string(),
-        realms: vec![],
-        userpass: None,
-        jwt: None,
-        fido2: None,
-        digital_credentials: None,
-        client_certificate: None,
-        totp_enabled: None,
-        totp_secret: None,
-        totp_auth_url: None,
-    }
-}
-
+// Alias for backwards-compatibility with local call sites.
 fn create_user(
     realm: &str,
     username: &str,
     password: &str,
     change_password: bool,
-) -> AuthResult<UserPass> {
-    Ok(UserPass {
-        realm: realm.to_string(),
-        username: username.to_string(),
-        password: hash_password_with_argon2(username, password)?,
-        change_password,
-    })
-}
-
-/// Authenticate as `admin` and return the ready-to-use client.
-async fn authenticate_as_admin(
-    ctx: &crate::tests::TestsContext,
-) -> AuthResult<crate::client::AuthClient> {
-    let client = ctx.get_test_client(admin_scheme());
-    let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
-    assert!(
-        matches!(result.next_step, AuthenticationNextStep::Authenticated),
-        "Expected Authenticated next step after login"
-    );
-    assert!(cookie.is_some(), "Expected a session cookie after login");
-    Ok(client)
+) -> AuthResult<crate::models::UserPass> {
+    create_userpass(realm, username, password, change_password)
 }
 
 // ── GET /users ──────────────────────────────────────────────────────────────
 
 /// The list must include the seeded `admin` user that is always present.
 #[actix_web::test]
-async fn test_list_users_contains_admin() -> AuthResult<()> {
+async fn test_list_admins_contains_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
-    let users = client.list_users_as_super_admin().await?;
+    let admins = client.list_admins_as_super_admin().await?;
 
-    assert!(!users.is_empty(), "Expected at least one user");
+    assert!(!admins.is_empty(), "Expected at least one user");
     assert!(
-        users.iter().any(|u| u.id == APP_REALM_ADMIN_USERNAME),
+        admins.iter().any(|u| u.id == APP_REALM_ADMIN_USERNAME),
         "Expected the seeded '{}' user to be present",
         APP_REALM_ADMIN_USERNAME
     );
-    info!("list_users returned {} user(s)", users.len());
+    info!("list_admins returned {} admin(s)", admins.len());
 
     ctx.stop_server().await
 }
@@ -94,19 +57,19 @@ async fn test_list_users_contains_admin() -> AuthResult<()> {
 
 /// Creating a brand-new user must succeed and be reflected in a subsequent GET.
 #[actix_web::test]
-async fn test_create_user() -> AuthResult<()> {
+async fn test_create_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
-    let new_user = test_user("alice");
-    let created = client.create_user_as_super_admin(&new_user).await?;
+    let new_user = test_admin("alice");
+    let created = client.create_admin_as_super_admin(&new_user).await?;
 
     assert_eq!(created.id, "alice", "Created user ID must match");
     info!("create_user returned: {:?}", created.id);
 
     // The user must also be retrievable immediately after creation.
-    let fetched = client.get_user_as_super_admin("alice").await?;
+    let fetched = client.get_admin_as_super_admin("alice").await?;
     assert_eq!(fetched.id, "alice");
 
     ctx.stop_server().await
@@ -121,7 +84,7 @@ async fn test_create_duplicate_user_fails() -> AuthResult<()> {
 
     // The `admin` user is always seeded — trying to create it again must fail.
     let result = client
-        .create_user_as_super_admin(&test_user(APP_REALM_ADMIN_USERNAME))
+        .create_admin_as_super_admin(&test_admin(APP_REALM_ADMIN_USERNAME))
         .await;
 
     assert!(
@@ -140,17 +103,17 @@ async fn test_create_duplicate_user_fails() -> AuthResult<()> {
 
 /// Fetching the seeded `admin` user must succeed.
 #[actix_web::test]
-async fn test_get_user_existing() -> AuthResult<()> {
+async fn test_get_admin_existing() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
-    let user = client
-        .get_user_as_super_admin(APP_REALM_ADMIN_USERNAME)
+    let admin = client
+        .get_admin_as_super_admin(APP_REALM_ADMIN_USERNAME)
         .await?;
 
-    assert_eq!(user.id, APP_REALM_ADMIN_USERNAME);
-    info!("get_user returned: {:?}", user.id);
+    assert_eq!(admin.id, APP_REALM_ADMIN_USERNAME);
+    info!("get_admin returned: {:?}", admin.id);
 
     ctx.stop_server().await
 }
@@ -158,13 +121,13 @@ async fn test_get_user_existing() -> AuthResult<()> {
 /// Fetching a user that does not exist must return an error (HTTP 400 from the
 /// endpoint's `BadRequest` response).
 #[actix_web::test]
-async fn test_get_user_not_found() -> AuthResult<()> {
+async fn test_get_admin_not_found() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
     let result = client
-        .get_user_as_super_admin("user_that_does_not_exist")
+        .get_admin_as_super_admin("user_that_does_not_exist")
         .await;
 
     assert!(result.is_err(), "Expected an error for a non-existent user");
@@ -177,20 +140,20 @@ async fn test_get_user_not_found() -> AuthResult<()> {
 
 /// Updating a user must persist the change and be visible on a subsequent GET.
 #[actix_web::test]
-async fn test_update_user() -> AuthResult<()> {
+async fn test_update_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
     // First create a user to update.
-    let user = test_user("bob");
-    client.create_user_as_super_admin(&user).await?;
+    let admin = test_admin("bob");
+    client.create_admin_as_super_admin(&admin).await?;
 
     // Modify it — assign it to the always-present admin realm.
-    let mut updated = user.clone();
+    let mut updated = admin.clone();
     updated.realms = vec![ADMIN_REALM.to_string()];
 
-    let returned = client.update_user_as_super_admin("bob", &updated).await?;
+    let returned = client.update_admin_as_super_admin("bob", &updated).await?;
     assert_eq!(returned.id, "bob");
     assert!(
         returned.realms.contains(&ADMIN_REALM.to_string()),
@@ -198,7 +161,7 @@ async fn test_update_user() -> AuthResult<()> {
     );
 
     // Verify persistence.
-    let re_fetched = client.get_user_as_super_admin("bob").await?;
+    let re_fetched = client.get_admin_as_super_admin("bob").await?;
     assert!(
         re_fetched.realms.contains(&ADMIN_REALM.to_string()),
         "Persisted realm list must match what was written"
@@ -211,21 +174,21 @@ async fn test_update_user() -> AuthResult<()> {
 /// The path `id` is authoritative: even if the JSON body carries a different
 /// `id`, the server must use the one from the URL.
 #[actix_web::test]
-async fn test_update_user_path_id_is_authoritative() -> AuthResult<()> {
+async fn test_update_admin_path_id_is_authoritative() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
     client
-        .create_user_as_super_admin(&test_user("charlie"))
+        .create_admin_as_super_admin(&test_admin("charlie"))
         .await?;
 
     // Send a body with a different id — the path id must win.
-    let mut body_with_wrong_id = test_user("wrong_id");
+    let mut body_with_wrong_id = test_admin("wrong_id");
     body_with_wrong_id.realms = vec![ADMIN_REALM.to_string()];
 
     let returned = client
-        .update_user_as_super_admin("charlie", &body_with_wrong_id)
+        .update_admin_as_super_admin("charlie", &body_with_wrong_id)
         .await?;
 
     assert_eq!(
@@ -241,20 +204,20 @@ async fn test_update_user_path_id_is_authoritative() -> AuthResult<()> {
 
 /// Deleting a user must remove it: a subsequent GET must return an error.
 #[actix_web::test]
-async fn test_delete_user() -> AuthResult<()> {
+async fn test_delete_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
     // Create then immediately delete.
     client
-        .create_user_as_super_admin(&test_user("dave"))
+        .create_admin_as_super_admin(&test_admin("dave"))
         .await?;
-    client.delete_user_as_super_admin("dave").await?;
-    info!("User 'dave' deleted");
+    client.delete_admin_as_super_admin("dave").await?;
+    info!("Admin 'dave' deleted");
 
     // Must be gone.
-    let result = client.get_user_as_super_admin("dave").await;
+    let result = client.get_admin_as_super_admin("dave").await;
     assert!(result.is_err(), "Expected an error after deleting the user");
     info!("get_user after delete returned expected error");
 
@@ -269,7 +232,7 @@ async fn test_delete_nonexistent_user_is_idempotent() -> AuthResult<()> {
     let client = authenticate_as_admin(&ctx).await?;
 
     client
-        .delete_user_as_super_admin("user_that_never_existed")
+        .delete_admin_as_super_admin("user_that_never_existed")
         .await?;
 
     info!("delete_user for a non-existent user succeeded (no-op, idempotent)");
@@ -282,14 +245,14 @@ async fn test_delete_nonexistent_user_is_idempotent() -> AuthResult<()> {
 /// All `/users/*` endpoints require authentication; an unauthenticated client
 /// must receive HTTP 401.
 #[actix_web::test]
-async fn test_user_endpoints_require_authentication() -> AuthResult<()> {
+async fn test_admin_endpoints_require_authentication() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     // Client with no credentials and no session cookie.
     let unauthenticated = ctx.get_test_client(AuthClientScheme::None);
 
-    let result = unauthenticated.list_users_as_super_admin().await;
+    let result = unauthenticated.list_admins_as_super_admin().await;
     assert!(
         result.is_err(),
         "Expected an error for unauthenticated list_users"
@@ -304,72 +267,18 @@ async fn test_user_endpoints_require_authentication() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-// ── Helpers for realm-admin tests ────────────────────────────────────────────
-
-fn test_realm(id: &str) -> Realm {
-    Realm {
-        id: id.to_string(),
-        auth_params: RealmAuthParams::default(),
-        session_max_age_seconds: 3600,
-        session_max_stale_age_seconds: 3600,
-    }
-}
-
-/// Create a realm, register credentials for a realm-admin user, create the user with
-/// `realm_id` in their `realms` list, and return a client authenticated as that realm admin.
-///
-/// The returned client session is **not** a super admin.
-async fn create_and_authenticate_realm_admin(
-    ctx: &crate::tests::TestsContext,
-    realm_id: &str,
-) -> AuthResult<crate::client::AuthClient> {
-    let super_admin = authenticate_as_admin(ctx).await?;
-
-    super_admin
-        .create_realm_as_super_admin(&test_realm(realm_id))
-        .await?;
-
-    let username = format!("{realm_id}_radmin");
-    let password = "realm_admin_pass";
-    let userpass = create_user(ADMIN_REALM, &username, password, false)?;
-    super_admin
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
-        .await?;
-
-    let mut realm_admin_user = test_user(&format!("{realm_id}_radmin_user"));
-    realm_admin_user.realms = vec![realm_id.to_string()];
-    realm_admin_user.userpass = Some(username.clone());
-    super_admin
-        .create_user_as_super_admin(&realm_admin_user)
-        .await?;
-
-    let scheme = AuthClientScheme::UsernamePassword {
-        username: username.clone(),
-        password: password.to_string(),
-    };
-    let client = ctx.get_test_client(scheme);
-    let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
-    assert!(
-        matches!(result.next_step, AuthenticationNextStep::Authenticated),
-        "Expected Authenticated after realm admin login"
-    );
-    assert!(cookie.is_some(), "Expected session cookie for realm admin");
-    info!("Authenticated as realm admin for '{}'", realm_id);
-    Ok(client)
-}
-
 // ── Super-admin-only enforcement ──────────────────────────────────────────────
 
 /// `get_user` requires super admin; a realm admin must receive HTTP 403.
 #[actix_web::test]
-async fn test_get_user_requires_super_admin() -> AuthResult<()> {
+async fn test_get_admin_requires_super_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_get_guard").await?;
 
     let result = realm_admin
-        .get_user_as_super_admin(APP_REALM_ADMIN_USERNAME)
+        .get_admin_as_super_admin(APP_REALM_ADMIN_USERNAME)
         .await;
 
     assert!(
@@ -388,19 +297,19 @@ async fn test_get_user_requires_super_admin() -> AuthResult<()> {
 
 /// `update_user` requires super admin; a realm admin must receive HTTP 403.
 #[actix_web::test]
-async fn test_update_user_requires_super_admin() -> AuthResult<()> {
+async fn test_update_admin_requires_super_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
     super_admin
-        .create_user_as_super_admin(&test_user("user_to_update"))
+        .create_admin_as_super_admin(&test_admin("user_to_update"))
         .await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_update_user_guard").await?;
 
     let result = realm_admin
-        .update_user_as_super_admin("user_to_update", &test_user("user_to_update"))
+        .update_admin_as_super_admin("user_to_update", &test_admin("user_to_update"))
         .await;
 
     assert!(
@@ -419,19 +328,19 @@ async fn test_update_user_requires_super_admin() -> AuthResult<()> {
 
 /// `delete_user` requires super admin; a realm admin must receive HTTP 403.
 #[actix_web::test]
-async fn test_delete_user_requires_super_admin() -> AuthResult<()> {
+async fn test_delete_admin_requires_super_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
     super_admin
-        .create_user_as_super_admin(&test_user("user_to_delete"))
+        .create_admin_as_super_admin(&test_admin("user_to_delete"))
         .await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_delete_user_guard").await?;
 
     let result = realm_admin
-        .delete_user_as_super_admin("user_to_delete")
+        .delete_admin_as_super_admin("user_to_delete")
         .await;
 
     assert!(
@@ -450,13 +359,13 @@ async fn test_delete_user_requires_super_admin() -> AuthResult<()> {
 
 /// `list_users` requires super admin; a realm admin must receive HTTP 403.
 #[actix_web::test]
-async fn test_list_users_requires_super_admin() -> AuthResult<()> {
+async fn test_list_admins_requires_super_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_list_users_guard").await?;
 
-    let result = realm_admin.list_users_as_super_admin().await;
+    let result = realm_admin.list_admins_as_super_admin().await;
 
     assert!(
         result.is_err(),
@@ -476,18 +385,18 @@ async fn test_list_users_requires_super_admin() -> AuthResult<()> {
 
 /// A realm admin can add a user to their realm.
 #[actix_web::test]
-async fn test_add_user_to_realm_by_realm_admin() -> AuthResult<()> {
+async fn test_add_admin_to_realm_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let user = test_user("membership_target");
-    super_admin.create_user_as_super_admin(&user).await?;
+    let admin = test_admin("membership_target");
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "membership_realm").await?;
 
     let updated = realm_admin
-        .add_user_to_realm_as_admin("membership_target", "membership_realm")
+        .add_admin_to_realm("membership_target", "membership_realm")
         .await?;
 
     assert!(
@@ -501,7 +410,7 @@ async fn test_add_user_to_realm_by_realm_admin() -> AuthResult<()> {
 
 /// A realm admin can remove a user from their realm.
 #[actix_web::test]
-async fn test_remove_user_from_realm_by_realm_admin() -> AuthResult<()> {
+async fn test_remove_admin_from_realm_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -509,17 +418,17 @@ async fn test_remove_user_from_realm_by_realm_admin() -> AuthResult<()> {
 
     // First add, then remove
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let mut user = test_user("removal_target");
-    user.realms = vec!["removal_realm".to_string()];
-    super_admin.create_user_as_super_admin(&user).await?;
+    let mut admin = test_admin("removal_target");
+    admin.realms = vec!["removal_realm".to_string()];
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     let updated = realm_admin
-        .remove_user_from_realm_as_admin("removal_target", "removal_realm")
+        .remove_admin_from_realm("removal_target", "removal_realm")
         .await?;
 
     assert!(
         !updated.realms.contains(&"removal_realm".to_string()),
-        "User must no longer be a member of 'removal_realm'"
+        "Admin must no longer be a member of 'removal_realm'"
     );
     info!("remove_user_from_realm succeeded for realm admin");
 
@@ -530,16 +439,16 @@ async fn test_remove_user_from_realm_by_realm_admin() -> AuthResult<()> {
 
 /// A realm admin can create a user that belongs exclusively to their realm.
 #[actix_web::test]
-async fn test_create_user_by_realm_admin() -> AuthResult<()> {
+async fn test_create_admin_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "create_user_ra_realm").await?;
 
-    let mut new_user = test_user("ra_created_user");
+    let mut new_user = test_admin("ra_created_user");
     new_user.realms = vec!["create_user_ra_realm".to_string()];
 
-    let created = realm_admin.create_user_as_super_admin(&new_user).await?;
+    let created = realm_admin.create_admin_as_super_admin(&new_user).await?;
     assert_eq!(created.id, "ra_created_user");
     assert!(
         created.realms.contains(&"create_user_ra_realm".to_string()),
@@ -552,16 +461,16 @@ async fn test_create_user_by_realm_admin() -> AuthResult<()> {
 
 /// A realm admin cannot create a user with no realm (empty `realms` list).
 #[actix_web::test]
-async fn test_create_user_by_realm_admin_forbidden_no_realm() -> AuthResult<()> {
+async fn test_create_admin_by_realm_admin_forbidden_no_realm() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "create_no_realm_ra").await?;
 
     // User with no realm — the realm admin must not be allowed to create this.
-    let new_user = test_user("ra_no_realm_user");
+    let new_user = test_admin("ra_no_realm_user");
 
-    let result = realm_admin.create_user_as_super_admin(&new_user).await;
+    let result = realm_admin.create_admin_as_super_admin(&new_user).await;
 
     assert!(
         result.is_err(),
@@ -576,17 +485,17 @@ async fn test_create_user_by_realm_admin_forbidden_no_realm() -> AuthResult<()> 
 
 /// A realm admin cannot create a user that belongs to a realm they do not administer.
 #[actix_web::test]
-async fn test_create_user_by_realm_admin_forbidden_other_realm() -> AuthResult<()> {
+async fn test_create_admin_by_realm_admin_forbidden_other_realm() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "create_other_realm_ra").await?;
 
     // User assigned to a realm this admin doesn't control
-    let mut new_user = test_user("ra_other_realm_user");
+    let mut new_user = test_admin("ra_other_realm_user");
     new_user.realms = vec!["some_other_realm".to_string()];
 
-    let result = realm_admin.create_user_as_super_admin(&new_user).await;
+    let result = realm_admin.create_admin_as_super_admin(&new_user).await;
 
     assert!(
         result.is_err(),
@@ -603,17 +512,17 @@ async fn test_create_user_by_realm_admin_forbidden_other_realm() -> AuthResult<(
 
 /// A realm admin can get a user that belongs exclusively to their realm.
 #[actix_web::test]
-async fn test_get_user_by_realm_admin() -> AuthResult<()> {
+async fn test_get_admin_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let mut user = test_user("get_ra_target");
-    user.realms = vec!["get_ra_realm".to_string()];
+    let mut admin = test_admin("get_ra_target");
+    admin.realms = vec!["get_ra_realm".to_string()];
 
     // Create the realm first, then the user
     create_and_authenticate_realm_admin(&ctx, "get_ra_realm").await?;
-    super_admin.create_user_as_super_admin(&user).await?;
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     // A fresh client authenticated as realm admin for "get_ra_realm"
     let realm_admin = {
@@ -631,7 +540,9 @@ async fn test_get_user_by_realm_admin() -> AuthResult<()> {
         client
     };
 
-    let fetched = realm_admin.get_user_as_super_admin("get_ra_target").await?;
+    let fetched = realm_admin
+        .get_admin_as_super_admin("get_ra_target")
+        .await?;
     assert_eq!(fetched.id, "get_ra_target");
     info!("Realm admin successfully retrieved a user exclusively in their realm");
 
@@ -640,7 +551,7 @@ async fn test_get_user_by_realm_admin() -> AuthResult<()> {
 
 /// A realm admin cannot get a user that also belongs to another realm.
 #[actix_web::test]
-async fn test_get_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> {
+async fn test_get_admin_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -654,15 +565,15 @@ async fn test_get_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> 
         .create_realm_as_super_admin(&test_realm("another_realm_x"))
         .await?;
 
-    let mut user = test_user("get_multi_realm_target");
-    user.realms = vec![
+    let mut admin = test_admin("get_multi_realm_target");
+    admin.realms = vec![
         "get_multi_ra_realm".to_string(),
         "another_realm_x".to_string(),
     ];
-    super_admin.create_user_as_super_admin(&user).await?;
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     let result = realm_admin
-        .get_user_as_super_admin("get_multi_realm_target")
+        .get_admin_as_super_admin("get_multi_realm_target")
         .await;
 
     assert!(
@@ -680,7 +591,7 @@ async fn test_get_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> 
 
 /// A realm admin can delete a user that belongs exclusively to their realm.
 #[actix_web::test]
-async fn test_delete_user_by_realm_admin() -> AuthResult<()> {
+async fn test_delete_admin_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -689,9 +600,9 @@ async fn test_delete_user_by_realm_admin() -> AuthResult<()> {
     // Ensure the realm exists first by setting up a realm admin for it
     create_and_authenticate_realm_admin(&ctx, "delete_ra_realm").await?;
 
-    let mut user = test_user("delete_ra_target");
-    user.realms = vec!["delete_ra_realm".to_string()];
-    super_admin.create_user_as_super_admin(&user).await?;
+    let mut admin = test_admin("delete_ra_target");
+    admin.realms = vec!["delete_ra_realm".to_string()];
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     let realm_admin = {
         let scheme = crate::client::AuthClientScheme::UsernamePassword {
@@ -709,16 +620,16 @@ async fn test_delete_user_by_realm_admin() -> AuthResult<()> {
     };
 
     realm_admin
-        .delete_user_as_super_admin("delete_ra_target")
+        .delete_admin_as_super_admin("delete_ra_target")
         .await?;
 
     // Must be gone
     let result = super_admin
-        .get_user_as_super_admin("delete_ra_target")
+        .get_admin_as_super_admin("delete_ra_target")
         .await;
     assert!(
         result.is_err(),
-        "User must be gone after realm admin deleted it"
+        "Admin must be gone after realm admin deleted it"
     );
     info!("Realm admin successfully deleted a user exclusively in their realm");
 
@@ -727,7 +638,7 @@ async fn test_delete_user_by_realm_admin() -> AuthResult<()> {
 
 /// A realm admin cannot delete a user that also belongs to another realm.
 #[actix_web::test]
-async fn test_delete_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> {
+async fn test_delete_admin_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -741,15 +652,15 @@ async fn test_delete_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<(
         .create_realm_as_super_admin(&test_realm("another_realm_y"))
         .await?;
 
-    let mut user = test_user("del_multi_realm_target");
-    user.realms = vec![
+    let mut admin = test_admin("del_multi_realm_target");
+    admin.realms = vec![
         "del_multi_ra_realm".to_string(),
         "another_realm_y".to_string(),
     ];
-    super_admin.create_user_as_super_admin(&user).await?;
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     let result = realm_admin
-        .delete_user_as_super_admin("del_multi_realm_target")
+        .delete_admin_as_super_admin("del_multi_realm_target")
         .await;
 
     assert!(
@@ -765,7 +676,7 @@ async fn test_delete_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<(
 
 /// A realm admin must not be able to add a user to a realm they do not administer.
 #[actix_web::test]
-async fn test_add_user_to_realm_unauthorized() -> AuthResult<()> {
+async fn test_add_admin_to_realm_unauthorized() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -777,12 +688,12 @@ async fn test_add_user_to_realm_unauthorized() -> AuthResult<()> {
     super_admin
         .create_realm_as_super_admin(&test_realm("unauthorized_realm"))
         .await?;
-    let user = test_user("cross_realm_target");
-    super_admin.create_user_as_super_admin(&user).await?;
+    let admin = test_admin("cross_realm_target");
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     // Attempt to add to a realm outside the admin's authority
     let result = realm_admin
-        .add_user_to_realm_as_admin("cross_realm_target", "unauthorized_realm")
+        .add_admin_to_realm("cross_realm_target", "unauthorized_realm")
         .await;
 
     assert!(
@@ -801,24 +712,24 @@ async fn test_add_user_to_realm_unauthorized() -> AuthResult<()> {
 
 /// Adding a user who is already a member of a realm is a no-op (idempotent).
 #[actix_web::test]
-async fn test_add_user_to_realm_idempotent() -> AuthResult<()> {
+async fn test_add_admin_to_realm_idempotent() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "idempotent_realm").await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let user = test_user("idempotent_member");
-    super_admin.create_user_as_super_admin(&user).await?;
+    let admin = test_admin("idempotent_member");
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     // Add once
     realm_admin
-        .add_user_to_realm_as_admin("idempotent_member", "idempotent_realm")
+        .add_admin_to_realm("idempotent_member", "idempotent_realm")
         .await?;
 
     // Add again — must succeed without duplicating the entry
     let updated = realm_admin
-        .add_user_to_realm_as_admin("idempotent_member", "idempotent_realm")
+        .add_admin_to_realm("idempotent_member", "idempotent_realm")
         .await?;
 
     let count = updated
@@ -842,23 +753,23 @@ async fn test_add_user_to_realm_idempotent() -> AuthResult<()> {
 
 /// A realm admin can update a user that belongs exclusively to their realm.
 #[actix_web::test]
-async fn test_update_user_by_realm_admin() -> AuthResult<()> {
+async fn test_update_admin_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "update_ra_realm").await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let mut user = test_user("update_ra_target");
-    user.realms = vec!["update_ra_realm".to_string()];
-    super_admin.create_user_as_super_admin(&user).await?;
+    let mut admin = test_admin("update_ra_target");
+    admin.realms = vec!["update_ra_realm".to_string()];
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     // Realm admin updates the user (realm membership must be preserved in the body)
-    let mut update_body = test_user("update_ra_target");
+    let mut update_body = test_admin("update_ra_target");
     update_body.realms = vec!["update_ra_realm".to_string()];
 
     let updated = realm_admin
-        .update_user_as_super_admin("update_ra_target", &update_body)
+        .update_admin_as_super_admin("update_ra_target", &update_body)
         .await?;
     assert_eq!(updated.id, "update_ra_target");
     info!("Realm admin successfully updated a user exclusively in their realm");
@@ -868,7 +779,7 @@ async fn test_update_user_by_realm_admin() -> AuthResult<()> {
 
 /// A realm admin cannot update a user that also belongs to another realm.
 #[actix_web::test]
-async fn test_update_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> {
+async fn test_update_admin_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -880,15 +791,15 @@ async fn test_update_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<(
         .create_realm_as_super_admin(&test_realm("another_realm_z"))
         .await?;
 
-    let mut user = test_user("update_multi_realm_target");
-    user.realms = vec![
+    let mut admin = test_admin("update_multi_realm_target");
+    admin.realms = vec![
         "update_multi_ra_realm".to_string(),
         "another_realm_z".to_string(),
     ];
-    super_admin.create_user_as_super_admin(&user).await?;
+    super_admin.create_admin_as_super_admin(&admin).await?;
 
     let result = realm_admin
-        .update_user_as_super_admin("update_multi_realm_target", &user)
+        .update_admin_as_super_admin("update_multi_realm_target", &admin)
         .await;
 
     assert!(
@@ -907,7 +818,7 @@ async fn test_update_user_by_realm_admin_forbidden_multi_realm() -> AuthResult<(
 /// A realm admin cannot use `add_user_to_realm` to add a user to the super-admin
 /// realm `_`.  The `can_administer_realm("_")` check must return false → HTTP 403.
 #[actix_web::test]
-async fn test_add_user_to_realm_prevents_super_admin_escalation() -> AuthResult<()> {
+async fn test_add_admin_to_realm_prevents_super_admin_escalation() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -915,13 +826,13 @@ async fn test_add_user_to_realm_prevents_super_admin_escalation() -> AuthResult<
 
     // The victim user currently belongs only to the realm the admin controls.
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let mut victim = test_user("escal_victim");
+    let mut victim = test_admin("escal_victim");
     victim.realms = vec!["escal_realm".to_string()];
-    super_admin.create_user_as_super_admin(&victim).await?;
+    super_admin.create_admin_as_super_admin(&victim).await?;
 
     // Attempt to add the victim to the super-admin realm "_".
     let result = realm_admin
-        .add_user_to_realm_as_admin("escal_victim", ADMIN_REALM)
+        .add_admin_to_realm("escal_victim", ADMIN_REALM)
         .await;
 
     assert!(
@@ -942,17 +853,17 @@ async fn test_add_user_to_realm_prevents_super_admin_escalation() -> AuthResult<
 /// `_` in its `realms` list.  The exclusive-ownership check
 /// (`can_administer_realm("_")` = false) must block it → HTTP 403.
 #[actix_web::test]
-async fn test_create_user_with_super_admin_realm_forbidden() -> AuthResult<()> {
+async fn test_create_admin_with_super_admin_realm_forbidden() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "create_escal_realm").await?;
 
-    let mut new_user = test_user("create_escal_user");
+    let mut new_user = test_admin("create_escal_user");
     // Payload includes both the admin's own realm AND the super-admin realm.
     new_user.realms = vec!["create_escal_realm".to_string(), ADMIN_REALM.to_string()];
 
-    let result = realm_admin.create_user_as_super_admin(&new_user).await;
+    let result = realm_admin.create_admin_as_super_admin(&new_user).await;
 
     assert!(
         result.is_err(),
@@ -969,23 +880,23 @@ async fn test_create_user_with_super_admin_realm_forbidden() -> AuthResult<()> {
 /// super-admin realm `_` to the updated user's `realms` list.
 /// The new check on the **body** realms must block it → HTTP 403.
 #[actix_web::test]
-async fn test_update_user_cannot_escalate_via_body() -> AuthResult<()> {
+async fn test_update_admin_cannot_escalate_via_body() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "body_escal_realm").await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let mut victim = test_user("body_escal_victim");
+    let mut victim = test_admin("body_escal_victim");
     victim.realms = vec!["body_escal_realm".to_string()];
-    super_admin.create_user_as_super_admin(&victim).await?;
+    super_admin.create_admin_as_super_admin(&victim).await?;
 
     // Craft a body that would silently promote the user to super admin.
-    let mut escalated_body = test_user("body_escal_victim");
+    let mut escalated_body = test_admin("body_escal_victim");
     escalated_body.realms = vec!["body_escal_realm".to_string(), ADMIN_REALM.to_string()];
 
     let result = realm_admin
-        .update_user_as_super_admin("body_escal_victim", &escalated_body)
+        .update_admin_as_super_admin("body_escal_victim", &escalated_body)
         .await;
 
     assert!(
@@ -1003,7 +914,7 @@ async fn test_update_user_cannot_escalate_via_body() -> AuthResult<()> {
 /// realm via the `update_user` body.  Only realms the requester administers may
 /// appear in the new `realms` list → HTTP 403.
 #[actix_web::test]
-async fn test_update_user_cannot_add_foreign_realm_via_body() -> AuthResult<()> {
+async fn test_update_admin_cannot_add_foreign_realm_via_body() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -1014,19 +925,19 @@ async fn test_update_user_cannot_add_foreign_realm_via_body() -> AuthResult<()> 
         .create_realm_as_super_admin(&test_realm("foreign_realm_q"))
         .await?;
 
-    let mut victim = test_user("body_foreign_victim");
+    let mut victim = test_admin("body_foreign_victim");
     victim.realms = vec!["body_foreign_realm".to_string()];
-    super_admin.create_user_as_super_admin(&victim).await?;
+    super_admin.create_admin_as_super_admin(&victim).await?;
 
     // Body quietly adds a realm the admin doesn't control.
-    let mut sneaky_body = test_user("body_foreign_victim");
+    let mut sneaky_body = test_admin("body_foreign_victim");
     sneaky_body.realms = vec![
         "body_foreign_realm".to_string(),
         "foreign_realm_q".to_string(),
     ];
 
     let result = realm_admin
-        .update_user_as_super_admin("body_foreign_victim", &sneaky_body)
+        .update_admin_as_super_admin("body_foreign_victim", &sneaky_body)
         .await;
 
     assert!(
@@ -1059,23 +970,23 @@ async fn test_realm_admin_self_removal_revokes_access() -> AuthResult<()> {
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "self_remove_realm").await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let mut target = test_user("self_remove_target");
+    let mut target = test_admin("self_remove_target");
     target.realms = vec!["self_remove_realm".to_string()];
-    super_admin.create_user_as_super_admin(&target).await?;
+    super_admin.create_admin_as_super_admin(&target).await?;
 
     // The realm admin user object is named "{realm_id}_radmin_user" by the helper.
-    let ra_user_id = "self_remove_realm_radmin_user";
+    let ra_admin_id = "self_remove_realm_radmin_user";
 
     // RA removes themselves from "self_remove_realm".
     realm_admin
-        .remove_user_from_realm_as_admin(ra_user_id, "self_remove_realm")
+        .remove_admin_from_realm(ra_admin_id, "self_remove_realm")
         .await?;
     info!("Realm admin removed themselves from 'self_remove_realm'");
 
     // RA now attempts to delete the target user — must fail because RA no longer
     // administers any realm that contains the target.
     let result = realm_admin
-        .delete_user_as_super_admin("self_remove_target")
+        .delete_admin_as_super_admin("self_remove_target")
         .await;
 
     assert!(
@@ -1099,22 +1010,22 @@ async fn test_realm_admin_self_removal_revokes_access() -> AuthResult<()> {
 /// lookup on every request, so deleting the User record immediately invalidates
 /// any outstanding sessions without requiring an explicit session-store wipe.
 #[actix_web::test]
-async fn test_session_invalidated_after_user_deletion() -> AuthResult<()> {
+async fn test_session_invalidated_after_admin_deletion() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
 
     // Create a transient user and give them credentials.
-    let mut transient_user = test_user("deleted_user_session");
+    let mut transient_user = test_admin("deleted_user_session");
     transient_user.realms = vec![ADMIN_REALM.to_string()];
     transient_user.userpass = Some("deleted_user_session".to_string());
     super_admin
-        .create_user_as_super_admin(&transient_user)
+        .create_admin_as_super_admin(&transient_user)
         .await?;
     let userpass = create_user(ADMIN_REALM, "deleted_user_session", "temp_pass", false)?;
     super_admin
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
         .await?;
 
     // Log in as the transient user and verify the session works.
@@ -1131,11 +1042,11 @@ async fn test_session_invalidated_after_user_deletion() -> AuthResult<()> {
     assert!(cookie.is_some());
 
     // The session works before deletion — call a UserAuth-guarded endpoint.
-    transient_client.list_users_as_super_admin().await?;
+    transient_client.list_admins_as_super_admin().await?;
 
     // Delete the user record.
     super_admin
-        .delete_user_as_super_admin("deleted_user_session")
+        .delete_admin_as_super_admin("deleted_user_session")
         .await?;
     info!("Transient user 'deleted_user_session' deleted");
 
@@ -1144,7 +1055,7 @@ async fn test_session_invalidated_after_user_deletion() -> AuthResult<()> {
     // lookup; /users goes through UserAuth which does find_users_by_auth_scheme
     // → returns nothing for the deleted user → 401.)
     let err = transient_client
-        .list_users_as_super_admin()
+        .list_admins_as_super_admin()
         .await
         .expect_err("Expected 401 after user deletion");
     let msg = err.to_string();
@@ -1162,27 +1073,27 @@ async fn test_session_invalidated_after_user_deletion() -> AuthResult<()> {
 /// `delete_userpass_by_username` on the retrieved credential username so no
 /// orphaned entries remain in the `userpass` table.
 #[actix_web::test]
-async fn test_delete_user_cascades_credentials() -> AuthResult<()> {
+async fn test_delete_admin_cascades_credentials() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
 
     // Create user with credentials.
-    let mut cascade_user = test_user("cascade_creds_user");
+    let mut cascade_user = test_admin("cascade_creds_user");
     cascade_user.realms = vec![ADMIN_REALM.to_string()];
     cascade_user.userpass = Some("cascade_creds_user".to_string());
     super_admin
-        .create_user_as_super_admin(&cascade_user)
+        .create_admin_as_super_admin(&cascade_user)
         .await?;
     let userpass = create_user(ADMIN_REALM, "cascade_creds_user", "cascade_pass", false)?;
     super_admin
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
         .await?;
 
     // Verify credentials exist before deletion.
     let before = super_admin
-        .get_user_credentials_in_realm(ADMIN_REALM, "cascade_creds_user")
+        .get_admin_credentials_in_realm(ADMIN_REALM, "cascade_creds_user")
         .await;
     assert!(
         before.is_ok(),
@@ -1191,13 +1102,13 @@ async fn test_delete_user_cascades_credentials() -> AuthResult<()> {
 
     // Delete the user.
     super_admin
-        .delete_user_as_super_admin("cascade_creds_user")
+        .delete_admin_as_super_admin("cascade_creds_user")
         .await?;
-    info!("User 'cascade_creds_user' deleted");
+    info!("Admin 'cascade_creds_user' deleted");
 
     // Credentials must be gone — cascade delete must have cleaned them up.
     let after = super_admin
-        .get_user_credentials_in_realm(ADMIN_REALM, "cascade_creds_user")
+        .get_admin_credentials_in_realm(ADMIN_REALM, "cascade_creds_user")
         .await;
     assert!(
         after.is_err(),
@@ -1218,13 +1129,15 @@ async fn test_session_replay_after_logout() -> AuthResult<()> {
 
     // Create a fresh user so we can independently manage sessions.
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let mut replay_user = test_user("replay_user");
+    let mut replay_user = test_admin("replay_user");
     replay_user.realms = vec![ADMIN_REALM.to_string()];
     replay_user.userpass = Some("replay_user".to_string());
-    super_admin.create_user_as_super_admin(&replay_user).await?;
+    super_admin
+        .create_admin_as_super_admin(&replay_user)
+        .await?;
     let userpass = create_user(ADMIN_REALM, "replay_user", "replay_pass", false)?;
     super_admin
-        .create_user_credentials_in_realm(ADMIN_REALM, &userpass)
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
         .await?;
 
     // Log in as the replay user.
@@ -1264,20 +1177,20 @@ async fn test_session_replay_after_logout() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// Submitting an excessively long user ID (1 000 chars) must be handled
+/// Submitting an excessively long admin ID (1 000 chars) must be handled
 /// gracefully by the server — no panic, no 500, just a 4xx response.
 #[actix_web::test]
-async fn test_oversized_user_id_rejected() -> AuthResult<()> {
+async fn test_oversized_admin_id_rejected() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
 
     let long_id = "x".repeat(1000);
-    let result = client.get_user_as_super_admin(&long_id).await;
+    let result = client.get_admin_as_super_admin(&long_id).await;
 
     assert!(
         result.is_err(),
-        "Expected an error for an excessively long user ID"
+        "Expected an error for an excessively long admin ID"
     );
     // Must not be a 500 — the server must not panic.
     let msg = result.unwrap_err().to_string();
@@ -1285,7 +1198,7 @@ async fn test_oversized_user_id_rejected() -> AuthResult<()> {
         !msg.contains("500"),
         "Server must handle oversized IDs without a 500 error, got: {msg}"
     );
-    info!("Oversized user ID handled gracefully (no 500): {msg}");
+    info!("Oversized admin ID handled gracefully (no 500): {msg}");
 
     ctx.stop_server().await
 }
@@ -1300,7 +1213,7 @@ async fn test_realm_id_with_special_characters() -> AuthResult<()> {
     let client = authenticate_as_admin(&ctx).await?;
 
     // `%2F` is URL-encoded `/` — a classic path-traversal attempt.
-    // The raw HTTP path `/admin/realm/..%2F_` should not expose `_` via traversal.
+    // The raw HTTP path `/admins/realms/..%2F_` should not expose `_` via traversal.
     let result = client.get_realm_as_super_admin("..%2F_").await;
 
     assert!(
@@ -1322,7 +1235,7 @@ async fn test_realm_id_with_special_characters() -> AuthResult<()> {
 /// The `get_userpass` endpoint must never return the stored password hash.
 /// The `password` field on the returned [`UserPass`] must be empty.
 #[actix_web::test]
-async fn test_get_userpass_returns_empty_password() -> AuthResult<()> {
+async fn test_get_adminpass_returns_empty_password() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
@@ -1343,12 +1256,12 @@ async fn test_get_userpass_returns_empty_password() -> AuthResult<()> {
 
     let userpass = create_user(realm_id, username, password, false)?;
     client
-        .create_user_credentials_in_realm(realm_id, &userpass)
+        .create_admin_credentials_in_realm(realm_id, &userpass)
         .await?;
 
     info!("Retrieving credentials via get_userpass...");
     let retrieved = client
-        .get_user_credentials_in_realm(realm_id, username)
+        .get_admin_credentials_in_realm(realm_id, username)
         .await?;
 
     assert_eq!(retrieved.username, username, "username must round-trip");

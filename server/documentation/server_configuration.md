@@ -3,16 +3,16 @@
 The authentication server is configured entirely through a TOML file. Start the server with:
 
 ```bash
-# Default: reads ./auth_server.toml from the current working directory
-auth_server
+# Default: reads ./auth_verifier.toml from the current working directory
+auth_verifier
 
 # Explicit path
-auth_server /path/to/auth_server.toml
+auth_verifier /path/to/auth_verifier.toml
 ```
 
 All file paths in the configuration are resolved relative to the **current working directory** at startup, unless they are absolute paths.
 
-A fully commented sample configuration is provided in `auth_server.toml` at the root of the `authentication_server` crate directory.
+A fully commented sample configuration is provided in `auth_verifier.toml` at the root of the `authentication_server` crate directory.
 
 ---
 
@@ -30,6 +30,7 @@ A fully commented sample configuration is provided in `auth_server.toml` at the 
   - [Session Store](#session-store)
   - [Stale Session Collector](#stale-session-collector)
   - [Forward Proxy](#forward-proxy)
+  - [API Documentation (Swagger UI)](#api-documentation-swagger-ui)
   - [Bootstrap Environment Variables](#bootstrap-environment-variables)
   - [Complete Example — Production (PostgreSQL + Redis)](#complete-example--production-postgresql--redis)
   - [Complete Example — Development (SQLite in-memory)](#complete-example--development-sqlite-in-memory)
@@ -145,7 +146,7 @@ openssl ec -in jwt.key.pem -pubout -out jwt.pub.pem
 
 The `[database_params]` section configures the store for users, realms, and credentials.
 
-When omitted, the server creates an **SQLite file** named `auth_server.db` in the working directory.
+When omitted, the server creates an **SQLite file** named `auth_verifier.db` in the working directory.
 
 ```toml
 [database_params]
@@ -181,7 +182,7 @@ auto_init_schema = true
 | Key | Type | Required | Default |
 |-----|------|----------|---------|
 | `backend` | `"sqlite"` \| `"postgresql"` \| `"mysql"` | No | `"sqlite"` |
-| `connection_url` | `String` | No | `"sqlite://auth_server.db"` |
+| `connection_url` | `String` | No | `"sqlite://auth_verifier.db"` |
 | `max_connections` | `u32` | No | `10` |
 | `min_connections` | `u32` | No | `0` |
 | `connect_timeout_secs` | `u64` | No | `30` |
@@ -273,6 +274,29 @@ exclusion_list = ["localhost", "127.0.0.1", "10.0.0.0/8", "192.168.0.0/16"]
 
 ---
 
+## API Documentation (Swagger UI)
+
+Two unauthenticated public routes expose the API schema. Both are served under `/public` and require no credentials.
+
+| Route | Description |
+|-------|-------------|
+| `GET /public/swagger-ui` | Interactive Swagger UI (assets loaded from unpkg CDN) |
+| `GET /public/openapi.yaml` | Raw OpenAPI 3.1 schema (YAML, embedded in the binary) |
+
+```bash
+# Open in browser
+https://<host_name>:<host_port>/public/swagger-ui
+
+# Download the schema
+curl -k https://<host_name>:<host_port>/public/openapi.yaml
+```
+
+The YAML schema is embedded at compile time from `server/documentation/openapi.yaml`. Any change to that file takes effect after the next build.
+
+> **Note:** The Swagger UI page loads JavaScript and CSS from `unpkg.com`. In air-gapped environments the page will load but the UI assets will be missing. Serve the raw YAML instead and use a local Swagger UI deployment or [editor.swagger.io](https://editor.swagger.io).
+
+---
+
 ## Bootstrap Environment Variables
 
 These environment variables are read **once on first startup** to create the initial super admin. They are ignored if the admin already exists.
@@ -285,7 +309,7 @@ These environment variables are read **once on first startup** to create the ini
 ```bash
 export APP_REALM_ADMIN_USERNAME="admin"
 export APP_REALM_ADMIN_INITIAL_PASSWORD="$(openssl rand -base64 32)"
-./auth_server auth_server.toml
+./auth_verifier auth_verifier.toml
 ```
 
 > **Security:** Unset these variables after the first run. Never store them in the TOML file itself.
@@ -295,7 +319,7 @@ export APP_REALM_ADMIN_INITIAL_PASSWORD="$(openssl rand -base64 32)"
 ## Complete Example — Production (PostgreSQL + Redis)
 
 ```toml
-# auth_server.toml — production example
+# auth_verifier.toml — production example
 
 host_name = "0.0.0.0"
 host_port = 8443
@@ -338,7 +362,7 @@ exclusion_list = ["localhost", "127.0.0.1", "10.0.0.0/8"]
 ## Complete Example — Development (SQLite in-memory)
 
 ```toml
-# auth_server.toml — development example
+# auth_verifier.toml — development example
 
 host_name = "127.0.0.1"
 host_port = 8443
@@ -359,7 +383,7 @@ connection_url = "sqlite::memory:"
 
 ## Realm Authentication Parameters
 
-Realm configuration is managed at runtime via the API, not through the TOML file. These parameters are stored in the database and modified through `POST /admin/realm` and `PUT /admin/realm/{id}`.
+Realm configuration is managed at runtime via the API, not through the TOML file. These parameters are stored in the database and modified through `POST /admins/realms` and `PUT /admins/realms/{realm_id}`.
 
 For each realm you can configure:
 

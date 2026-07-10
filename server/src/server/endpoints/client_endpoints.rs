@@ -1,6 +1,6 @@
 use crate::models::ClientClaims;
 use crate::models::LoginRequest;
-use crate::session::{self, issue_token, session_id_from_cookie_value};
+use crate::session::{self, JwksData, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
 use actix_web::HttpMessage;
@@ -63,6 +63,7 @@ pub async fn login(
 
                 let totps = crate::totp::Totps::from_secret(
                     &secret,
+                    // TODO : Shouldn't issuer be the realm ?
                     None,
                     authenticated_client.username.clone(),
                     totp_params,
@@ -76,13 +77,28 @@ pub async fn login(
     }
     // --- end TOTP check ---
 
+    // Fetch roles from userpass record (if authenticated via username/password).
+    // For non-userpass auth schemes (JWT, mTLS), roles=[] (fail-closed).
+    let roles = if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword {
+        match database
+            .get_userpass(&realm.id, &authenticated_client.username)
+            .await?
+        {
+            Some(up) => up.roles,
+            None => Vec::new(),
+        }
+    } else {
+        Vec::new()
+    };
+
     let token = issue_token(
         &authenticated_client.username,
         authenticated_client.auth_scheme,
         &realm.id,
+        // TODO : Only useful for VELO ?
         login_request.public_key_pem.clone(),
-        jwt_token_config.algorithm,
-        jwt_token_config.encoding_key.clone(),
+        roles,
+        &jwt_token_config,
         realm.session_max_age_seconds,
     )?;
 
@@ -129,4 +145,79 @@ pub async fn version_endpoint(_req: HttpRequest) -> Result<HttpResponse, AuthErr
         version: version.to_string(),
     };
     Ok(HttpResponse::Ok().json(version))
+}
+
+/// Returns the list of available RBAC roles configured on this server.
+pub async fn roles_endpoint(
+    server_params: Data<Arc<crate::server::parameters::ServerParams>>,
+) -> Result<HttpResponse, AuthError> {
+    Ok(HttpResponse::Ok().json(&server_params.roles))
+}
+
+/// Returns the JWKS (JSON Web Key Set) document containing the server's EC signing
+/// public key. Served at `/.well-known/jwks.json` per OIDC / RFC 8414.
+pub async fn jwks_well_known(jwks: Data<Arc<JwksData>>) -> Result<HttpResponse, AuthError> {
+    Ok(HttpResponse::Ok()
+        .insert_header(("Cache-Control", "public, max-age=3600"))
+        .json(&jwks.0))
+}
+
+/// Serve the raw OpenAPI 3.1 schema (YAML), embedded at compile time.
+#[cfg(feature = "swagger-ui")]
+pub async fn openapi_yaml_endpoint(_req: HttpRequest) -> Result<HttpResponse, AuthError> {
+    const SCHEMA: &str = include_str!("../../../documentation/openapi.yaml");
+    Ok(HttpResponse::Ok()
+        .content_type("application/yaml")
+        .body(SCHEMA))
+}
+
+/// Serve a Swagger UI HTML page that loads the schema from `/public/openapi.yaml`.
+///
+/// Assets are pinned to swagger-ui-dist 5.18.2 with Subresource Integrity (SRI) hashes.
+/// A strict Content-Security-Policy header restricts script/style sources to the CDN.
+#[cfg(feature = "swagger-ui")]
+pub async fn swagger_ui_endpoint(_req: HttpRequest) -> Result<HttpResponse, AuthError> {
+    let version = env!("CARGO_PKG_VERSION");
+    let html = format!(
+        "<!DOCTYPE html>\n\
+         <html lang=\"en\">\n\
+         <head>\n\
+           <meta charset=\"UTF-8\" />\n\
+           <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\
+           <title>Cosmian Auth Server {version} \u{2014} API</title>\n\
+           <link rel=\"stylesheet\" \
+                 href=\"https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css\" \
+                 integrity=\"sha384-rcbEi6xgdPk0iWkAQzT2F3FeBJXdG+ydrawGlfHAFIZG7wU6aKbQaRewysYpmrlW\" \
+                 crossorigin=\"anonymous\" />\n\
+         </head>\n\
+         <body>\n\
+           <div id=\"swagger-ui\"></div>\n\
+           <script src=\"https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui-bundle.js\" \
+                   integrity=\"sha384-NXtFPpN61oWCuN4D42K6Zd5Rt2+uxeIT36R7kpXBuY9tLnZorzrJ4ykpqwJfgjpZ\" \
+                   crossorigin=\"anonymous\"></script>\n\
+           <script>\n\
+             SwaggerUIBundle({{\n\
+               url: \"/public/openapi.yaml\",\n\
+               dom_id: \"#swagger-ui\",\n\
+               presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],\n\
+               layout: \"BaseLayout\",\n\
+               deepLinking: true,\n\
+               displayRequestDuration: true,\n\
+               filter: true,\n\
+             }});\n\
+           </script>\n\
+         </body>\n\
+         </html>"
+    );
+    Ok(HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .insert_header((
+            "Content-Security-Policy",
+            "default-src 'none'; \
+             script-src https://unpkg.com 'unsafe-inline'; \
+             style-src https://unpkg.com 'unsafe-inline'; \
+             img-src data: https://unpkg.com; \
+             connect-src 'self'",
+        ))
+        .body(html))
 }
