@@ -120,14 +120,16 @@ assert_eq "HTTP 401" "401" "$HTTP_CODE"
 
 # ── POST /login — unknown realm → 404 ─────────────────────────────────────
 
-echo "Test: POST /login?realm=nonexistent → 404"
+echo "Test: POST /login?realm=nonexistent → 401"
 HTTP_CODE=$(ca_curl -o /dev/null -w '%{http_code}' \
   -X POST \
   -H "Authorization: Basic ${ADMIN_BASIC}" \
   -H "Content-Type: application/json" \
   -d '{}' \
   "$BASE_URL/login?realm=nonexistent")
-assert_eq "HTTP 404" "404" "$HTTP_CODE"
+# The server returns 401 (not 404) for unknown realms — realm existence is not
+# disclosed to unauthenticated callers.
+assert_eq "HTTP 401" "401" "$HTTP_CODE"
 
 # ── POST /login — valid admin credentials → 200 + session cookie ──────────
 
@@ -163,7 +165,7 @@ HTTP_CODE=$(ca_curl -o /tmp/auth_whoami.json -w '%{http_code}' \
   "$BASE_URL/whoami?realm=_")
 assert_eq "HTTP 200" "200" "$HTTP_CODE"
 WHOAMI_BODY=$(cat /tmp/auth_whoami.json)
-assert_contains "username in whoami" '"username"' "$WHOAMI_BODY"
+assert_contains "sub (username) in whoami" '"sub"' "$WHOAMI_BODY"
 
 # ── GET /whoami — without cookie → 401 ────────────────────────────────────
 

@@ -20,7 +20,7 @@ let
   # Resolves the configuration file at runtime:
   #   1. AUTH_SERVER_CONF env var (explicit path)
   #   2. /etc/auth_server/auth_server.toml  (volume-mounted config)
-  #   3. Auto-generate a self-signed TLS certificate + minimal TOML in /tmp
+  #   3. Fall back to the pre-generated dev certificate baked into the image
   #
   # To use a custom configuration:
   #   docker run -e AUTH_SERVER_CONF=/my/config.toml \
@@ -46,45 +46,12 @@ fi
 
 if [ ! -f "$CONF_PATH" ]; then
   echo "No configuration file found at '$CONF_PATH'."
-  echo "Generating self-signed TLS certificate and a minimal configuration."
-
-  GEN_DIR="/tmp/auth_server"
-  mkdir -p "$GEN_DIR/certs"
-
-  # Generate an EC P-256 private key
-  openssl ecparam -name prime256v1 -genkey -noout \
-    -out "$GEN_DIR/certs/server.key.pem"
-
-  # Self-signed certificate valid for 10 years, with SAN for localhost
-  openssl req -new -x509 \
-    -key "$GEN_DIR/certs/server.key.pem" \
-    -out "$GEN_DIR/certs/server.cert.pem" \
-    -days 3650 \
-    -subj "/CN=cosmian-auth-server" \
-    -addext "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:localhost"
-
-  # CA chain = self-signed cert (single-tier PKI)
-  cp "$GEN_DIR/certs/server.cert.pem" "$GEN_DIR/certs/ca.pem"
-
-  TOML_FILE="$GEN_DIR/auth_server.toml"
-  printf 'host_name = "0.0.0.0"\n'   > "$TOML_FILE"
-  printf 'host_port = 9005\n'        >> "$TOML_FILE"
-  printf 'roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]\n' >> "$TOML_FILE"
-  printf '\n[tls_params]\n'          >> "$TOML_FILE"
-  printf 'server_private_key = "%s"\n' "$GEN_DIR/certs/server.key.pem" >> "$TOML_FILE"
-  printf 'server_certificate = "%s"\n' "$GEN_DIR/certs/server.cert.pem" >> "$TOML_FILE"
-  printf 'server_ca_chain    = "%s"\n' "$GEN_DIR/certs/ca.pem"          >> "$TOML_FILE"
-  printf '\n[database_params]\n'     >> "$TOML_FILE"
-  printf 'backend        = "sqlite"\n'           >> "$TOML_FILE"
-  printf 'connection_url = "sqlite::memory:"\n'  >> "$TOML_FILE"
-
-  CONF_PATH="$TOML_FILE"
-  echo "Generated configuration : $CONF_PATH"
-  echo "Self-signed certificate : $GEN_DIR/certs/server.cert.pem"
-  echo ""
-  echo "To use a custom configuration:"
-  echo "  Mount your TOML at /etc/auth_server/auth_server.toml, or"
-  echo "  set AUTH_SERVER_CONF to the path of your configuration file."
+  echo "Using built-in development configuration (self-signed TLS, in-memory SQLite)."
+  echo "WARNING: The TLS private key is embedded in the image — NOT for production use."
+  echo "         To use a custom configuration:"
+  echo "           Mount your TOML at /etc/auth_server/auth_server.toml, or"
+  echo "           set AUTH_SERVER_CONF to the path of your configuration file."
+  CONF_PATH="/etc/auth_server/dev/auth_server.toml"
 fi
 
 echo "Starting auth_server with configuration: $CONF_PATH"
@@ -93,6 +60,46 @@ EOF
     chmod +x $out/bin/docker-entrypoint.sh
   '';
 
+  # Pre-generate a self-signed dev certificate at Nix build time.
+  # openssl runs here (in the Nix sandbox), never inside the running container.
+  # The private key is embedded in the image and is NOT secret — it is used only
+  # as a zero-configuration fallback for development and testing.
+  devCerts = pkgs.runCommand "auth-server-dev-certs"
+    { nativeBuildInputs = [ pkgs.openssl ]; }
+    ''
+      mkdir -p $out/etc/auth_server/dev/certs
+      openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+        -out $out/etc/auth_server/dev/certs/server.key.pem
+      openssl req -new -x509 \
+        -key $out/etc/auth_server/dev/certs/server.key.pem \
+        -out $out/etc/auth_server/dev/certs/server.cert.pem \
+        -days 3650 \
+        -subj "/CN=cosmian-auth-server" \
+        -addext "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:localhost"
+      cp $out/etc/auth_server/dev/certs/server.cert.pem \
+         $out/etc/auth_server/dev/certs/ca.pem
+    '';
+
+  devConfig = pkgs.writeTextFile {
+    name = "auth-server-dev-config";
+    text = ''
+      # Development-only — TLS key embedded in image, NOT for production.
+      host_name = "0.0.0.0"
+      host_port = 9005
+      roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+
+      [tls_params]
+      server_private_key = "/etc/auth_server/dev/certs/server.key.pem"
+      server_certificate = "/etc/auth_server/dev/certs/server.cert.pem"
+      server_ca_chain    = "/etc/auth_server/dev/certs/ca.pem"
+
+      [database_params]
+      backend        = "sqlite"
+      connection_url = "sqlite::memory:"
+    '';
+    destination = "/etc/auth_server/dev/auth_server.toml";
+  };
+
   runtimeEnv = pkgs.buildEnv {
     name = "auth-server-runtime-env";
     paths = [
@@ -100,7 +107,6 @@ EOF
       pkgs.tzdata
       pkgs.coreutils
       pkgs.bash
-      pkgs.openssl # required for self-signed cert generation at startup
     ];
   };
 
@@ -156,6 +162,8 @@ pkgs.dockerTools.buildImage {
       pkgs.dockerTools.caCertificates
       startupScript
       authDirectories
+      devCerts
+      devConfig
     ];
     pathsToLink = [
       "/bin"
@@ -186,4 +194,40 @@ pkgs.dockerTools.buildImage {
   };
 
   created = "now";
+
+  # Fix /tmp permissions and wire up standard ELF interpreter / library paths.
+  #
+  # auth_server has its ELF interpreter patched to the system path
+  # (/lib64/ld-linux-x86-64.so.2 on x86_64, /lib/ld-linux-aarch64.so.1 on
+  # aarch64) and its RPATH removed so it runs on bare-metal Linux.  In a
+  # Nix-built Docker image glibc lives in the Nix store (already in the
+  # image closure as a transitive dep of bash/coreutils), not at standard
+  # system paths.  Create /lib and /lib64 with symlinks into the Nix store
+  # so the dynamic linker can find libc.so.6, libm.so.6, libgcc_s.so.1 etc.
+  extraCommands =
+    let
+      isX86_64 = pkgs.stdenv.hostPlatform.isx86_64;
+      glibcLib = "${pkgs.glibc.out}/lib";
+      gccRtLib = "${pkgs.stdenv.cc.cc.lib}/lib";
+      interpFile =
+        if isX86_64 then "ld-linux-x86-64.so.2" else "ld-linux-aarch64.so.1";
+      interpDir = if isX86_64 then "lib64" else "lib";
+    in
+    ''
+      chmod 1777 tmp
+      mkdir -p lib lib64
+
+      # Interpreter symlink (the binary's PT_INTERP entry)
+      ln -sf ${glibcLib}/${interpFile} ${interpDir}/${interpFile}
+
+      # Shared libraries: glibc (libc.so.6, libm.so.6, libdl.so.2, …)
+      for f in ${glibcLib}/*.so ${glibcLib}/*.so.*; do
+        [ -e "$f" ] && ln -sf "$f" "lib/$(basename "$f")" || true
+      done
+
+      # Shared libraries: gcc runtime (libgcc_s.so.1)
+      for f in ${gccRtLib}/libgcc_s.so*; do
+        [ -e "$f" ] && ln -sf "$f" "lib/$(basename "$f")" || true
+      done
+    '';
 }
