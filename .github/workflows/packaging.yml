@@ -133,7 +133,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             cpu-arch: amd64
           - runner: macos-15
-            cpu-arch: arm64
+            cpu-arch: amd64
 
     steps:
       - name: Download artifacts
@@ -149,23 +149,34 @@ jobs:
         run: |
           set -ex
           if [[ "${GITHUB_REF}" =~ 'refs/tags/' ]]; then
-            VERSION="${GITHUB_REF_NAME}"
+            BRANCH="${GITHUB_REF_NAME}"
           else
-            VERSION="last_build/${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
+            BRANCH="last_build/${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}"
           fi
-          DESTINATION_DIR="/mnt/package/authentication/${VERSION}"
+          DESTINATION_DIR="/mnt/package/authentication/${BRANCH}"
+          RESULT_DIR="result-${{ matrix.package-type }}-${{ matrix.link }}"
+
+          # cargo-packager outputs aarch64 for Apple Silicon;
+          # rpm uses x86_64/aarch64; deb uses the matrix cpu-arch
+          if [[ "${{ matrix.runner }}" == macos* ]]; then
+            PACKAGE_PATTERN="aarch64"
+          elif [[ "${{ matrix.package-type }}" == "rpm" ]]; then
+            if [[ "${{ matrix.runner }}" == "ubuntu-24.04-arm" ]]; then
+              PACKAGE_PATTERN="aarch64"
+            else
+              PACKAGE_PATTERN="x86_64"
+            fi
+          else
+            PACKAGE_PATTERN="${{ matrix.cpu-arch }}"
+          fi
+
+          PKG_EXT=".${{ matrix.package-type }}"
+          remote_dir="${DESTINATION_DIR}/${{ matrix.package-type }}/${{ matrix.cpu-arch }}/${{ matrix.link }}"
           ssh -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
-            cosmian@package.cosmian.com mkdir -p "$DESTINATION_DIR"
-          for ext in deb rpm dmg; do
-            for f in $(find . -name "*.${ext}" 2>/dev/null); do
-              scp -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
-                "$f" "cosmian@package.cosmian.com:${DESTINATION_DIR}/"
-              [ -f "${f}.sha256" ] && scp -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
-                "${f}.sha256" "cosmian@package.cosmian.com:${DESTINATION_DIR}/" || true
-              [ -f "${f}.asc" ]    && scp -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
-                "${f}.asc"    "cosmian@package.cosmian.com:${DESTINATION_DIR}/" || true
-            done
-          done
+            cosmian@package.cosmian.com mkdir -p "$remote_dir"
+          scp -o 'StrictHostKeyChecking no' -i /root/.ssh/id_rsa \
+            $RESULT_DIR/*${PACKAGE_PATTERN}*${PKG_EXT}* \
+            cosmian@package.cosmian.com:"${remote_dir}/"
 
       - name: Publish GitHub Release assets
         if: startsWith(github.ref, 'refs/tags/') && matrix.link == 'static'

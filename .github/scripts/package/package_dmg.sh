@@ -31,28 +31,28 @@ VERSION_STR=$(bash "$REPO_ROOT/.github/scripts/release/get_version.sh")
 
 # Build or reuse server binary via Nix
 if [ "$LINK" = "dynamic" ]; then
-  ATTR="auth-server-dynamic-openssl"
+  ATTR="auth-verifier-dynamic-openssl"
 else
-  ATTR="auth-server-static-openssl"
+  ATTR="auth-verifier-static-openssl"
 fi
 OUT_LINK="$REPO_ROOT/result-server-${LINK}"
 nix-build -I "nixpkgs=${PIN_URL}" -A "$ATTR" -o "$OUT_LINK"
 REAL_OUT=$(readlink -f "$OUT_LINK" || echo "$OUT_LINK")
-BIN_OUT="$REAL_OUT/bin/auth_server"
+BIN_OUT="$REAL_OUT/bin/auth_verifier"
 
 # Stage binary
 HOST_TRIPLE=$(rustc -vV 2>/dev/null | awk '/host:/ {print $2}' || echo "")
 mkdir -p "server/target/release" "target/release"
-[ -n "$HOST_TRIPLE" ] && mkdir -p "server/target/$HOST_TRIPLE/release" && cp -f "$BIN_OUT" "server/target/$HOST_TRIPLE/release/auth_server"
-cp -f "$BIN_OUT" "server/target/release/auth_server"
-cp -f "$BIN_OUT" "target/release/auth_server"
+[ -n "$HOST_TRIPLE" ] && mkdir -p "server/target/$HOST_TRIPLE/release" && cp -f "$BIN_OUT" "server/target/$HOST_TRIPLE/release/auth_verifier"
+cp -f "$BIN_OUT" "server/target/release/auth_verifier"
+cp -f "$BIN_OUT" "target/release/auth_verifier"
 
 export HOME="${TMPDIR:-/tmp}"
 export CARGO_HOME="$HOME/cargo-home"
 mkdir -p "$CARGO_HOME"
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-echo "Building DMG for auth_server v${VERSION_STR} (link=${LINK})…"
+echo "Building DMG for auth_verifier v${VERSION_STR} (link=${LINK})…"
 
 # Use cargo-packager if available
 if command -v cargo-packager >/dev/null 2>&1; then

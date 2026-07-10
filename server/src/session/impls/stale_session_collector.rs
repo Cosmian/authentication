@@ -12,7 +12,7 @@
 //! ```rust,no_run
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! use auth_server::{DatabaseParams, StaleSessionCollectorConfig, create_session_store_with_collector, start_stale_session_collector};
+//! use auth_verifier::{DatabaseParams, StaleSessionCollectorConfig, create_session_store_with_collector, start_stale_session_collector};
 //!
 //! // Create a session store (the factory also starts the collector automatically)
 //! let params = DatabaseParams::in_memory();
@@ -61,7 +61,7 @@ impl Default for StaleSessionCollectorConfig {
 /// ```rust,no_run
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use auth_server::{DatabaseParams, StaleSessionCollectorConfig, create_session_store_with_collector, start_stale_session_collector};
+/// use auth_verifier::{DatabaseParams, StaleSessionCollectorConfig, create_session_store_with_collector, start_stale_session_collector};
 ///
 /// let (session_store, _) =
 ///     create_session_store_with_collector(&DatabaseParams::in_memory(), StaleSessionCollectorConfig::default()).await?;

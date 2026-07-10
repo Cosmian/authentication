@@ -1,4 +1,4 @@
-# auth_server
+# auth_verifier
 
 The Auth authentication server. Handles client authentication across multiple schemes (username/password, JWT/OIDC, mTLS client certificates, TOTP), maintains server-side sessions, and exposes APIs for session validation and realm/user administration.
 
@@ -10,13 +10,13 @@ For architecture and usage documentation, see [documentation/](documentation/ind
 
 ```bash
 # Build the library (used by other crates in the workspace)
-cargo build -p auth_server
+cargo build -p auth_verifier
 
 # Build the server binary
-cargo build --release --bin auth_server
+cargo build --release --bin auth_verifier
 
 # Build with rustls instead of openssl (default)
-cargo build --release --bin auth_server --no-default-features --features rustls
+cargo build --release --bin auth_verifier --no-default-features --features rustls
 ```
 
 ### Feature flags
@@ -33,14 +33,14 @@ cargo build --release --bin auth_server --no-default-features --features rustls
 ## Running
 
 ```bash
-# Reads ./auth_server.toml from the current working directory
-./target/release/auth_server
+# Reads ./auth_verifier.toml from the current working directory
+./target/release/auth_verifier
 
 # Explicit config path
-./target/release/auth_server /path/to/auth_server.toml
+./target/release/auth_verifier /path/to/auth_verifier.toml
 ```
 
-A sample fully-commented configuration file is provided at `auth_server.toml`. See [documentation/server_configuration.md](documentation/server_configuration.md) for the full reference.
+A sample fully-commented configuration file is provided at `auth_verifier.toml`. See [documentation/server_configuration.md](documentation/server_configuration.md) for the full reference.
 
 ---
 
@@ -48,16 +48,16 @@ A sample fully-commented configuration file is provided at `auth_server.toml`. S
 
 ```bash
 # Run all unit and integration tests
-cargo test -p auth_server
+cargo test -p auth_verifier
 
 # Run a specific test module
-cargo test -p auth_server -- tests::jwt_tests
+cargo test -p auth_verifier -- tests::jwt_tests
 
 # Run with output (useful for debugging)
-cargo test -p auth_server -- --nocapture
+cargo test -p auth_verifier -- --nocapture
 
 # Run a single test
-cargo test -p auth_server -- tests::user_api::test_get_userpass_returns_empty_password --exact
+cargo test -p auth_verifier -- tests::user_api::test_get_userpass_returns_empty_password --exact
 ```
 
 The test suite uses an in-memory SQLite database and embedded test TLS certificates (located in `src/tests/certificates/`). No external services are required.

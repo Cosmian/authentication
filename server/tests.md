@@ -4,7 +4,7 @@
      copilot-instructions.md. It predates the "Reworked REST API" commit (df357f2) and the
      User->Admin rename (548c9c0): several endpoint paths quoted below still used
      `/admin/realm*`, `/admin/userpass`, and `/admins/admin` from before those changes. Paths
-     have been corrected here to match the current routes in server/src/server/auth_server.rs,
+     have been corrected here to match the current routes in server/src/server/auth_verifier.rs,
      but this file should be re-verified against the actual test suite (grep test names in
      server/src/tests/) before being relied on, since test names/behaviors may also have drifted. -->
 
@@ -192,7 +192,7 @@ in functional terms, then identifies scenarios and attack vectors that are not y
 | `test_update_user_cannot_escalate_via_body` | A realm admin cannot use the `update_admin` body to inject `"_"` into a user's `realms` list. The **body-realms check** (added to the endpoint) rejects this → HTTP 403. |
 | `test_update_user_cannot_add_foreign_realm_via_body` | A realm admin cannot silently extend a user's realm membership to a foreign realm via the update body. HTTP 403. |
 
-#### Security Properties
+#### Session Invalidation Properties
 
 | Test | What it verifies |
 |------|------------------|

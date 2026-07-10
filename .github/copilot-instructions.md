@@ -5,7 +5,7 @@
 Rust workspace with two crates:
 
 - `client/` (`auth_client`) — HTTP client, shared models, DTOs, error types, and params. This is the contract surface used by both the server and external API servers.
-- `server/` (`auth_server`) — Actix-web HTTPS server: middleware pipeline, endpoints, database layer, session store, TOTP, and TLS configuration.
+- `server/` (`auth_verifier`) — Actix-web HTTPS server: middleware pipeline, endpoints, database layer, session store, TOTP, and TLS configuration.
 
 Project documentation lives in `server/documentation/`. Start with `server/documentation/index.md`.
 
@@ -16,7 +16,7 @@ The server has two independent storage abstractions:
 - **Database** (`server/src/database/trait.rs`) — long-lived auth data: realms, users, userpass credentials, TOTP state. Implementations: SQLite, PostgreSQL, MySQL.
 - **SessionStore** (`server/src/session/session_store.rs`) — live sessions with lookup, revocation, and expiry. Implementations: SQLite, PostgreSQL, MySQL, Redis.
 
-The HTTP layer is organized as Actix scopes with layered middleware, assembled in `server/src/server/auth_server.rs`:
+The HTTP layer is organized as Actix scopes with layered middleware, assembled in `server/src/server/auth_verifier.rs`:
 
 | Scope | Purpose | Key middleware |
 |-------|---------|----------------|

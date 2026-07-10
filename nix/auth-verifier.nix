@@ -18,9 +18,9 @@ let
   # Name tag for output symlinks
   linkTag = if static then "static" else "dynamic";
 
-  # Expected deterministic sha256 of the final installed binary (auth_server)
+  # Expected deterministic sha256 of the final installed binary (auth_verifier)
   # Naming convention (matches repository files):
-  #   auth-server.<static|dynamic>.<arch>.<os>.sha256
+  #   auth-verifier.<static|dynamic>.<arch>.<os>.sha256
   expectedHashDir = ./expected-hashes;
 
   # Helper: read & trim a hash file, returning null when absent or placeholder.
@@ -40,10 +40,10 @@ let
       null;
 
   # Pre-read expected hashes for every arch+os combination this derivation supports.
-  expectedHash_x86_64_linux = readHashFile "auth-server.${linkTag}.x86_64.linux.sha256";
-  expectedHash_aarch64_linux = readHashFile "auth-server.${linkTag}.aarch64.linux.sha256";
-  expectedHash_x86_64_darwin = readHashFile "auth-server.${linkTag}.x86_64.darwin.sha256";
-  expectedHash_arm64_darwin = readHashFile "auth-server.${linkTag}.arm64.darwin.sha256";
+  expectedHash_x86_64_linux = readHashFile "auth-verifier.${linkTag}.x86_64.linux.sha256";
+  expectedHash_aarch64_linux = readHashFile "auth-verifier.${linkTag}.aarch64.linux.sha256";
+  expectedHash_x86_64_darwin = readHashFile "auth-verifier.${linkTag}.x86_64.darwin.sha256";
+  expectedHash_arm64_darwin = readHashFile "auth-verifier.${linkTag}.arm64.darwin.sha256";
 
   srcRoot = ../.;
 
@@ -102,7 +102,7 @@ let
 
 in
 rustPlatform.buildRustPackage {
-  pname = "auth_server";
+  pname = "auth_verifier";
   inherit version;
 
   src = filteredSrc;
@@ -121,7 +121,7 @@ rustPlatform.buildRustPackage {
   buildFeatures = [ ];
 
   # Build only the server binary
-  cargoBuildFlags = [ "-p" "auth_server" "--bin" "auth_server" ];
+  cargoBuildFlags = [ "-p" "auth_verifier" "--bin" "auth_verifier" ];
 
   doCheck = false;
   # Disable cargo-auditable: the pinned nixpkgs version doesn't support edition 2024
@@ -153,8 +153,8 @@ rustPlatform.buildRustPackage {
       '';
     in
     ''
-      echo "== cargo build auth_server (release) =="
-      ${ccExports}cargo build --release -p auth_server --bin auth_server
+      echo "== cargo build auth_verifier (release) =="
+      ${ccExports}cargo build --release -p auth_verifier --bin auth_verifier
     '';
 
   # Custom install phase: copy the binary and immediately patch its ELF
@@ -163,7 +163,7 @@ rustPlatform.buildRustPackage {
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/bin"
-    install -m755 target/release/auth_server "$out/bin/auth_server"
+    install -m755 target/release/auth_verifier "$out/bin/auth_verifier"
 
     if [ "$(uname)" = "Linux" ]; then
       ARCH="$(uname -m)"
@@ -173,9 +173,9 @@ rustPlatform.buildRustPackage {
         DL="/lib/ld-linux-aarch64.so.1"
       fi
       if [ -n "$DL" ]; then
-        patchelf --set-interpreter "$DL" "$out/bin/auth_server" \
+        patchelf --set-interpreter "$DL" "$out/bin/auth_verifier" \
           || echo "Warning: patchelf failed (binary may be statically linked)"
-        patchelf --remove-rpath "$out/bin/auth_server" 2>/dev/null || true
+        patchelf --remove-rpath "$out/bin/auth_verifier" 2>/dev/null || true
       fi
     fi
     runHook postInstall
@@ -183,7 +183,7 @@ rustPlatform.buildRustPackage {
 
   # postInstall: verify binary and run hash checks.
   postInstall = ''
-    BIN="$out/bin/auth_server"
+    BIN="$out/bin/auth_verifier"
     [ -f "$BIN" ] || { echo "ERROR: Binary not found at $BIN"; exit 1; }
     echo "Binary exists at: $BIN"
 
@@ -205,7 +205,7 @@ rustPlatform.buildRustPackage {
 
       # Compute and save binary hash
       ACTUAL=$(sha256sum "$BIN" | awk '{print $1}')
-      echo "$ACTUAL" > "$out/bin/auth_server.sha256"
+      echo "$ACTUAL" > "$out/bin/auth_verifier.sha256"
       echo "Binary sha256: $ACTUAL"
 
       ARCH_LINUX="$(uname -m)"
@@ -214,7 +214,7 @@ rustPlatform.buildRustPackage {
         aarch64|arm64) ARCH_TAG="aarch64" ;;
         *) ARCH_TAG="$ARCH_LINUX" ;;
       esac
-      HASH_FILENAME="auth-server.${linkTag}.$ARCH_TAG.linux.sha256"
+      HASH_FILENAME="auth-verifier.${linkTag}.$ARCH_TAG.linux.sha256"
 
       EXPECTED=""
       case "$ARCH_LINUX" in
@@ -239,7 +239,7 @@ rustPlatform.buildRustPackage {
       fi
     elif [ "$(uname)" = "Darwin" ]; then
       ACTUAL=$(shasum -a 256 "$BIN" | awk '{print $1}')
-      echo "$ACTUAL" > "$out/bin/auth_server.sha256"
+      echo "$ACTUAL" > "$out/bin/auth_verifier.sha256"
       echo "Binary sha256: $ACTUAL"
 
       ARCH_DARWIN="$(uname -m)"
@@ -248,7 +248,7 @@ rustPlatform.buildRustPackage {
         arm64)  ARCH_TAG="arm64" ;;
         *) ARCH_TAG="$ARCH_DARWIN" ;;
       esac
-      HASH_FILENAME="auth-server.${linkTag}.$ARCH_TAG.darwin.sha256"
+      HASH_FILENAME="auth-verifier.${linkTag}.$ARCH_TAG.darwin.sha256"
 
       EXPECTED=""
       case "$ARCH_DARWIN" in

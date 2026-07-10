@@ -30,7 +30,7 @@ use std::{sync::Arc, time::Duration};
 /// ```rust,no_run
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use auth_server::{DatabaseParams, StaleSessionCollectorConfig, create_session_store_with_collector};
+/// use auth_verifier::{DatabaseParams, StaleSessionCollectorConfig, create_session_store_with_collector};
 ///
 /// // Create a PostgreSQL session store with automatic cleanup
 /// let params = DatabaseParams::postgres("postgresql://localhost/mydb");

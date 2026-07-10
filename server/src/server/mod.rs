@@ -1,6 +1,6 @@
-mod auth_server;
+mod auth_verifier;
 mod dev_seed;
-pub use auth_server::start_auth_server;
+pub use auth_verifier::start_auth_verifier;
 
 pub mod endpoints;
 

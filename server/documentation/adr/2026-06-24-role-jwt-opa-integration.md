@@ -166,7 +166,7 @@ server:
 GET /public/roles → 200 ["SuperAdmin","DomainAdmin","CryptoOfficer","Auditor","User"]
 ```
 
-The roles list is declared in the server configuration (`auth_server.toml`):
+The roles list is declared in the server configuration (`auth_verifier.toml`):
 
 ```toml
 roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]

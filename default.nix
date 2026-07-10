@@ -165,15 +165,15 @@ let
     doCheck = false;
   };
 
-  # Build auth-server for static linkage
-  auth-server-static = pkgs.callPackage ./nix/auth-server.nix {
+  # Build auth-verifier for static linkage
+  auth-verifier-static = pkgs.callPackage ./nix/auth-verifier.nix {
     inherit pkgs pkgs234 rustPlatform;
     version = authVersion;
     static = true;
   };
 
-  # Build auth-server for dynamic linkage
-  auth-server-dynamic = pkgs.callPackage ./nix/auth-server.nix {
+  # Build auth-verifier for dynamic linkage
+  auth-verifier-dynamic = pkgs.callPackage ./nix/auth-verifier.nix {
     inherit pkgs pkgs234 rustPlatform;
     version = authVersion;
     static = false;
@@ -182,7 +182,7 @@ let
   # Docker image derivation (Linux only)
   docker-image = pkgs.callPackage ./nix/docker.nix {
     inherit pkgs;
-    authServer = auth-server-static;
+    authServer = auth-verifier-static;
     version = authVersion;
   };
 
@@ -190,14 +190,14 @@ in
 {
   # Build attributes accessible via -A
   inherit
-    auth-server-static
-    auth-server-dynamic
+    auth-verifier-static
+    auth-verifier-dynamic
     docker-image
     cargoGenerateRpmTool
     rustToolchain
     ;
 
   # Convenience aliases used by packaging scripts
-  "auth-server-static-openssl" = auth-server-static;
-  "auth-server-dynamic-openssl" = auth-server-dynamic;
+  "auth-verifier-static-openssl" = auth-verifier-static;
+  "auth-verifier-dynamic-openssl" = auth-verifier-dynamic;
 }

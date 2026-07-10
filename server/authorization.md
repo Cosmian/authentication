@@ -6,7 +6,7 @@
      commit (df357f2) and the User->Admin rename (548c9c0): several paths below still used
      `/admin/realm*`, `/admins/admin/{id}`, `/admin/userpass`, and `POST /login/{realm}` from
      before those changes. Paths have been corrected here to match the current routes in
-     server/src/server/auth_server.rs, but prefer documentation/authorization_and_administration.md
+     server/src/server/auth_verifier.rs, but prefer documentation/authorization_and_administration.md
      as the source of truth and consider deleting this file to avoid future drift. -->
 
 This document describes the two-tier authorization model for the authentication server.
@@ -199,7 +199,7 @@ To configure a `Admin` record as a realm admin (e.g., for `my_realm`):
 
    The `userpass` field is the **username** (acting as a foreign key into the `userpass` table). It is **not** the password itself.
 
-3. **Authenticate** via `POST /login?realm=_` with `username=alice` and `password=<plain>`.  
+3. **Authenticate** via `POST /login?realm=_` with `username=alice` and `password=<plain>`.
    The resulting `_ea_` session cookie authorises any requests scoped to `my_realm`.
 
 ---

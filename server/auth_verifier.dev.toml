@@ -8,7 +8,7 @@
 #
 # Start the server from the workspace root:
 #
-#   cargo run -p auth_server -- server/auth_server.dev.toml
+#   cargo run -p auth_verifier -- server/auth_verifier.dev.toml
 #
 # On first start the DB is initialised automatically with:
 #   - Admin realm ("_") with username/password authentication enabled
@@ -25,7 +25,7 @@ host_port = 8443
 # ---------------------------------------------------------------------------
 # Admin UI — serves the pre-built admin UI at /admin-ui.
 # Path is relative to the workspace root when running with:
-#   cargo run -p auth_server -- server/auth_server.dev.toml
+#   cargo run -p auth_verifier -- server/auth_verifier.dev.toml
 # Build the UI first: cd admin-ui && pnpm build
 # ---------------------------------------------------------------------------
 admin_ui_path = "admin-ui/dist"
@@ -52,7 +52,7 @@ server_ca_chain    = "server/src/tests/certificates/ec/auth.ca.pem"
 
 # ---------------------------------------------------------------------------
 # Database — in-memory SQLite.  Data is lost when the server stops.
-# Change to sqlite://auth_server_dev.db for a persistent local DB.
+# Change to sqlite://auth_verifier_dev.db for a persistent local DB.
 # ---------------------------------------------------------------------------
 [database_params]
 backend        = "sqlite"

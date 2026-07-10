@@ -84,7 +84,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/cosmian/auth-server
+          images: ghcr.io/cosmian/auth-verifier
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -110,7 +110,7 @@ jobs:
         id: image_info
         run: |
           set -euo pipefail
-          IMAGE_INFO=$(docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | grep "cosmian-auth-server" | head -n1)
+          IMAGE_INFO=$(docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" | grep "cosmian-auth-verifier" | head -n1)
           IMAGE_NAME=$(echo "$IMAGE_INFO" | awk '{print $1}')
           IMAGE_ID=$(echo "$IMAGE_INFO" | awk '{print $2}')
           echo "Original image: $IMAGE_NAME (ID: $IMAGE_ID)"
@@ -180,7 +180,7 @@ jobs:
       packages: write
       id-token: write # Required for cosign keyless signing
     env:
-      REGISTRY_IMAGE: ghcr.io/cosmian/auth-server
+      REGISTRY_IMAGE: ghcr.io/cosmian/auth-verifier
 
     steps:
       - name: Login to GHCR

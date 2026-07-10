@@ -132,7 +132,7 @@ Administrator clients authenticate against the special `_` realm. The API endpoi
 | Document | Description |
 |----------|-------------|
 | [Getting Started](getting_started.md) | Installation, first-run bootstrap, creating your first realm and user, verifying the setup. |
-| [Server Configuration](server_configuration.md) | Complete reference for the `auth_server.toml` configuration file: TLS, database backends, session store, proxy, stale-session cleanup, and JWT signing keys. |
+| [Server Configuration](server_configuration.md) | Complete reference for the `auth_verifier.toml` configuration file: TLS, database backends, session store, proxy, stale-session cleanup, and JWT signing keys. |
 | [Authentication Flows](authentication_flows.md) | Detailed sequence diagrams for every authentication method: username/password, JWT bearer, mTLS client certificates, and TOTP. Includes session lifecycle, endpoint reference, and a request-authentication decision flowchart. |
 | [API Reference](api_reference.md) | Full HTTP endpoint reference: every route, request/response body schemas, status codes, and authentication requirements. |
 | [Client Library](client_library.md) | How to use the `auth_client` crate in an API server: session validation, realm management, admin and credential management, TOTP management. |

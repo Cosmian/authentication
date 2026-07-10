@@ -263,7 +263,7 @@ docker_command() {
 
       if [ "$DOCKER_TEST" = true ]; then
         echo "Running Docker image tests..."
-        DOCKER_IMAGE_NAME="cosmian-auth-server:${VERSION}"
+        DOCKER_IMAGE_NAME="cosmian-auth-verifier:${VERSION}"
         export DOCKER_IMAGE_NAME
         bash "$REPO_ROOT/.github/scripts/test/test_docker_image.sh"
       fi
@@ -422,8 +422,8 @@ update_hashes_command() {
   if [ -f "$SCRIPT" ]; then
     bash "$SCRIPT" "$@"
   else
-    echo "Building auth-server (static) to capture hashes..."
-    ATTR="auth-server-static"
+    echo "Building auth-verifier (static) to capture hashes..."
+    ATTR="auth-verifier-static"
     OUT_LINK="$REPO_ROOT/result-server-static"
     nix-build -I "nixpkgs=${PIN_URL}" "$REPO_ROOT/default.nix" -A "$ATTR" -o "$OUT_LINK"
     REAL_OUT=$(readlink -f "$OUT_LINK")
@@ -431,7 +431,7 @@ update_hashes_command() {
     # Copy generated hash file from derivation output
     HASHES_DIR="$REPO_ROOT/nix/expected-hashes"
     mkdir -p "$HASHES_DIR"
-    find "$REAL_OUT/bin" -name 'auth-server.*.sha256' 2>/dev/null | while IFS= read -r src; do
+    find "$REAL_OUT/bin" -name 'auth-verifier.*.sha256' 2>/dev/null | while IFS= read -r src; do
       fname=$(basename "$src")
       cp -f "$src" "$HASHES_DIR/$fname"
       echo "Updated: nix/expected-hashes/$fname"

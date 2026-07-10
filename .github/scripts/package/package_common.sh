@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Common packaging logic for Cosmian Authentication Server
-# Builds auth_server via Nix and packages it with cargo-deb / cargo-generate-rpm.
+# Builds auth_verifier via Nix and packages it with cargo-deb / cargo-generate-rpm.
 set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -65,19 +65,19 @@ prewarm_cargo_registry() {
 build_or_reuse_server() {
   local attr
   if [ "$LINK" = "dynamic" ]; then
-    attr="auth-server-dynamic-openssl"
+    attr="auth-verifier-dynamic-openssl"
   else
-    attr="auth-server-static-openssl"
+    attr="auth-verifier-static-openssl"
   fi
 
   OUT_LINK="$REPO_ROOT/result-server-${LINK}"
 
   nix-build -I "nixpkgs=${PIN_URL}" "$REPO_ROOT/default.nix" -A "$attr" -o "$OUT_LINK"
   REAL_SERVER=$(readlink -f "$OUT_LINK" || echo "$OUT_LINK")
-  BIN_OUT="$REAL_SERVER/bin/auth_server"
+  BIN_OUT="$REAL_SERVER/bin/auth_verifier"
 
   if [ ! -f "$BIN_OUT" ]; then
-    echo "ERROR: auth_server binary not found at $BIN_OUT" >&2
+    echo "ERROR: auth_verifier binary not found at $BIN_OUT" >&2
     exit 1
   fi
   echo "Server binary: $BIN_OUT"
@@ -91,11 +91,11 @@ stage_binary() {
   mkdir -p "server/target/release" "target/release"
   if [ -n "$host_triple" ]; then
     mkdir -p "server/target/${host_triple}/release" "target/${host_triple}/release"
-    cp -f "$BIN_OUT" "server/target/${host_triple}/release/auth_server"
-    cp -f "$BIN_OUT" "target/${host_triple}/release/auth_server"
+    cp -f "$BIN_OUT" "server/target/${host_triple}/release/auth_verifier"
+    cp -f "$BIN_OUT" "target/${host_triple}/release/auth_verifier"
   fi
-  cp -f "$BIN_OUT" "server/target/release/auth_server"
-  cp -f "$BIN_OUT" "target/release/auth_server"
+  cp -f "$BIN_OUT" "server/target/release/auth_verifier"
+  cp -f "$BIN_OUT" "target/release/auth_verifier"
 }
 
 # ── GPG signing ────────────────────────────────────────────────────────────
@@ -141,14 +141,14 @@ build_deb() {
   OUT_DIR="$REPO_ROOT/result-deb-${LINK}"
   mkdir -p "$OUT_DIR"
 
-  echo "Building DEB for auth_server v${VERSION_STR} (link=$LINK)…"
+  echo "Building DEB for auth_verifier v${VERSION_STR} (link=$LINK)…"
   pushd "$REPO_ROOT/server" >/dev/null
 
   # shellcheck disable=SC2086
   $CARGO_DEB \
     --no-build \
     --target "$(rustc -vV 2>/dev/null | awk '/host:/ {print $2}')" \
-    -p auth_server \
+    -p auth_verifier \
     --output "$OUT_DIR/"
 
   popd >/dev/null
@@ -178,7 +178,7 @@ build_rpm() {
   OUT_DIR="$REPO_ROOT/result-rpm-${LINK}"
   mkdir -p "$OUT_DIR"
 
-  echo "Building RPM for auth_server v${VERSION_STR} (link=$LINK)…"
+  echo "Building RPM for auth_verifier v${VERSION_STR} (link=$LINK)…"
   pushd "$REPO_ROOT" >/dev/null
 
   # Use cargo-generate-rpm from Nix derivation

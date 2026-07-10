@@ -2,7 +2,7 @@
 
 `authentication` is a Rust workspace that provides:
 
-- `auth_server`: a multi-realm authentication server supporting username/password, JWT/OIDC, mTLS, and TOTP
+- `auth_verifier`: a multi-realm authentication server supporting username/password, JWT/OIDC, mTLS, and TOTP
 - `auth_client`: a client library and shared types used to integrate with the server
 
 ## Documentation
@@ -28,7 +28,7 @@ From the workspace root:
 cargo build --workspace
 
 # Build one crate
-cargo build -p auth_server
+cargo build -p auth_verifier
 cargo build -p auth_client
 ```
 
@@ -41,6 +41,6 @@ From the workspace root:
 cargo test --workspace
 
 # Run tests for a single crate
-cargo test -p auth_server
+cargo test -p auth_verifier
 cargo test -p auth_client
 ```
