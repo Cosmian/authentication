@@ -1,0 +1,3 @@
+[default.extend-words]
+# `typ` is the standard JWT header claim (RFC 7519 §4.1.9) — not a typo.
+typ = "typ"
