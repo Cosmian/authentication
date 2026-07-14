@@ -1,6 +1,6 @@
-import { render, screen, act } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { describe, expect, it, vi } from "vitest";
 import { MainLayout } from "../../../src/components/layout/MainLayout";
 
 vi.mock("../../../src/contexts/ThemeProvider", () => ({
@@ -53,7 +53,7 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
     }),
 }));
 
-vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify("0.1.0"), { status: 200 }));
+vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify("0.2.0"), { status: 200 }));
 
 describe("MainLayout", () => {
     it("should render header, sidebar, and footer", async () => {

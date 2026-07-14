@@ -1,8 +1,8 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import DashboardPage from "../../../src/pages/DashboardPage";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRealm } from "../../../src/contexts/RealmContext";
+import DashboardPage from "../../../src/pages/DashboardPage";
 
 vi.mock("../../../src/contexts/RealmContext", () => ({
     useRealm: vi.fn(),
@@ -54,7 +54,7 @@ const defaultRealmContext = {
 describe("DashboardPage", () => {
     beforeEach(() => {
         vi.mocked(useRealm).mockReturnValue(defaultRealmContext);
-        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ version: "mock-0.1.0" }), { status: 200 }));
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ version: "mock-0.2.0" }), { status: 200 }));
     });
 
     it("should render the dashboard heading in established mode", () => {
