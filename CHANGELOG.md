@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-07-14
+
+### Bug Fixes
+
+- `server/src/database/impls/{postgres,mysql}.rs`: fix a column-name mismatch in
+  `get_admin` and `list_admins` where the row was read with
+  `try_get("client_certificate")` while the `SELECT` projects the `certificate`
+  column, causing a runtime "column not found" error that blocked admin lookups
+  and session validation on PostgreSQL and MySQL backends (SQLite was unaffected).
+
 ## [0.1.0] - 2026-07-10
 
 ### 🚀 Features
