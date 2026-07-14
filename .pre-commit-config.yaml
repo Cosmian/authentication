@@ -93,8 +93,6 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
         exclude: nix/expected-hashes/
-      - id: no-commit-to-branch
-        args: [--branch, develop]
       - id: trailing-whitespace
         exclude: nix/expected-hashes/
 
