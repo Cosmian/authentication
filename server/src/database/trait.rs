@@ -3,6 +3,72 @@ use crate::models::{ADMIN_REALM, Admin, AuthScheme, Realm, UserPass};
 use crate::{RealmAuthParams, UsernamePasswordParams};
 use async_trait::async_trait;
 
+// ── App auth DB types ─────────────────────────────────────────────────────────
+
+/// An app token record as stored in the database.
+#[derive(Debug, Clone)]
+pub struct AppToken {
+    /// SHA-256 hash of the raw `hvs.<base64>` token string.
+    pub token_hash: Vec<u8>,
+    /// Logical entity name (e.g. AppRole role name, K8s SA name).
+    pub entity: String,
+    /// Policy names attached to this token.
+    pub policies: Vec<String>,
+    /// Unix timestamp (seconds) when the token expires.
+    pub expiry: i64,
+    pub renewable: bool,
+    /// Remaining lifetime in seconds at creation time.
+    pub lease_duration_secs: i64,
+    /// Unix timestamp of creation.
+    pub created_at: i64,
+}
+
+/// An AppRole role configuration record.
+#[derive(Debug, Clone)]
+pub struct AppRole {
+    pub name: String,
+    /// Stable UUID string identifying the role (used by SPIRE as a stable identifier).
+    pub role_id: String,
+    /// TTL for secret IDs in seconds (0 = no expiry).
+    pub secret_id_ttl_secs: i64,
+    /// TTL for tokens issued by this role.
+    pub token_ttl_secs: i64,
+    pub bind_secret_id: bool,
+    /// Policy names attached to tokens issued by this role.
+    pub token_policies: Vec<String>,
+}
+
+/// A single-use (or limited-use) secret ID for an AppRole.
+#[derive(Debug, Clone)]
+pub struct AppSecretId {
+    /// Stable accessor UUID (returned to the admin; used for destroy).
+    pub accessor: String,
+    /// SHA-256 hash of the raw secret-ID string.
+    pub secret_id_hash: Vec<u8>,
+    pub role_name: String,
+    /// Unix timestamp expiry (0 = no expiry).
+    pub expiry: i64,
+    /// Remaining uses (-1 = unlimited).
+    pub num_uses_remaining: i64,
+}
+
+/// A Kubernetes auth role configuration.
+#[derive(Debug, Clone)]
+pub struct K8sRole {
+    pub name: String,
+    /// URL of the Kubernetes JWKS endpoint.
+    pub jwks_url: String,
+    /// JSON-encoded list of allowed service-account names.
+    pub bound_sa_names: String,
+    /// JSON-encoded list of allowed namespaces.
+    pub bound_sa_namespaces: String,
+    pub token_ttl_secs: i64,
+    /// Expected `iss` claim; `None` disables issuer validation.
+    pub expected_issuer: Option<String>,
+    /// JSON-encoded list of expected `aud` values; `"[]"` disables audience validation.
+    pub bound_audiences: String,
+}
+
 pub const APP_REALM_ADMIN_USERNAME: &str = "admin";
 pub const APP_REALM_ADMIN_INITIAL_PASSWORD: &str = "change_me";
 
@@ -180,4 +246,68 @@ pub trait Database: Send + Sync {
 
     /// Check if 2FA is enabled for a user
     async fn is_totp_enabled(&self, realm: &str, username: &str) -> AuthDbResult<Option<bool>>;
+
+    // ── App token operations ────────────────────────────────────────────────
+
+    /// Insert a new app token into the store.
+    async fn issue_app_token(&self, token: &AppToken) -> AuthDbResult<()>;
+
+    /// Look up an app token by its SHA-256 hash.
+    ///
+    /// Returns `None` if the token does not exist or has expired.
+    async fn lookup_app_token(&self, token_hash: &[u8]) -> AuthDbResult<Option<AppToken>>;
+
+    /// Extend a renewable token's expiry by `lease_duration_secs` seconds.
+    async fn renew_app_token(&self, token_hash: &[u8]) -> AuthDbResult<()>;
+
+    /// Delete a token from the store (revoke).
+    async fn revoke_app_token(&self, token_hash: &[u8]) -> AuthDbResult<()>;
+
+    // ── AppRole operations ──────────────────────────────────────────────────
+
+    /// Create or replace an AppRole role configuration.
+    async fn create_approle(&self, role: &AppRole) -> AuthDbResult<()>;
+
+    /// Look up an AppRole role configuration by `role_id` (the stable UUID).
+    async fn get_approle_by_role_id(&self, role_id: &str) -> AuthDbResult<Option<AppRole>>;
+
+    /// Look up an AppRole role configuration by `name`.
+    async fn get_approle_by_name(&self, name: &str) -> AuthDbResult<Option<AppRole>>;
+
+    /// Delete an AppRole role and all its secret IDs.
+    async fn delete_approle(&self, name: &str) -> AuthDbResult<()>;
+
+    /// List all AppRole role names.
+    async fn list_approle_names(&self) -> AuthDbResult<Vec<String>>;
+
+    /// Insert a new secret ID for a role.
+    async fn create_secret_id(&self, secret_id: &AppSecretId) -> AuthDbResult<()>;
+
+    /// Validate and consume a secret ID.
+    ///
+    /// Finds the secret ID by hash, checks it belongs to `role_name`, has not
+    /// expired, and has remaining uses.  Decrements `num_uses_remaining` (or
+    /// deletes if it was the last use).  Returns the accessor on success.
+    async fn consume_secret_id(
+        &self,
+        role_name: &str,
+        secret_id_hash: &[u8],
+    ) -> AuthDbResult<Option<String>>;
+
+    /// Destroy a secret ID by accessor UUID.
+    async fn destroy_secret_id(&self, role_name: &str, accessor: &str) -> AuthDbResult<()>;
+
+    // ── Kubernetes role operations ──────────────────────────────────────────
+
+    /// Create or replace a Kubernetes auth role.
+    async fn create_k8s_role(&self, role: &K8sRole) -> AuthDbResult<()>;
+
+    /// Look up a Kubernetes auth role by name.
+    async fn get_k8s_role(&self, name: &str) -> AuthDbResult<Option<K8sRole>>;
+
+    /// Delete a Kubernetes auth role by name.
+    async fn delete_k8s_role(&self, name: &str) -> AuthDbResult<()>;
+
+    /// List all Kubernetes auth role names.
+    async fn list_k8s_role_names(&self) -> AuthDbResult<Vec<String>>;
 }

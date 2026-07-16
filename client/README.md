@@ -2,7 +2,7 @@
 
 HTTP client and shared types for the [Auth Authentication Server](../authentication_server).
 
-For full documentation including API server integration guides and type references, see [authentication_server/documentation/client_library.md](../authentication_server/documentation/client_library.md).
+For full documentation including API server integration guides and type references, see [authentication_server/documentation/client_library.md](../server/documentation/docs/client_library.md).
 
 ---
 

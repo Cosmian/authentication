@@ -1,16 +1,59 @@
 use crate::{
-    AdminAuth, AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm, InjectAdminRealm,
-    UsernamePasswordAuth,
+    AdminAuth, AppTokenExtract, AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm,
+    InjectAdminRealm, UsernamePasswordAuth,
     middleware::{EnsureAuth, JwksManager, JwtAuth},
     server::{
         endpoints::{
-            add_admin_to_realm, create_admin, create_realm, create_userpass, delete_admin,
-            delete_expired_sessions, delete_realm, delete_sessions, delete_sessions_for_realm,
-            delete_userpass, get_admin, get_realm, get_session, get_session_by_id,
-            get_sessions_for_clients, get_userpass, jwks_well_known, list_admins,
-            list_all_userpass, list_realms, list_userpass_by_realm, login, remove_admin_from_realm,
-            roles_endpoint, totp_disable, totp_generate, totp_verify, update_admin, update_realm,
-            update_userpass, upsert_session, version_endpoint, whoami,
+            add_admin_to_realm,
+            // App auth endpoints
+            approle_create_role,
+            approle_delete_role,
+            approle_destroy_secret_id,
+            approle_generate_secret_id,
+            approle_get_role,
+            approle_get_role_id,
+            approle_list_roles,
+            approle_login,
+            auth_token_lookup_self,
+            auth_token_renew_self,
+            auth_token_revoke_self,
+            create_admin,
+            create_realm,
+            create_userpass,
+            delete_admin,
+            delete_expired_sessions,
+            delete_realm,
+            delete_sessions,
+            delete_sessions_for_realm,
+            delete_userpass,
+            get_admin,
+            get_realm,
+            get_session,
+            get_session_by_id,
+            get_sessions_for_clients,
+            get_userpass,
+            jwks_well_known,
+            k8s_create_role,
+            k8s_delete_role,
+            k8s_get_role,
+            k8s_list_roles,
+            k8s_login,
+            list_admins,
+            list_all_userpass,
+            list_realms,
+            list_userpass_by_realm,
+            login,
+            remove_admin_from_realm,
+            roles_endpoint,
+            totp_disable,
+            totp_generate,
+            totp_verify,
+            update_admin,
+            update_realm,
+            update_userpass,
+            upsert_session,
+            version_endpoint,
+            whoami,
         },
         parameters::{DatabaseBackend, DatabaseParams, ServerParams},
     },
@@ -18,17 +61,33 @@ use crate::{
 };
 use actix_cors::Cors;
 use actix_web::{
-    App, Error, HttpServer,
+    App, Error, HttpResponse, HttpServer,
     body::MessageBody,
     dev::{ServerHandle, ServiceFactory, ServiceRequest, ServiceResponse},
     web::{self, Data, JsonConfig, PayloadConfig},
 };
-use cosmian_logger::{debug, info, trace};
+use cosmian_logger::{debug, info, trace, warn};
 use jsonwebtoken::Algorithm;
 use std::{
     io,
     sync::{Arc, mpsc},
 };
+
+/// Fallback handler for any route not matched by a registered scope.
+///
+/// Returns a structured `404` with the standard `{"errors": [...]}` envelope
+/// (instead of Actix's bare empty-body 404), so an unsupported auth method
+/// (e.g. `cert_auth`, which has no route) fails closed with a diagnosable error.
+async fn unsupported_route(req: actix_web::HttpRequest) -> HttpResponse {
+    warn!(
+        "auth-verifier: no route for {} {} (unsupported or misconfigured auth method?)",
+        req.method(),
+        req.path()
+    );
+    HttpResponse::NotFound().json(serde_json::json!({
+        "errors": ["route not found or authentication method not supported"]
+    }))
+}
 
 #[cfg(feature = "openssl")]
 use crate::tls::openssl_config::{create_openssl_acceptor, extract_openssl_peer_certificate};
@@ -132,7 +191,17 @@ async fn prepare_auth_verifier(
         .session_jwt_params
         .as_ref()
         .map(|p| p.jwt_ec_public_key.clone())
-        .unwrap_or_else(|| params.tls_params.server_certificate.clone());
+        .or_else(|| {
+            params
+                .tls_params
+                .as_ref()
+                .map(|t| t.server_certificate.clone())
+        })
+        .ok_or_else(|| {
+            crate::AuthError::Init(
+                "No JWKS public key: set session_jwt_params or tls_params".to_owned(),
+            )
+        })?;
     let jwks_pem = std::fs::read_to_string(&jwks_pem_path).map_err(|e| {
         crate::AuthError::Init(format!(
             "Failed to read JWT public key PEM for JWKS ({jwks_pem_path}): {e}"
@@ -167,20 +236,39 @@ async fn prepare_auth_verifier(
         .client_request_timeout(std::time::Duration::from_secs(10));
 
     #[cfg(feature = "openssl")]
-    let http_server = http_server
-        .on_connect(extract_openssl_peer_certificate)
-        .bind_openssl(&address, create_openssl_acceptor(&params.tls_params)?)
-        .map_err(|e| {
-            crate::AuthError::Init(format!("Failed binding the OpenSSL TLS connector: {e}"))
-        })?;
+    let http_server = if let Some(tls_params) = params.tls_params.as_ref() {
+        http_server
+            .on_connect(extract_openssl_peer_certificate)
+            .bind_openssl(&address, create_openssl_acceptor(tls_params)?)
+            .map_err(|e| {
+                crate::AuthError::Init(format!("Failed binding the OpenSSL TLS connector: {e}"))
+            })?
+    } else {
+        info!("TLS disabled — binding plain HTTP (dev mode only)");
+        http_server
+            .bind(&address)
+            .map_err(|e| crate::AuthError::Init(format!("Failed binding plain HTTP: {e}")))?
+    };
 
-    #[cfg(feature = "rustls")]
+    #[cfg(all(feature = "rustls", not(feature = "openssl")))]
+    let http_server = if let Some(tls_params) = params.tls_params.as_ref() {
+        http_server
+            .on_connect(extract_rustls_peer_certificate)
+            .bind_rustls_0_23(&address, rustls_server_config(tls_params)?)
+            .map_err(|e| {
+                crate::AuthError::Init(format!("Failed binding the Rustls TLS connector: {e}"))
+            })?
+    } else {
+        info!("TLS disabled — binding plain HTTP (dev mode only)");
+        http_server
+            .bind(&address)
+            .map_err(|e| crate::AuthError::Init(format!("Failed binding plain HTTP: {e}")))?
+    };
+
+    #[cfg(not(any(feature = "openssl", feature = "rustls")))]
     let http_server = http_server
-        .on_connect(extract_rustls_peer_certificate)
-        .bind_rustls_0_23(&address, rustls_server_config(&params.tls_params)?)
-        .map_err(|e| {
-            crate::AuthError::Init(format!("Failed binding the Rustls TLS connector: {e}"))
-        })?;
+        .bind(&address)
+        .map_err(|e| crate::AuthError::Init(format!("Failed binding plain HTTP: {e}")))?;
 
     debug!("Starting Authentication Server on {} ", &address,);
     Ok((http_server.run(), collector_handle))
@@ -333,6 +421,65 @@ fn build_app(
         .service(add_admin_to_realm)
         .service(remove_admin_from_realm);
 
+    // ── AppRole-compatible auth scopes ─────────────────────────────────────────
+    //
+    // Scope prefixes are kept intentionally specific to avoid Actix-web's
+    // FIFO matching swallowing requests before they reach the right scope.
+    //
+    // /auth/approle/login  — unauthenticated AppRole login (registered first, most specific)
+    // /auth/kubernetes/login — unauthenticated K8s login
+    // /auth/approle        — AppRole admin CRUD (CookieAuthSameServer + AdminAuth)
+    // /auth/kubernetes     — K8s admin CRUD
+    // /auth/token          — token self-service (AppTokenExtract middleware)
+
+    // Unauthenticated AppRole login — scope must be registered BEFORE /auth/approle
+    // so that /auth/approle/login requests don't fall into the admin scope.
+    let approle_login_scope = web::scope("/auth/approle/login")
+        .wrap(Cors::permissive())
+        .service(approle_login);
+
+    // Unauthenticated K8s login
+    let k8s_login_scope = web::scope("/auth/kubernetes/login")
+        .wrap(Cors::permissive())
+        .service(k8s_login);
+
+    // AppRole admin CRUD
+    let approle_admin_scope = web::scope("/auth/approle")
+        .wrap(AdminAuth::new(database.clone()))
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(Cors::permissive())
+        .service(approle_create_role)
+        .service(approle_get_role_id)
+        .service(approle_generate_secret_id)
+        .service(approle_destroy_secret_id)
+        .service(approle_delete_role)
+        .service(approle_get_role)
+        .service(approle_list_roles);
+
+    // K8s admin CRUD
+    let k8s_admin_scope = web::scope("/auth/kubernetes")
+        .wrap(AdminAuth::new(database.clone()))
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(Cors::permissive())
+        .service(k8s_create_role)
+        .service(k8s_delete_role)
+        .service(k8s_get_role)
+        .service(k8s_list_roles);
+
+    // Token self-service (requires valid X-Vault-Token header)
+    let auth_token_scope = web::scope("/auth/token")
+        .wrap(AppTokenExtract::new(database.clone()))
+        .wrap(Cors::permissive())
+        .service(auth_token_lookup_self)
+        .service(auth_token_renew_self)
+        .service(auth_token_revoke_self);
+
     let app = app
         .service(public_scope)
         .service(well_known_scope)
@@ -341,7 +488,20 @@ fn build_app(
         .service(sessions_scope)
         .service(realms_crud_scope)
         .service(app_scope)
-        .service(admins_scope);
+        .service(admins_scope)
+        // App auth scopes — most-specific prefixes first so Actix-web doesn't
+        // swallow requests before they reach the right scope.
+        .service(approle_login_scope) // /auth/approle/login  (unauthenticated)
+        .service(k8s_login_scope) // /auth/kubernetes/login (unauthenticated)
+        .service(approle_admin_scope) // /auth/approle        (admin CRUD)
+        .service(k8s_admin_scope) // /auth/kubernetes     (admin CRUD)
+        .service(auth_token_scope) // /auth/token          (self-service)
+        // Structured fallback for any unmatched route (e.g. a SPIRE server
+        // misconfigured with an unsupported auth method such as `cert_auth`,
+        // which has no `/auth/cert/*` handler). Without this, Actix returns a
+        // bare 404 with an empty body; here we fail closed but *loudly*, with the
+        // same `{"errors": [...]}` envelope every other endpoint uses.
+        .default_service(web::route().to(unsupported_route));
 
     #[cfg(feature = "admin-ui")]
     let app = {
@@ -365,6 +525,14 @@ fn build_app(
                             Ok(actix_web::dev::ServiceResponse::new(req, res))
                         }
                     }),
+            )
+            .route(
+                "/",
+                web::get().to(|| async {
+                    HttpResponse::Found()
+                        .append_header(("Location", "/admin-ui"))
+                        .finish()
+                }),
             )
         } else {
             app

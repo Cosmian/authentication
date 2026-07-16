@@ -9,6 +9,7 @@ import AdminsPage from "./pages/AdminsPage";
 import CredentialsPage from "./pages/CredentialsPage";
 import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
+import MachineCredentialsPage from "./pages/MachineCredentialsPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import RealmsPage from "./pages/RealmsPage";
 import SessionsPage from "./pages/SessionsPage";
@@ -35,6 +36,7 @@ const App: React.FC = () => {
                         <Route path="realms" element={<RealmsPage />} />
                         <Route path="admins" element={<AdminsPage />} />
                         <Route path="credentials" element={<CredentialsPage />} />
+                        <Route path="machine-credentials" element={<MachineCredentialsPage />} />
                         <Route path="sessions" element={<SessionsPage />} />
                         <Route path="totp" element={<TotpPage />} />
                     </Route>

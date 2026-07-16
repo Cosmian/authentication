@@ -9,15 +9,15 @@
 
 Project documentation is in `server/documentation`:
 
-- [Index](server/documentation/index.md)
-- [Getting Started](server/documentation/getting_started.md)
-- [API Reference](server/documentation/api_reference.md)
-- [Authentication Flows](server/documentation/authentication_flows.md)
-- [Session Management](server/documentation/session_management.md)
-- [Authorization and Administration](server/documentation/authorization_and_administration.md)
-- [Two-Factor Authentication](server/documentation/two_factor_authentication.md)
-- [Server Configuration](server/documentation/server_configuration.md)
-- [Client Library](server/documentation/client_library.md)
+- [Index](server/documentation/docs/index.md)
+- [Getting Started](server/documentation/docs/getting_started.md)
+- [API Reference](server/documentation/docs/api_reference.md)
+- [Authentication Flows](server/documentation/docs/authentication_flows.md)
+- [Session Management](server/documentation/docs/session_management.md)
+- [Authorization and Administration](server/documentation/docs/authorization_and_administration.md)
+- [Two-Factor Authentication](server/documentation/docs/two_factor_authentication.md)
+- [Server Configuration](server/documentation/docs/server_configuration.md)
+- [Client Library](server/documentation/docs/client_library.md)
 
 ## Build
 

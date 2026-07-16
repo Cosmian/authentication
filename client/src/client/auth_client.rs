@@ -11,9 +11,13 @@ use crate::{
     AuthError, AuthResult, AuthenticatedClientScheme, AuthenticationResult,
     client::AuthClientCookieStore,
     dto::{
+        AppAuthResponse, AppRoleDestroySecretIdRequest, AppRoleListRolesResponse,
+        AppRoleRoleConfigResponse, AppRoleRoleIdResponse, AppRoleRoleRequest,
+        AppRoleSecretIdRequest, AppRoleSecretIdResponse, AppTokenLookupResponse,
         DeleteSessionsRequest, GetSessionRequest, GetSessionsForClientsRequest,
-        GetSessionsForClientsResponse, SessionsAction, TotpGenerateRequest, TotpGenerateResponse,
-        TotpVerifyRequest, Version,
+        GetSessionsForClientsResponse, K8sListRolesResponse, K8sLoginRequest,
+        K8sRoleConfigResponse, K8sRoleRequest, SessionsAction, TotpGenerateRequest,
+        TotpGenerateResponse, TotpVerifyRequest, Version,
     },
     models::{Admin, ClientClaims, LoginRequest, Realm, SessionData, UserPass},
 };
@@ -762,4 +766,273 @@ impl AuthClient {
         }
         Ok(())
     }
+}
+
+// ── AppRole auth API ──────────────────────────────────────────────────────────
+
+impl AuthClient {
+    /// Create or update an AppRole role.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn approle_create_role(
+        &self,
+        name: &str,
+        req: &AppRoleRoleRequest,
+    ) -> AuthResult<()> {
+        let url = format!("{}/auth/approle/role/{}", self.base_url, name);
+        let response = self
+            .client
+            .post(&url)
+            .json(req)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("POST request failed: {e}")))?;
+        check_no_content(response).await
+    }
+
+    /// Read the stable `role_id` for an AppRole role.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn approle_get_role_id(&self, name: &str) -> AuthResult<AppRoleRoleIdResponse> {
+        self.get(&format!("/auth/approle/role/{}/role-id", name))
+            .await
+    }
+
+    /// Read the full configuration of an AppRole role.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn approle_get_role(&self, name: &str) -> AuthResult<AppRoleRoleConfigResponse> {
+        self.get(&format!("/auth/approle/role/{}", name)).await
+    }
+
+    /// Generate a new `secret_id` for an AppRole role.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn approle_generate_secret_id(
+        &self,
+        name: &str,
+        req: &AppRoleSecretIdRequest,
+    ) -> AuthResult<AppRoleSecretIdResponse> {
+        self.post(&format!("/auth/approle/role/{}/secret-id", name), req)
+            .await
+    }
+
+    /// Destroy a `secret_id` by its accessor UUID.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn approle_destroy_secret_id(&self, name: &str, accessor: &str) -> AuthResult<()> {
+        let url = format!(
+            "{}/auth/approle/role/{}/secret-id/destroy",
+            self.base_url, name
+        );
+        let body = AppRoleDestroySecretIdRequest {
+            secret_id_accessor: accessor.to_string(),
+        };
+        let response = self
+            .client
+            .post(&url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("POST request failed: {e}")))?;
+        check_no_content(response).await
+    }
+
+    /// Delete an AppRole role and all its secret IDs.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn approle_delete_role(&self, name: &str) -> AuthResult<()> {
+        let url = format!("{}/auth/approle/role/{}", self.base_url, name);
+        let response = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("DELETE request failed: {e}")))?;
+        check_no_content(response).await
+    }
+
+    /// List all AppRole role names.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn approle_list_roles(&self) -> AuthResult<AppRoleListRolesResponse> {
+        self.get("/auth/approle/role?list=true").await
+    }
+
+    /// Login with `role_id` (and optionally `secret_id`) and receive an app token.
+    ///
+    /// No authentication required.
+    pub async fn approle_login(
+        &self,
+        role_id: &str,
+        secret_id: Option<&str>,
+    ) -> AuthResult<AppAuthResponse> {
+        use crate::dto::AppRoleLoginRequest;
+        self.post(
+            "/auth/approle/login",
+            &AppRoleLoginRequest {
+                role_id: role_id.to_string(),
+                secret_id: secret_id.map(str::to_string),
+            },
+        )
+        .await
+    }
+}
+
+// ── Kubernetes auth API ───────────────────────────────────────────────────────
+
+impl AuthClient {
+    /// Create or update a Kubernetes auth role.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn k8s_create_role(&self, name: &str, req: &K8sRoleRequest) -> AuthResult<()> {
+        let url = format!("{}/auth/kubernetes/role/{}", self.base_url, name);
+        let response = self
+            .client
+            .post(&url)
+            .json(req)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("POST request failed: {e}")))?;
+        check_no_content(response).await
+    }
+
+    /// Delete a Kubernetes auth role.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn k8s_delete_role(&self, name: &str) -> AuthResult<()> {
+        let url = format!("{}/auth/kubernetes/role/{}", self.base_url, name);
+        let response = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("DELETE request failed: {e}")))?;
+        check_no_content(response).await
+    }
+
+    /// List all Kubernetes auth role names.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn k8s_list_roles(&self) -> AuthResult<K8sListRolesResponse> {
+        self.get("/auth/kubernetes/role?list=true").await
+    }
+
+    /// Read the full configuration of a Kubernetes auth role.
+    ///
+    /// Requires an authenticated admin session cookie.
+    pub async fn k8s_get_role(&self, name: &str) -> AuthResult<K8sRoleConfigResponse> {
+        self.get(&format!("/auth/kubernetes/role/{}", name)).await
+    }
+
+    /// Login with a Kubernetes service-account JWT and receive an app token.
+    ///
+    /// No authentication required.
+    pub async fn k8s_login(&self, role: &str, jwt: &str) -> AuthResult<AppAuthResponse> {
+        self.post(
+            "/auth/kubernetes/login",
+            &K8sLoginRequest {
+                role: role.to_string(),
+                jwt: jwt.to_string(),
+            },
+        )
+        .await
+    }
+}
+
+// ── Token self-service API ────────────────────────────────────────────────────
+
+/// Header name expected by all token self-service endpoints.
+pub const APP_TOKEN_HEADER: &str = "X-Vault-Token";
+
+impl AuthClient {
+    /// Return metadata for an app token (`GET /auth/token/lookup-self`).
+    pub async fn token_lookup_self(&self, token: &str) -> AuthResult<AppTokenLookupResponse> {
+        let response = self
+            .get_raw_with_header("/auth/token/lookup-self", APP_TOKEN_HEADER, token)
+            .await
+            .map_err(|e| AuthError::Generic(format!("lookup-self GET failed: {e}")))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(AuthError::FailedHttpStatus(format!(
+                "lookup-self returned {status}: {body}"
+            )));
+        }
+        response
+            .json::<AppTokenLookupResponse>()
+            .await
+            .map_err(|e| AuthError::Generic(format!("failed to parse lookup-self response: {e}")))
+    }
+
+    /// Renew an app token (`POST /auth/token/renew-self`).
+    pub async fn token_renew_self(&self, token: &str) -> AuthResult<AppAuthResponse> {
+        let response = self
+            .post_raw_with_header(
+                "/auth/token/renew-self",
+                &serde_json::json!({}),
+                APP_TOKEN_HEADER,
+                token,
+            )
+            .await
+            .map_err(|e| AuthError::Generic(format!("renew-self POST failed: {e}")))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(AuthError::FailedHttpStatus(format!(
+                "renew-self returned {status}: {body}"
+            )));
+        }
+        response
+            .json::<AppAuthResponse>()
+            .await
+            .map_err(|e| AuthError::Generic(format!("failed to parse renew-self response: {e}")))
+    }
+
+    /// Revoke an app token (`POST /auth/token/revoke-self`).
+    ///
+    /// Returns `Ok(())` on success (`204 No Content`).
+    pub async fn token_revoke_self(&self, token: &str) -> AuthResult<()> {
+        let url = format!("{}/auth/token/revoke-self", self.base_url);
+        let response = self
+            .client
+            .post(&url)
+            .header(APP_TOKEN_HEADER, token)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("revoke-self POST failed: {e}")))?;
+        check_no_content(response).await
+    }
+
+    /// Look up an app token and return the raw HTTP status code.
+    ///
+    /// Useful in tests to assert that an expired or revoked token returns `403`.
+    pub async fn token_lookup_self_status(&self, token: &str) -> AuthResult<u16> {
+        let url = format!("{}/auth/token/lookup-self", self.base_url);
+        let response = self
+            .client
+            .get(&url)
+            .header(APP_TOKEN_HEADER, token)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("lookup-self GET failed: {e}")))?;
+        Ok(response.status().as_u16())
+    }
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/// Check that a response is 204 No Content (or any 2xx success without a body).
+async fn check_no_content(response: reqwest::Response) -> AuthResult<()> {
+    let status = response.status();
+    if !status.is_success() {
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(AuthError::FailedHttpStatus(format!(
+            "Request failed with status {status}: {error_text}"
+        )));
+    }
+    Ok(())
 }

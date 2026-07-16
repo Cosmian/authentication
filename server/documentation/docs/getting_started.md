@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks through deploying the Auth authentication server from scratch: compiling the binary, writing a configuration file, bootstrapping the first administrator, and verifying the setup using `curl` and the `auth_client` crate.
+This guide walks through deploying the auth-verifier from scratch: compiling the binary, writing a configuration file, bootstrapping the first administrator, and verifying the setup using `curl` and the `auth_client` crate.
 
 ---
 
@@ -213,6 +213,7 @@ See [client_library.md](client_library.md) for the full API server integration g
 | Set up JWT / OAuth2 authentication | [Authentication Flows](authentication_flows.md) |
 | Set up mTLS client certificates | [Authentication Flows](authentication_flows.md) |
 | Enable TOTP two-factor authentication | [Two-Factor Authentication](two_factor_authentication.md) |
+| Set up AppRole / Kubernetes machine auth | [AppRole, Kubernetes & Token Authentication](app_auth_api.md) |
 | Understand session handling | [Session Management](session_management.md) |
 | Set up realm admins | [Authorization and Administration](authorization_and_administration.md) |
 | Use the full client library | [Client Library](client_library.md) |

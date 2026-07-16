@@ -56,3 +56,29 @@ export async function apiDelete<T = void>(baseUrl: string, path: string): Promis
     });
     return handleResponse<T>(response);
 }
+
+/**
+ * GET a resource authenticated by an explicit bearer-style token header rather
+ * than the admin session cookie. Used by the Vault-compatible token self-service
+ * endpoints, which authenticate via `X-Vault-Token` instead of the admin cookie.
+ */
+export async function apiGetWithToken<T>(baseUrl: string, path: string, token: string): Promise<T> {
+    const response = await fetch(`${baseUrl}${path}`, {
+        method: "GET",
+        headers: { "Content-Type": "application/json", "X-Vault-Token": token },
+    });
+    return handleResponse<T>(response);
+}
+
+/**
+ * POST authenticated by an explicit `X-Vault-Token` header rather than the admin
+ * session cookie. Used by the Vault-compatible token self-service endpoints.
+ */
+export async function apiPostWithToken<T>(baseUrl: string, path: string, token: string, body: unknown = {}): Promise<T> {
+    const response = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Vault-Token": token },
+        body: JSON.stringify(body),
+    });
+    return handleResponse<T>(response);
+}

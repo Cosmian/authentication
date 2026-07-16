@@ -11,7 +11,8 @@ use crate::{
 pub struct ServerParams {
     pub host_name: String,
     pub host_port: u16,
-    pub tls_params: TlsParams,
+    /// TLS configuration. When `None`, the server binds plain HTTP (dev only).
+    pub tls_params: Option<TlsParams>,
     pub default_username: Option<String>,
 
     pub session_jwt_params: Option<SessionJwtParams>,
@@ -75,7 +76,16 @@ impl ServerParams {
             .session_jwt_params
             .as_ref()
             .map(|auth_params| auth_params.jwt_ec_public_key.clone())
-            .unwrap_or(self.tls_params.server_certificate.clone());
+            .or_else(|| {
+                self.tls_params
+                    .as_ref()
+                    .map(|t| t.server_certificate.clone())
+            })
+            .ok_or_else(|| {
+                AuthError::Init(
+                    "No JWT decoding key: set session_jwt_params or tls_params".to_owned(),
+                )
+            })?;
         let jwt_decoding_key = std::fs::read_to_string(&jwt_decoding_key_path).map_err(|e| {
             AuthError::Init(format!(
                 "Failed to read JWT decoding key PEM file at {jwt_decoding_key_path}: {e}"
@@ -92,7 +102,16 @@ impl ServerParams {
             .session_jwt_params
             .as_ref()
             .map(|auth_params| auth_params.jwt_ec_private_key.clone())
-            .unwrap_or(self.tls_params.server_private_key.clone());
+            .or_else(|| {
+                self.tls_params
+                    .as_ref()
+                    .map(|t| t.server_private_key.clone())
+            })
+            .ok_or_else(|| {
+                AuthError::Init(
+                    "No JWT encoding key: set session_jwt_params or tls_params".to_owned(),
+                )
+            })?;
         let jwt_encoding_key = std::fs::read_to_string(&jwt_encoding_key_path).map_err(|e| {
             AuthError::Init(format!(
                 "Failed to read JWT encoding key PEM file at {jwt_encoding_key_path}: {e}"

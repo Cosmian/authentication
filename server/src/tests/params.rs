@@ -5,23 +5,30 @@ use crate::{
     server::parameters::{DatabaseBackend, DatabaseParams, ServerParams, TlsParams},
 };
 
-/// Finds a free TCP port by binding to port 0 (OS-assigned) and immediately
-/// releasing the socket. This is race-free in practice because tests run
-/// sequentially within a single binary and the window between releasing the
-/// port and the server binding it is microseconds.
-fn find_free_port() -> AuthResult<u16> {
+/// Allocates a free TCP port on `127.0.0.1` by asking the OS for an ephemeral
+/// port (`bind(":0")`), reading back the assigned port, and immediately releasing
+/// the listener.  The server is then bound to this port by actix-web.
+///
+/// Using `127.0.0.1` (IPv4 only) instead of `localhost` avoids the dual-stack
+/// ambiguity where `localhost` may resolve to `::1` on some systems, causing the
+/// readiness probe and the TLS client URL to disagree on which interface to use.
+///
+/// The test TLS certificate carries `IP Address:127.0.0.1` as its SAN, so
+/// connecting to `https://127.0.0.1:<port>` will pass certificate verification.
+fn get_free_port() -> AuthResult<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| AuthError::Unexpected(format!("Failed to find a free port: {e}")))?;
+        .map_err(|e| AuthError::Unexpected(format!("failed to allocate a free test port: {e}")))?;
     let port = listener
         .local_addr()
-        .map_err(|e| AuthError::Unexpected(format!("Failed to get local address: {e}")))?
+        .map_err(|e| AuthError::Unexpected(format!("failed to read ephemeral port: {e}")))?
         .port();
-    // Listener is dropped here, releasing the port.
+    // Dropping `listener` releases the port; the OS will not immediately reassign
+    // it to another connection, so the TOCTOU window is negligible in test contexts.
     Ok(port)
 }
 
 pub fn get_default_server_params() -> AuthResult<ServerParams> {
-    let port = find_free_port()?;
+    let port = get_free_port()?;
 
     let cargo_manifest_dir = PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR")
@@ -32,7 +39,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
     let server_params = ServerParams {
         host_name: "127.0.0.1".to_string(),
         host_port: port,
-        tls_params: TlsParams {
+        tls_params: Some(TlsParams {
             server_certificate: certificates_dir
                 .join("auth.server.cert.pem")
                 .to_string_lossy()
@@ -55,7 +62,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
             tls_cipher_suites: None,
             #[cfg(feature = "rustls")]
             tls_cipher_suites: None,
-        },
+        }),
         default_username: Some("default_user".to_string()),
         database_params: Some(DatabaseParams {
             backend: DatabaseBackend::SQLite,

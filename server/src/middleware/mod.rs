@@ -21,3 +21,6 @@ pub use admin_auth::AdminAuth;
 
 mod username_password;
 pub use username_password::UsernamePasswordAuth;
+
+mod app_token_extract;
+pub use app_token_extract::{AppTokenClaims, AppTokenExtract, extract_app_token_hash};

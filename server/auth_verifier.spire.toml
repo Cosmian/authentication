@@ -1,0 +1,110 @@
+# =============================================================================
+# Auth-verifier — minimal configuration for SPIRE / HashiCorp Vault interaction
+# =============================================================================
+#
+# This is the OPERATOR-side reference config for running the Cosmian
+# auth-verifier as the authentication backend behind a Cosmian KMS that exposes
+# the Vault-compatible API used by SPIRE.
+#
+# Topology (post-nginx design):
+#
+#   SPIRE server ──vault_addr──▶ Cosmian KMS ──/v1/auth/*──▶ auth-verifier (this)
+#                                    │
+#                                    └── /v1/transit/* and /v1/pki/* handled natively
+#
+# The auth-verifier is NEVER contacted directly by SPIRE — only by the KMS, via
+# its built-in `/v1/auth/*` proxy. Start it with:
+#
+#   auth_verifier /path/to/auth_verifier.spire.toml
+#
+# On first start the database is initialised with a super-admin account
+# (username "admin", password "change_me", realm "_"). That super-admin is what
+# you use to create AppRoles for your SPIRE servers (see "AppRole" note below).
+#
+# ── AppRole ──────────────────────────────────────────────────────────────────
+# There is NOTHING to enable here for AppRole: the `/auth/approle/login` and the
+# AppRole admin endpoints are always available. AppRoles (role_id + secret_id)
+# are created at RUNTIME by the super-admin via the admin API, e.g.:
+#
+#   # 1. Get an admin session cookie
+#   curl -sk -c cookie.txt -X POST \
+#     -H "Authorization: Basic $(printf 'admin:change_me' | base64)" \
+#     -H 'Content-Type: application/json' -d '{}' \
+#     "https://<auth-verifier-host>:8443/login?realm=_"
+#   # 2. Create a role for a SPIRE server
+#   curl -sk -b cookie.txt -X POST -H 'Content-Type: application/json' \
+#     -d '{"token_ttl":3600,"token_policies":["default"],"secret_id_ttl":0}' \
+#     "https://<auth-verifier-host>:8443/auth/approle/role/spire-server"
+#   # 3. Read its role_id and mint a secret_id (hand both to the SPIRE operator)
+#   curl -sk -b cookie.txt "https://<host>:8443/auth/approle/role/spire-server/role-id"
+#   curl -sk -b cookie.txt -X POST -d '{}' \
+#     "https://<host>:8443/auth/approle/role/spire-server/secret-id"
+#
+# The AppRole NAME (e.g. "spire-server") becomes the KMS object owner, giving
+# each SPIRE tenant an isolated key namespace.
+#
+# ── Log verbosity ────────────────────────────────────────────────────────────
+# Log level is NOT a TOML field. The binary calls `log_init(None)`, so verbosity
+# is controlled by the RUST_LOG environment variable, for example:
+#
+#   RUST_LOG="info,auth_verifier=debug" auth_verifier auth_verifier.spire.toml
+#
+# =============================================================================
+
+# ── Network binding ──────────────────────────────────────────────────────────
+# This service exposes the admin API (`/login`, `/auth/approle/*` role &
+# secret-id CRUD) used to PROVISION AppRoles, plus the data-plane AppRole login
+# the KMS proxies to. Operators reach the admin API on this endpoint DIRECTLY
+# (it is a separate endpoint from the KMS; the KMS never proxies admin calls).
+# SPIRE workloads only ever talk to the KMS.
+#
+# SECURITY: the admin API mints AppRoles (hence access to any tenant's keys).
+# It is strongly recommended to keep this endpoint on a limited-exposure network
+# (private network, localhost on the host, or an mTLS-gated ingress) rather than
+# the open internet.
+#
+# Bind so the KMS (and, on Linux/CI, any containerised caller reaching the host
+# via host.docker.internal) and operators can connect. Use "127.0.0.1" when the
+# KMS runs on the very same host and admins operate from there.
+host_name = "0.0.0.0"
+host_port = 8443
+
+# Available RBAC role names exposed via GET /public/roles. Keep the defaults
+# unless your OPA policy expects a different set.
+roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+
+# ── TLS (required) ───────────────────────────────────────────────────────────
+# All three PEM files are mandatory. IMPORTANT: the server certificate's SANs
+# must include the host the KMS uses in its `vault_auth_verifier_url` (hostname
+# and/or IP). Replace the bundled self-signed test certificates below with your
+# own PKI in production.
+#
+# NOTE ON JWT SIGNING: session JWTs (the JWKS the KMS validates tokens against)
+# are signed with an EC key. The key below is EC prime256v1 (P-256), so it is
+# reused for JWT signing and no extra config is needed. If your TLS key is
+# P-384/P-521, add a dedicated P-256 key pair under [session_jwt_params] below,
+# because the JWKS builder requires P-256.
+[tls_params]
+
+# Path to the server private key in PKCS#8 PEM format (EC prime256v1)
+server_private_key = "/etc/cosmian/auth-verifier/certs/auth.server.key.pem"
+
+# Path to the server certificate in PEM format
+server_certificate = "/etc/cosmian/auth-verifier/certs/auth.server.cert.pem"
+
+# Path to the CA certificate chain used to verify the server certificate
+server_ca_chain = "/etc/cosmian/auth-verifier/certs/auth.ca.pem"
+
+# ── Session JWT signing key (optional; only if the TLS key is NOT P-256) ──────
+# [session_jwt_params]
+# jwt_ec_private_key = "certificates/jwt.key.pem"   # must be EC P-256
+# jwt_ec_public_key  = "certificates/jwt.pub.pem"
+
+# ── Primary database (required to persist AppRoles) ──────────────────────────
+# Use a PERSISTENT database: AppRole role_ids and secret_ids are stored here and
+# MUST survive restarts, otherwise every SPIRE server would need re-provisioning
+# after a restart. Do NOT use "sqlite::memory:" for anything but throwaway tests.
+[database_params]
+backend          = "sqlite"
+connection_url   = "sqlite:///var/lib/cosmian/auth_verifier.db"
+auto_init_schema = true

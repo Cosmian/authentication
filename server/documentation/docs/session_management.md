@@ -83,7 +83,7 @@ Client ──► Your API ──► Validate Session ──► Auth Server
 
 ### Strategy 1 — Auth Verifier Session Endpoint (recommended)
 
-Call `GET /sessions/{session_id}` on the auth server for every request. This is the most secure strategy: session revocations take effect immediately.
+Call `GET /sessions/{session_id}` on the auth-verifier for every request. This is the most secure strategy: session revocations take effect immediately.
 
 **Pros:** Immediate invalidation. No local state. Simple implementation.
 **Cons:** One additional HTTPS round-trip per request.
@@ -106,13 +106,13 @@ match session {
 }
 ```
 
-**Latency mitigation:** Run the auth server on the same private network as your API server (or on the same host). A Redis session store further reduces lookup latency to sub-millisecond.
+**Latency mitigation:** Run the auth-verifier on the same private network as your API server (or on the same host). A Redis session store further reduces lookup latency to sub-millisecond.
 
 ---
 
 ### Strategy 2 — Direct Session Store Query
 
-Bypass the auth server HTTP API and query the session store directly. Requires your API server to have access to the session store database (PostgreSQL, Redis, etc.).
+Bypass the auth-verifier HTTP API and query the session store directly. Requires your API server to have access to the session store database (PostgreSQL, Redis, etc.).
 
 This strategy reduces latency but requires shared database access and couples the API server to the session store schema.
 
@@ -125,7 +125,7 @@ This strategy reduces latency but requires shared database access and couples th
 
 The `_ea_` cookie value is a plain-text `cookie_string`; it is not a JWT. However, the `GET /whoami?realm={realm}` endpoint returns a signed JWT containing the session claims. Your API server can cache this JWT and validate it offline for a short window.
 
-> **Warning:** This approach delays session revocation visibility by the JWT's caching window. Use only when latency requirements preclude round-trips to the auth server and you accept the security trade-off.
+> **Warning:** This approach delays session revocation visibility by the JWT's caching window. Use only when latency requirements preclude round-trips to the auth-verifier and you accept the security trade-off.
 
 In practice, for most deployments Strategy 1 with a Redis session store provides sufficient performance.
 

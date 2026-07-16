@@ -1,3 +1,9 @@
+[default.extend-identifiers]
+# "HashiCorp" is a proper noun (company name) — the typos tool mis-flags it.
+HashiCorp = "HashiCorp"
+
 [default.extend-words]
 # `typ` is the standard JWT header claim (RFC 7519 §4.1.9) — not a typo.
 typ = "typ"
+# Standalone "Hashi" prefix (e.g. "Hashi Corp") recognised by identifiers above.
+Hashi = "Hashi"
