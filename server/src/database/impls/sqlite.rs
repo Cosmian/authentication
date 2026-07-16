@@ -327,6 +327,32 @@ impl Database for SqliteDatabase {
         Ok(())
     }
 
+    async fn update_userpass_metadata(
+        &self,
+        realm: &str,
+        username: &str,
+        change_password: bool,
+        roles: &[String],
+    ) -> AuthDbResult<()> {
+        let roles_json = serde_json::to_string(roles)
+            .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
+        sqlx::query(
+            r#"
+            UPDATE userpass
+            SET change_password = ?, roles = ?
+            WHERE realm = ? AND username = ?
+            "#,
+        )
+        .bind(change_password)
+        .bind(&roles_json)
+        .bind(realm)
+        .bind(username)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     async fn delete_userpass(&self, realm: &str, username: &str) -> AuthDbResult<()> {
         sqlx::query(
             r#"
