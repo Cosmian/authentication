@@ -18,10 +18,18 @@ jobs:
     secrets: inherit
 
   cargo-deny:
-    uses: Cosmian/reusable_workflows/.github/workflows/cargo-audit.yml@develop
     name: Security Audit
-    with:
-      toolchain: ${{ inputs.toolchain }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+
+      - name: Run cargo-deny check
+        run: cargo deny --log-level warn --all-features check
 
   cargo-machete:
     uses: Cosmian/reusable_workflows/.github/workflows/cargo-machete.yml@develop

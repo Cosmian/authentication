@@ -136,6 +136,9 @@ jobs:
             cpu-arch: amd64
 
     steps:
+      - name: Clean up pre-existing artifact files
+        run: rm -rf result-*
+
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
