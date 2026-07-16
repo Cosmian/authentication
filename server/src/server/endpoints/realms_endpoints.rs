@@ -1,5 +1,8 @@
 use crate::{
-    AuthError, database::Database, models::UserPass, server::endpoints::admin_from_request,
+    AuthError,
+    database::{Database, hash_password_with_argon2},
+    models::UserPass,
+    server::endpoints::admin_from_request,
 };
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -30,6 +33,15 @@ pub async fn create_userpass(
 
     let mut userpass = userpass.into_inner();
     userpass.realm = realm_id.clone();
+
+    // Hash the plaintext password bytes before storing.
+    // Clients always send plaintext UTF-8 bytes; the server is responsible for hashing.
+    userpass.password = hash_password_with_argon2(
+        &userpass.username,
+        &String::from_utf8(userpass.password)
+            .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
+    )
+    .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
 
     database.create_userpass(&userpass).await?;
     info!(
@@ -96,7 +108,21 @@ pub async fn update_userpass(
     userpass.realm = realm.clone();
     userpass.username = username.clone();
 
-    database.update_userpass(&userpass).await?;
+    // Hash the new password if one was provided; otherwise preserve the existing hash by
+    // only updating the metadata fields (roles, change_password).
+    // Clients send password: [] when only updating roles/flags (GET always returns []).
+    if userpass.password.is_empty() {
+        database
+            .update_userpass_metadata(&realm, &username, userpass.change_password, &userpass.roles)
+            .await?;
+    } else {
+        userpass.password = hash_password_with_argon2(
+            &userpass.username,
+            &String::from_utf8(userpass.password)
+                .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
+        )?;
+        database.update_userpass(&userpass).await?;
+    }
     info!(
         "update_userpass: '{}' updated credentials for '{}' in realm '{}'",
         requester.id, username, realm

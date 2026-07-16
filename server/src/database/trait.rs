@@ -95,8 +95,19 @@ pub trait Database: Send + Sync {
     /// Read a user password entry by realm and username
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>>;
 
-    /// Update an existing user password entry
+    /// Update an existing user password entry (including the password hash)
     async fn update_userpass(&self, userpass: &UserPass) -> AuthDbResult<()>;
+
+    /// Update only the metadata of a user password entry (roles and change_password flag),
+    /// leaving the stored password hash untouched.
+    /// Used when the client sends an empty password field (e.g. roles-only updates).
+    async fn update_userpass_metadata(
+        &self,
+        realm: &str,
+        username: &str,
+        change_password: bool,
+        roles: &[String],
+    ) -> AuthDbResult<()>;
 
     /// Delete a user password entry by realm and username
     async fn delete_userpass(&self, realm: &str, username: &str) -> AuthDbResult<()>;

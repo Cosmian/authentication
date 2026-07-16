@@ -1,11 +1,12 @@
 use crate::{
     AuthResult, AuthScheme, AuthenticationNextStep, Realm, RealmAuthParams, UsernamePasswordParams,
     client::AuthClientScheme,
-    database::{
-        APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, hash_password_with_argon2,
-    },
+    database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
     models::{ADMIN_REALM, UserPass},
-    tests::{init_test_logging, start_default_test_server},
+    tests::{
+        helpers::{authenticate_as_admin, create_userpass},
+        init_test_logging, start_default_test_server,
+    },
 };
 use cosmian_logger::info;
 
@@ -187,11 +188,12 @@ async fn test_empty_credentials_returns_401() -> AuthResult<()> {
 // ── Expired password (change_password flag) ───────────────────────────────────
 
 /// Build a [`UserPass`] with `change_password: true` (simulates a forced password reset).
+/// Sends plaintext password bytes; the server hashes before storage.
 fn make_expired_userpass(realm: &str, username: &str, password: &str) -> AuthResult<UserPass> {
     Ok(UserPass {
         realm: realm.to_string(),
         username: username.to_string(),
-        password: hash_password_with_argon2(username, password)?,
+        password: password.as_bytes().to_vec(),
         change_password: true,
         roles: Vec::new(),
     })
@@ -447,3 +449,172 @@ async fn test_login_with_expired_password_allowed() -> AuthResult<()> {
 //     ctx.stop_server().await?;
 //     Ok(())
 // }
+
+// ── Password hashing regression tests ────────────────────────────────────────
+
+/// Regression: `create_userpass` used to store the plaintext password bytes
+/// supplied by the client, while `validate_userpass` compared against an
+/// Argon2 hash of the incoming password.  This caused every login to fail.
+///
+/// This test verifies the full round-trip: create credentials via the HTTP
+/// endpoint, then authenticate — login must succeed.
+#[actix_web::test]
+async fn test_create_userpass_then_authenticate() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let admin = authenticate_as_admin(&ctx).await?;
+
+    let realm_id = "hash_regression_realm_create";
+    admin
+        .create_realm_as_super_admin(&Realm {
+            id: realm_id.to_string(),
+            auth_params: RealmAuthParams {
+                username_password_params: Some(UsernamePasswordParams {
+                    allow_expired_passwords: false,
+                }),
+                ..Default::default()
+            },
+            session_max_age_seconds: 3600,
+            session_max_stale_age_seconds: 3600,
+        })
+        .await?;
+
+    let username = "hash_test_user";
+    let password = "supersecret123!";
+    // create_userpass sends plaintext bytes; the server must hash before storing.
+    let userpass = create_userpass(realm_id, username, password, false)?;
+    admin
+        .create_admin_credentials_in_realm(realm_id, &userpass)
+        .await?;
+
+    // Now attempt to log in with the same plaintext password — must succeed.
+    let client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: username.to_string(),
+        password: password.to_string(),
+    });
+    let (result, cookie) = client.login(realm_id, None, None).await?;
+
+    assert!(
+        matches!(result.next_step, AuthenticationNextStep::Authenticated),
+        "Expected Authenticated after create_userpass + login, got {:?}",
+        result.next_step
+    );
+    assert!(result.session_id.is_some(), "Expected a session ID");
+    assert!(cookie.is_some(), "Expected a session cookie");
+    info!("create_userpass → login round-trip succeeded");
+
+    ctx.stop_server().await
+}
+
+/// Regression: `update_userpass` used to store the plaintext password bytes
+/// supplied by the client, while `validate_userpass` compared against an
+/// Argon2 hash.  After a password reset, login with the new password must work.
+///
+/// Also verifies that sending `password: []` (the GET response pattern) preserves
+/// the existing password hash and does not break authentication.
+#[actix_web::test]
+async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let admin = authenticate_as_admin(&ctx).await?;
+
+    let realm_id = "hash_regression_realm_update";
+    admin
+        .create_realm_as_super_admin(&Realm {
+            id: realm_id.to_string(),
+            auth_params: RealmAuthParams {
+                username_password_params: Some(UsernamePasswordParams {
+                    allow_expired_passwords: false,
+                }),
+                ..Default::default()
+            },
+            session_max_age_seconds: 3600,
+            session_max_stale_age_seconds: 3600,
+        })
+        .await?;
+
+    let username = "update_hash_user";
+    let initial_password = "initial_pass_42!";
+    let new_password = "new_pass_99!";
+
+    // CREATE with plaintext bytes
+    let userpass = create_userpass(realm_id, username, initial_password, false)?;
+    admin
+        .create_admin_credentials_in_realm(realm_id, &userpass)
+        .await?;
+
+    // Confirm initial login works.
+    let client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: username.to_string(),
+        password: initial_password.to_string(),
+    });
+    let (result, _) = client.login(realm_id, None, None).await?;
+    assert!(
+        matches!(result.next_step, AuthenticationNextStep::Authenticated),
+        "Expected Authenticated after initial login, got {:?}",
+        result.next_step
+    );
+    info!("Initial login succeeded");
+
+    // UPDATE with a new plaintext password (simulates password reset).
+    let updated = create_userpass(realm_id, username, new_password, false)?;
+    admin
+        .update_admin_credentials_in_realm(realm_id, username, &updated)
+        .await?;
+
+    // Old password must now be rejected.
+    let old_client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: username.to_string(),
+        password: initial_password.to_string(),
+    });
+    let result = old_client.login(realm_id, None, None).await;
+    assert!(
+        result.is_err(),
+        "Expected login to fail with old password after password update"
+    );
+    info!("Old password correctly rejected after update");
+
+    // New password must be accepted.
+    let new_client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: username.to_string(),
+        password: new_password.to_string(),
+    });
+    let (result, cookie) = new_client.login(realm_id, None, None).await?;
+    assert!(
+        matches!(result.next_step, AuthenticationNextStep::Authenticated),
+        "Expected Authenticated after login with new password, got {:?}",
+        result.next_step
+    );
+    assert!(result.session_id.is_some(), "Expected a session ID");
+    assert!(cookie.is_some(), "Expected a session cookie");
+    info!("New password login succeeded after update");
+
+    // UPDATE with empty password (simulates roles-only update) — password must be preserved.
+    let roles_only = UserPass {
+        realm: realm_id.to_string(),
+        username: username.to_string(),
+        password: Vec::new(), // empty — server must keep the existing hash
+        change_password: false,
+        roles: vec!["Auditor".to_string()],
+    };
+    admin
+        .update_admin_credentials_in_realm(realm_id, username, &roles_only)
+        .await?;
+
+    // New password still works after roles-only update.
+    let new_client2 = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: username.to_string(),
+        password: new_password.to_string(),
+    });
+    let (result, cookie) = new_client2.login(realm_id, None, None).await?;
+    assert!(
+        matches!(result.next_step, AuthenticationNextStep::Authenticated),
+        "Expected Authenticated after roles-only update, got {:?}",
+        result.next_step
+    );
+    assert!(result.session_id.is_some(), "Expected a session ID");
+    assert!(cookie.is_some(), "Expected a session cookie");
+    info!("Password preserved correctly after roles-only update");
+
+    ctx.stop_server().await
+}

@@ -3,9 +3,7 @@
 use crate::{
     AuthResult, AuthenticationNextStep, Realm, RealmAuthParams,
     client::{AuthClient, AuthClientScheme},
-    database::{
-        APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, hash_password_with_argon2,
-    },
+    database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
     models::{ADMIN_REALM, Admin, UserPass},
     tests::TestsContext,
 };
@@ -44,6 +42,8 @@ pub fn test_admin(id: &str) -> Admin {
     }
 }
 
+/// Build a [`UserPass`] with plaintext password bytes for use with the HTTP API.
+/// The server is responsible for hashing the password before storage.
 pub fn create_userpass(
     realm: &str,
     username: &str,
@@ -53,7 +53,7 @@ pub fn create_userpass(
     Ok(UserPass {
         realm: realm.to_string(),
         username: username.to_string(),
-        password: hash_password_with_argon2(username, password)?,
+        password: password.as_bytes().to_vec(),
         change_password,
         roles: Vec::new(),
     })
