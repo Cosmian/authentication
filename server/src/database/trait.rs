@@ -209,7 +209,11 @@ pub trait Database: Send + Sync {
     ) -> AuthDbResult<Option<VaultSecretId>>;
 
     /// Revoke a secret_id by its accessor UUID.
-    async fn destroy_vault_secret_id_by_accessor(&self, accessor: &str) -> AuthDbResult<()>;
+    async fn destroy_vault_secret_id_by_accessor(
+        &self,
+        role_name: &str,
+        accessor: &str,
+    ) -> AuthDbResult<()>;
 
     /// Store a new token entry (the plaintext token is NOT stored — only its SHA-256 hash).
     async fn create_vault_token(&self, token: &VaultToken) -> AuthDbResult<()>;

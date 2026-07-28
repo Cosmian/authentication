@@ -283,7 +283,7 @@ pub(crate) async fn destroy_secret_id(
     let accessor = body.into_inner().secret_id_accessor;
 
     database
-        .destroy_vault_secret_id_by_accessor(&accessor)
+        .destroy_vault_secret_id_by_accessor(&role_name, &accessor)
         .await?;
     info!(
         "vault approle: '{}' destroyed secret_id accessor '{}' for role '{}'",

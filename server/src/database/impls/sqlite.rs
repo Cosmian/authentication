@@ -1029,8 +1029,13 @@ impl Database for SqliteDatabase {
         }))
     }
 
-    async fn destroy_vault_secret_id_by_accessor(&self, accessor: &str) -> AuthDbResult<()> {
-        sqlx::query("DELETE FROM vault_secret_ids WHERE secret_id_accessor = ?")
+    async fn destroy_vault_secret_id_by_accessor(
+        &self,
+        role_name: &str,
+        accessor: &str,
+    ) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM vault_secret_ids WHERE role_name = ? AND secret_id_accessor = ?")
+            .bind(role_name)
             .bind(accessor)
             .execute(&self.pool)
             .await?;
