@@ -1,5 +1,6 @@
 use crate::models::ClientClaims;
 use crate::models::LoginRequest;
+use crate::server::parameters::ServerParams;
 use crate::session::{self, JwksData, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
@@ -13,6 +14,7 @@ pub async fn login(
     jwt_token_config: Data<Arc<session::JwtTokenConfig>>,
     session_store: Data<Arc<dyn session::SessionStore>>,
     database: Data<Arc<dyn crate::database::Database>>,
+    server_params: Data<Arc<ServerParams>>,
     req: HttpRequest,
     login_request: Json<LoginRequest>,
 ) -> Result<HttpResponse, AuthError> {
@@ -102,7 +104,11 @@ pub async fn login(
         realm.session_max_age_seconds,
     )?;
 
-    let cookie = build_cookie(&token, realm.session_max_age_seconds)?;
+    let cookie = build_cookie(
+        &token,
+        realm.session_max_age_seconds,
+        server_params.tls_params.is_some(),
+    )?;
     let session_id = session_id_from_cookie_value(cookie.value().as_bytes())?;
     let cookie_string = cookie.to_string();
 
