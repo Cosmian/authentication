@@ -25,8 +25,7 @@ use actix_web::{
     dev::{ServerHandle, ServiceFactory, ServiceRequest, ServiceResponse},
     web::{self, Data, JsonConfig, PayloadConfig},
 };
-use cosmian_logger::{debug, info, trace};
-use jsonwebtoken::Algorithm;
+use cosmian_logger::{info, trace, warn};
 use std::{
     io,
     sync::{Arc, mpsc},
@@ -56,7 +55,7 @@ pub async fn start_auth_verifier(
             .context("failed to send server handle")?;
     }
 
-    info!("Starting the HTTPS Auth auth server...");
+    info!("Starting the Auth server...");
     // Run the server and return the result
     server
         .await
@@ -122,28 +121,9 @@ async fn prepare_auth_verifier(
     //     )
     // });
 
-    let jwt_token_config = Arc::new(JwtTokenConfig {
-        algorithm: Algorithm::ES256,
-        encoding_key: params.get_jwt_encoding_key()?,
-        decoding_key: params.get_jwt_decoding_key()?,
-    });
-
-    // Build the JWKS document once from the JWT signing public key.
-    // Reads the same PEM path that get_jwt_decoding_key() uses.
-    let jwks_pem_path = params
-        .session_jwt_params
-        .as_ref()
-        .map(|p| p.jwt_ec_public_key.clone())
-        .unwrap_or_else(|| params.tls_params.server_certificate.clone());
-    let jwks_pem = std::fs::read_to_string(&jwks_pem_path).map_err(|e| {
-        crate::AuthError::Init(format!(
-            "Failed to read JWT public key PEM for JWKS ({jwks_pem_path}): {e}"
-        ))
-    })?;
-    let jwks_data = Arc::new(
-        crate::session::build_jwks_from_pem(&jwks_pem)
-            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?,
-    );
+    let (jwt_token_config, jwks_data) = resolve_jwt_config(&params)?;
+    let jwt_token_config = Arc::new(jwt_token_config);
+    let jwks_data = Arc::new(jwks_data);
 
     // Clone test server params for HttpServer closure
     let server_params = params.clone();
@@ -168,24 +148,106 @@ async fn prepare_auth_verifier(
         ))
         .client_request_timeout(std::time::Duration::from_secs(10));
 
+    let protocol = if params.tls_params.is_some() {
+        "https"
+    } else {
+        "http"
+    };
+    info!("Starting Authentication Server on {protocol}://{address}");
+
     #[cfg(feature = "openssl")]
-    let http_server = http_server
-        .on_connect(extract_openssl_peer_certificate)
-        .bind_openssl(&address, create_openssl_acceptor(&params.tls_params)?)
-        .map_err(|e| {
-            crate::AuthError::Init(format!("Failed binding the OpenSSL TLS connector: {e}"))
-        })?;
+    let http_server = if let Some(ref tls_params) = params.tls_params {
+        http_server
+            .on_connect(extract_openssl_peer_certificate)
+            .bind_openssl(&address, create_openssl_acceptor(tls_params)?)
+            .map_err(|e| {
+                crate::AuthError::Init(format!("Failed binding the OpenSSL TLS connector: {e}"))
+            })?
+    } else {
+        http_server
+            .bind(&address)
+            .map_err(|e| crate::AuthError::Init(format!("Failed binding the HTTP server: {e}")))?
+    };
 
     #[cfg(feature = "rustls")]
-    let http_server = http_server
-        .on_connect(extract_rustls_peer_certificate)
-        .bind_rustls_0_23(&address, rustls_server_config(&params.tls_params)?)
-        .map_err(|e| {
-            crate::AuthError::Init(format!("Failed binding the Rustls TLS connector: {e}"))
-        })?;
-
-    debug!("Starting Authentication Server on {} ", &address,);
+    let http_server = if let Some(ref tls_params) = params.tls_params {
+        http_server
+            .on_connect(extract_rustls_peer_certificate)
+            .bind_rustls_0_23(&address, rustls_server_config(tls_params)?)
+            .map_err(|e| {
+                crate::AuthError::Init(format!("Failed binding the Rustls TLS connector: {e}"))
+            })?
+    } else {
+        http_server
+            .bind(&address)
+            .map_err(|e| crate::AuthError::Init(format!("Failed binding the HTTP server: {e}")))?
+    };
     Ok((http_server.run(), collector_handle))
+}
+
+/// Resolve JWT signing keys and build the JWKS document.
+///
+/// Priority:
+///   1. Dedicated `[session_jwt_params]` — EC key files configured explicitly.
+///   2. Reuse TLS key pair — `[tls_params]` is present but no JWT-specific keys.
+///   3. Ephemeral HS256 — neither TLS nor JWT keys configured (dev/demo mode).
+///      Sessions are invalidated on every restart; configure [session_jwt_params]
+///      for persistence.
+fn resolve_jwt_config(params: &ServerParams) -> crate::AuthResult<(JwtTokenConfig, JwksData)> {
+    use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey};
+
+    // Case 1: dedicated JWT key pair
+    if let Some(ref jwt_params) = params.session_jwt_params {
+        let priv_pem = std::fs::read_to_string(&jwt_params.jwt_ec_private_key)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to read JWT private key: {e}")))?;
+        let pub_pem = std::fs::read_to_string(&jwt_params.jwt_ec_public_key)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to read JWT public key: {e}")))?;
+        let encoding_key = EncodingKey::from_ec_pem(priv_pem.as_bytes())
+            .map_err(|e| crate::AuthError::Init(format!("Invalid JWT encoding key PEM: {e}")))?;
+        let decoding_key = DecodingKey::from_ec_pem(pub_pem.as_bytes())
+            .map_err(|e| crate::AuthError::Init(format!("Invalid JWT decoding key PEM: {e}")))?;
+        let jwks = crate::session::build_jwks_from_pem(&pub_pem)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?;
+        return Ok((
+            JwtTokenConfig::new(Algorithm::ES256, encoding_key, decoding_key),
+            jwks,
+        ));
+    }
+
+    // Case 2: reuse TLS cert/key for JWT signing
+    if let Some(ref tls_params) = params.tls_params {
+        let encoding_key = params.get_jwt_encoding_key()?;
+        let decoding_key = params.get_jwt_decoding_key()?;
+        let cert_pem = std::fs::read_to_string(&tls_params.server_certificate).map_err(|e| {
+            crate::AuthError::Init(format!("Failed to read TLS certificate for JWKS: {e}"))
+        })?;
+        let jwks = crate::session::build_jwks_from_pem(&cert_pem)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?;
+        return Ok((
+            JwtTokenConfig::new(Algorithm::ES256, encoding_key, decoding_key),
+            jwks,
+        ));
+    }
+
+    // Case 3: no persistent keys — use ephemeral HS256
+    warn!("No [tls_params] or [session_jwt_params] configured.");
+    warn!("Using an ephemeral HS256 JWT signing key — all sessions will be lost on restart.");
+    warn!(
+        "Configure [tls_params] or [session_jwt_params] for persistent EC-based session signing."
+    );
+    let mut secret = [0u8; 64];
+    {
+        use rand::RngCore as _;
+        rand::thread_rng().fill_bytes(&mut secret);
+    }
+    let encoding_key = EncodingKey::from_secret(&secret);
+    let decoding_key = DecodingKey::from_secret(&secret);
+    // HS256 is symmetric — no public key to expose in JWKS.
+    let jwks = JwksData(serde_json::json!({ "keys": [] }));
+    Ok((
+        JwtTokenConfig::new(Algorithm::HS256, encoding_key, decoding_key),
+        jwks,
+    ))
 }
 
 /// Builds the Actix App with the given session middleware.

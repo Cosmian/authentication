@@ -34,17 +34,15 @@ let
   # Resolves the configuration file at runtime:
   #   1. AUTH_SERVER_CONF env var (explicit path)
   #   2. /etc/cosmian/auth_verifier.toml  (volume-mounted config)
-  #   3. Fall back to the pre-generated dev certificate baked into the image
+  #   3. Fall back to the built-in dev configuration (plain HTTP, in-memory SQLite)
   #
   # To use a custom configuration:
   #   docker run -e AUTH_SERVER_CONF=/my/config.toml \
   #              -v /host/config.toml:/my/config.toml:ro \
-  #              -v /host/certs:/my/certs:ro \
   #              cosmian-auth-verifier
   #
   # Or mount at the default location:
   #   docker run -v /host/auth_verifier.toml:/etc/cosmian/auth_verifier.toml:ro \
-  #              -v /host/certs:/etc/cosmian/certs:ro \
   #              cosmian-auth-verifier
   startupScript = pkgs.runCommand "auth-verifier-entrypoint" { } ''
     mkdir -p $out/bin
@@ -60,11 +58,13 @@ fi
 
 if [ ! -f "$CONF_PATH" ]; then
   echo "No configuration file found at '$CONF_PATH'."
-  echo "Using built-in development configuration (self-signed TLS, in-memory SQLite)."
-  echo "WARNING: The TLS private key is embedded in the image — NOT for production use."
-  echo "         To use a custom configuration:"
-  echo "           Mount your TOML at /etc/cosmian/auth_verifier.toml, or"
-  echo "           set AUTH_SERVER_CONF to the path of your configuration file."
+  echo "Using built-in development configuration (plain HTTP on port 8080, in-memory SQLite)."
+  echo "WARNING: no TLS and no JWT keys configured — sessions use an ephemeral HS256 key"
+  echo "         and will be invalidated on restart.  NOT for production use."
+  echo ""
+  echo "To use a custom configuration:"
+  echo "  Mount your TOML at /etc/cosmian/auth_verifier.toml, or"
+  echo "  set AUTH_SERVER_CONF to the path of your configuration file."
   CONF_PATH="/etc/cosmian/dev/auth_verifier.toml"
 fi
 
@@ -74,38 +74,18 @@ EOF
     chmod +x $out/bin/docker-entrypoint.sh
   '';
 
-  # Pre-generate a self-signed dev certificate at Nix build time.
-  # openssl runs here (in the Nix sandbox), never inside the running container.
-  # The private key is embedded in the image and is NOT secret — it is used only
-  # as a zero-configuration fallback for development and testing.
-  devCerts = pkgs.runCommand "auth-verifier-dev-certs"
-    { nativeBuildInputs = [ pkgs.openssl ]; }
-    ''
-      mkdir -p $out/etc/cosmian/dev/certs
-      openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
-        -out $out/etc/cosmian/dev/certs/server.key.pem
-      openssl req -new -x509 \
-        -key $out/etc/cosmian/dev/certs/server.key.pem \
-        -out $out/etc/cosmian/dev/certs/server.cert.pem \
-        -days 3650 \
-        -subj "/CN=cosmian-auth-verifier" \
-        -addext "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:localhost"
-      cp $out/etc/cosmian/dev/certs/server.cert.pem \
-         $out/etc/cosmian/dev/certs/ca.pem
-    '';
-
   devConfig = pkgs.writeTextFile {
     name = "auth-verifier-dev-config";
     text = ''
-      # Development-only — TLS key embedded in image, NOT for production.
+      # Development/demo configuration — plain HTTP, in-memory SQLite.
+      # No TLS and no JWT keys: the server generates an ephemeral HS256 signing
+      # key at startup. Sessions are lost on restart.
+      #
+      # For production, mount a proper auth_verifier.toml with [tls_params] and
+      # optionally [session_jwt_params].
       host_name = "0.0.0.0"
-      host_port = 8443
+      host_port = 8080
       roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
-
-      [tls_params]
-      server_private_key = "/etc/cosmian/dev/certs/server.key.pem"
-      server_certificate = "/etc/cosmian/dev/certs/server.cert.pem"
-      server_ca_chain    = "/etc/cosmian/dev/certs/ca.pem"
 
       [database_params]
       backend        = "sqlite"
@@ -177,7 +157,6 @@ pkgs.dockerTools.buildImage {
         pkgs.dockerTools.caCertificates
         startupScript
         authDirectories
-        devCerts
         devConfig
       ]
       ++ pkgs.lib.optional (adminUiContent != null) adminUiContent;
@@ -199,7 +178,7 @@ pkgs.dockerTools.buildImage {
     Entrypoint = [ "/bin/docker-entrypoint.sh" ];
     Cmd = [ ];
     ExposedPorts = {
-      "8443/tcp" = { };
+      "8080/tcp" = { };
     };
     User = "1000:1000";
     WorkingDir = "/home/auth";

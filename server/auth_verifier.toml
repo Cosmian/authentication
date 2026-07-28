@@ -22,8 +22,9 @@
 # Use "0.0.0.0" to listen on all interfaces.
 host_name = "localhost" # <REQUIRED>
 
-# The TCP port the server listens on (TLS only).
-host_port = 8443 # <REQUIRED>
+# The TCP port the server listens on.
+# When [tls_params] is configured the server binds HTTPS; otherwise plain HTTP.
+host_port = 8080 # <REQUIRED>
 
 # Optional: if set, every unauthenticated request is treated as though it came
 # from this username.  Useful for local development only — never set in
@@ -47,21 +48,24 @@ roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
 
 
 # -----------------------------------------------------------------------------
-# TLS configuration  <REQUIRED>
+# TLS configuration  (optional — omit to run plain HTTP)
 # -----------------------------------------------------------------------------
-# The server requires TLS.  All three PEM files must be present.
+# When this section is present the server binds HTTPS and uses the key pair
+# both for TLS and for JWT session signing (unless [session_jwt_params] is set).
+# When absent the server binds plain HTTP and uses an ephemeral HS256 key for
+# JWT signing (sessions are lost on restart — configure [session_jwt_params]
+# for persistent signing keys without TLS).
 
-[tls_params]
+# [tls_params]
 
 # Path to the server private key in PKCS#8 PEM format.
-server_private_key = "src/tests/certificates/ec/auth.server.key.pem" # <REQUIRED>
+# server_private_key = "certificates/server.key.pem" # <REQUIRED when TLS enabled>
 
 # Path to the server certificate (or certificate chain) in PEM format.
-server_certificate = "src/tests/certificates/ec/auth.server.cert.pem" # <REQUIRED>
+# server_certificate = "certificates/server.cert.pem" # <REQUIRED when TLS enabled>
 
 # Path to the CA certificate chain used to verify the server certificate.
-# Clients will use this to establish trust.
-server_ca_chain = "src/tests/certificates/ec/auth.ca.pem" # <REQUIRED>
+# server_ca_chain = "certificates/ca.pem" # <REQUIRED when TLS enabled>
 
 # Optional: path to a separate CA chain for verifying *client* certificates.
 # When omitted, server_ca_chain is used for mTLS client verification as well.
@@ -69,16 +73,22 @@ server_ca_chain = "src/tests/certificates/ec/auth.ca.pem" # <REQUIRED>
 
 # Optional: colon-separated list of TLS cipher suites.
 # When omitted, the default cipher suite list of the chosen TLS backend is used.
-# Recommended ANSSI-compliant TLS 1.3 suites:
-#   TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256
 # tls_cipher_suites = "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256"
 
 
 # -----------------------------------------------------------------------------
 # Session JWT keys (optional)
 # -----------------------------------------------------------------------------
-# By default the server reuses the TLS key pair to sign session JWTs.
-# You can specify a dedicated EC key pair here for better key separation.
+# Controls how session JWTs are signed. Resolution order:
+#   1. This section ([session_jwt_params]) — explicit EC key files.
+#   2. TLS key pair ([tls_params]) — reused for JWT signing when no explicit
+#      JWT keys are configured.
+#   3. Ephemeral HS256 key — generated at startup when neither TLS nor JWT keys
+#      are configured. Sessions are lost on every restart. Use this only for
+#      local development or short-lived demo deployments.
+#
+# Recommended for plain-HTTP deployments: configure this section with a
+# dedicated EC P-256 key pair so sessions survive restarts.
 
 # [session_jwt_params]
 # # Path to the EC private key PEM file used to sign session JWTs.
