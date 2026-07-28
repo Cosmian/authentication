@@ -30,7 +30,6 @@ let
 
     hash =
       let
-        placeholder = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
         platformSuffix =
           if stdenv.hostPlatform.isDarwin then
             "darwin"
@@ -47,7 +46,9 @@ let
           raw = builtins.readFile hashFile;
           trimmed = lib.replaceStrings [ "\n" "\r" " " "\t" ] [ "" "" "" "" ] raw;
         in
-        assert trimmed != placeholder && trimmed != "";
+        # Pass the hash through — if it is a placeholder, fetchDeps will fail
+        # with "hash mismatch: got sha256-..." which is the standard bootstrap
+        # mechanism for obtaining the correct hash.
         trimmed
       else
         builtins.throw ("Expected admin-ui pnpm deps hash file not found: " + hashFile);
