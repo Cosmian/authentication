@@ -933,9 +933,14 @@ impl Database for SqliteDatabase {
             .map_err(|e| AuthDbError::Unexpected(format!("serialize policies: {e}")))?;
         sqlx::query(
             r#"
-            INSERT OR REPLACE INTO vault_roles
+            INSERT INTO vault_roles
                 (role_name, role_id, token_ttl, token_policies, secret_id_ttl, bind_secret_id, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (role_name) DO UPDATE SET
+                token_ttl = EXCLUDED.token_ttl,
+                token_policies = EXCLUDED.token_policies,
+                secret_id_ttl = EXCLUDED.secret_id_ttl,
+                bind_secret_id = EXCLUDED.bind_secret_id
             "#,
         )
         .bind(&role.role_name)
