@@ -2,6 +2,8 @@
   pkgs ? import <nixpkgs> { },
   # Auth server derivation to include in the image
   authServer ? null,
+  # Admin UI derivation to include in the image (optional)
+  adminUi ? null,
   # Version (from Cargo.toml)
   version,
 }:
@@ -12,6 +14,18 @@ let
       authServer
     else
       builtins.throw "authServer parameter is required. Pass it from default.nix";
+
+  # Admin UI static assets — included when adminUi derivation is provided.
+  # Files are placed at /srv/admin-ui/ so the auth_verifier (or a reverse proxy)
+  # can serve them. When adminUi is null the paths entry is simply omitted.
+  adminUiContent =
+    if adminUi != null then
+      pkgs.runCommand "admin-ui-srv" { } ''
+        mkdir -p $out/srv/admin-ui
+        cp -r ${adminUi}/dist/. $out/srv/admin-ui/
+      ''
+    else
+      null;
 
   imageName = "cosmian-auth-verifier";
   imageTag = "${version}";
@@ -154,21 +168,24 @@ pkgs.dockerTools.buildImage {
 
   copyToRoot = pkgs.buildEnv {
     name = "image-root";
-    paths = [
-      runtimeEnv
-      etcPasswd
-      etcGroup
-      etcNsswitch
-      pkgs.dockerTools.caCertificates
-      startupScript
-      authDirectories
-      devCerts
-      devConfig
-    ];
+    paths =
+      [
+        runtimeEnv
+        etcPasswd
+        etcGroup
+        etcNsswitch
+        pkgs.dockerTools.caCertificates
+        startupScript
+        authDirectories
+        devCerts
+        devConfig
+      ]
+      ++ pkgs.lib.optional (adminUiContent != null) adminUiContent;
     pathsToLink = [
       "/bin"
       "/etc"
       "/home"
+      "/srv"
       "/tmp"
       "/usr"
       "/var"
