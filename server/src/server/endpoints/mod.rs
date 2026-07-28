@@ -29,6 +29,12 @@ pub use sessions_endpoints::{
     get_session_by_id, get_sessions_for_clients, upsert_session,
 };
 
+pub(crate) mod approle_endpoints;
+pub(crate) use approle_endpoints::{
+    approle_login, create_or_update_role, delete_role, destroy_secret_id, generate_secret_id,
+    get_role_id, list_roles, token_lookup_self, token_renew_self, token_revoke_self,
+};
+
 use crate::{AuthError, models::Admin};
 use actix_web::HttpMessage;
 use actix_web::HttpRequest;

@@ -4,13 +4,15 @@ use crate::{
     middleware::{EnsureAuth, JwksManager, JwtAuth},
     server::{
         endpoints::{
-            add_admin_to_realm, create_admin, create_realm, create_userpass, delete_admin,
-            delete_expired_sessions, delete_realm, delete_sessions, delete_sessions_for_realm,
-            delete_userpass, get_admin, get_realm, get_session, get_session_by_id,
+            add_admin_to_realm, approle_login, create_admin, create_or_update_role, create_realm,
+            create_userpass, delete_admin, delete_expired_sessions, delete_realm, delete_role,
+            delete_sessions, delete_sessions_for_realm, delete_userpass, destroy_secret_id,
+            generate_secret_id, get_admin, get_realm, get_role_id, get_session, get_session_by_id,
             get_sessions_for_clients, get_userpass, jwks_well_known, list_admins,
-            list_all_userpass, list_realms, list_userpass_by_realm, login, remove_admin_from_realm,
-            roles_endpoint, totp_disable, totp_generate, totp_verify, update_admin, update_realm,
-            update_userpass, upsert_session, version_endpoint, whoami,
+            list_all_userpass, list_realms, list_roles, list_userpass_by_realm, login,
+            remove_admin_from_realm, roles_endpoint, token_lookup_self, token_renew_self,
+            token_revoke_self, totp_disable, totp_generate, totp_verify, update_admin,
+            update_realm, update_userpass, upsert_session, version_endpoint, whoami,
         },
         parameters::{DatabaseBackend, DatabaseParams, ServerParams},
     },
@@ -333,6 +335,33 @@ fn build_app(
         .service(add_admin_to_realm)
         .service(remove_admin_from_realm);
 
+    // ── Vault-compatible AppRole auth (/v1/auth/*) ────────────────────────────
+    // Admin-protected role management is nested under `/approle/role/` to separate
+    // it from the unauthenticated login and token operations at the same scope level.
+    let vault_approle_role_scope = web::scope("/approle/role")
+        .wrap(AdminAuth::new(database.clone()))
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(Cors::permissive())
+        .service(list_roles)
+        .service(create_or_update_role)
+        .service(delete_role)
+        .service(get_role_id)
+        .service(generate_secret_id)
+        .service(destroy_secret_id);
+
+    let vault_auth_scope = web::scope("/v1/auth")
+        .wrap(Cors::permissive())
+        .service(vault_approle_role_scope)
+        // Public: AppRole login (no admin session required)
+        .service(approle_login)
+        // Token operations: read X-Vault-Token, no admin session required
+        .service(token_lookup_self)
+        .service(token_renew_self)
+        .service(token_revoke_self);
+
     let app = app
         .service(public_scope)
         .service(well_known_scope)
@@ -341,7 +370,8 @@ fn build_app(
         .service(sessions_scope)
         .service(realms_crud_scope)
         .service(app_scope)
-        .service(admins_scope);
+        .service(admins_scope)
+        .service(vault_auth_scope);
 
     #[cfg(feature = "admin-ui")]
     let app = {

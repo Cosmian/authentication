@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 
 use crate::{
-    database::{AuthDbError, AuthDbResult, hash_password_with_argon2, r#trait::Database},
+    database::{
+        AuthDbError, AuthDbResult, hash_password_with_argon2,
+        r#trait::Database,
+        vault_models::{VaultRole, VaultSecretId, VaultToken},
+    },
     models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
@@ -120,6 +124,55 @@ impl Database for SqliteDatabase {
         if realm_count.0 == 0 {
             self.initialize_db().await?;
         }
+
+        // ── Vault AppRole tables ──────────────────────────────────────────────
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS vault_roles (
+                role_name       TEXT    PRIMARY KEY NOT NULL,
+                role_id         TEXT    NOT NULL UNIQUE,
+                token_ttl       INTEGER NOT NULL DEFAULT 3600,
+                token_policies  TEXT    NOT NULL DEFAULT '[]',
+                secret_id_ttl   INTEGER NOT NULL DEFAULT 0,
+                bind_secret_id  INTEGER NOT NULL DEFAULT 1,
+                created_at      INTEGER NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS vault_secret_ids (
+                secret_id_accessor  TEXT    PRIMARY KEY NOT NULL,
+                secret_id_hash      BLOB    NOT NULL,
+                role_name           TEXT    NOT NULL,
+                expiry_time         INTEGER,
+                created_at          INTEGER NOT NULL,
+                FOREIGN KEY (role_name) REFERENCES vault_roles(role_name) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS vault_tokens (
+                token_hash      BLOB    PRIMARY KEY NOT NULL,
+                role_name       TEXT    NOT NULL,
+                policies        TEXT    NOT NULL DEFAULT '[]',
+                ttl             INTEGER NOT NULL,
+                renewable       INTEGER NOT NULL DEFAULT 1,
+                expiry_time     INTEGER NOT NULL,
+                created_at      INTEGER NOT NULL,
+                FOREIGN KEY (role_name) REFERENCES vault_roles(role_name) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -872,4 +925,199 @@ impl Database for SqliteDatabase {
             None => Ok(None),
         }
     }
+
+    // ===== Vault AppRole operations =====
+
+    async fn create_vault_role(&self, role: &VaultRole) -> AuthDbResult<()> {
+        let policies_json = serde_json::to_string(&role.token_policies)
+            .map_err(|e| AuthDbError::Unexpected(format!("serialize policies: {e}")))?;
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO vault_roles
+                (role_name, role_id, token_ttl, token_policies, secret_id_ttl, bind_secret_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&role.role_name)
+        .bind(&role.role_id)
+        .bind(role.token_ttl)
+        .bind(&policies_json)
+        .bind(role.secret_id_ttl)
+        .bind(i64::from(role.bind_secret_id))
+        .bind(role.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_vault_role(&self, role_name: &str) -> AuthDbResult<Option<VaultRole>> {
+        let row = sqlx::query(
+            "SELECT role_name, role_id, token_ttl, token_policies, secret_id_ttl, bind_secret_id, created_at FROM vault_roles WHERE role_name = ?",
+        )
+        .bind(role_name)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|r| vault_role_from_row(&r)).transpose()
+    }
+
+    async fn get_vault_role_by_role_id(&self, role_id: &str) -> AuthDbResult<Option<VaultRole>> {
+        let row = sqlx::query(
+            "SELECT role_name, role_id, token_ttl, token_policies, secret_id_ttl, bind_secret_id, created_at FROM vault_roles WHERE role_id = ?",
+        )
+        .bind(role_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|r| vault_role_from_row(&r)).transpose()
+    }
+
+    async fn delete_vault_role(&self, role_name: &str) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM vault_roles WHERE role_name = ?")
+            .bind(role_name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_vault_roles(&self) -> AuthDbResult<Vec<String>> {
+        let rows = sqlx::query("SELECT role_name FROM vault_roles ORDER BY role_name")
+            .fetch_all(&self.pool)
+            .await?;
+        rows.iter()
+            .map(|r| Ok(r.try_get::<String, _>("role_name")?))
+            .collect()
+    }
+
+    async fn create_vault_secret_id(&self, sid: &VaultSecretId) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO vault_secret_ids
+                (secret_id_accessor, secret_id_hash, role_name, expiry_time, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&sid.secret_id_accessor)
+        .bind(&sid.secret_id_hash)
+        .bind(&sid.role_name)
+        .bind(sid.expiry_time)
+        .bind(sid.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn find_vault_secret_id_by_hash(
+        &self,
+        hash: &[u8],
+    ) -> AuthDbResult<Option<VaultSecretId>> {
+        let row = sqlx::query(
+            "SELECT secret_id_accessor, secret_id_hash, role_name, expiry_time, created_at FROM vault_secret_ids WHERE secret_id_hash = ?",
+        )
+        .bind(hash)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| VaultSecretId {
+            secret_id_accessor: r.try_get("secret_id_accessor").unwrap_or_default(),
+            secret_id_hash: r.try_get("secret_id_hash").unwrap_or_default(),
+            role_name: r.try_get("role_name").unwrap_or_default(),
+            expiry_time: r.try_get("expiry_time").unwrap_or(None),
+            created_at: r.try_get("created_at").unwrap_or_default(),
+        }))
+    }
+
+    async fn destroy_vault_secret_id_by_accessor(&self, accessor: &str) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM vault_secret_ids WHERE secret_id_accessor = ?")
+            .bind(accessor)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn create_vault_token(&self, token: &VaultToken) -> AuthDbResult<()> {
+        let policies_json = serde_json::to_string(&token.policies)
+            .map_err(|e| AuthDbError::Unexpected(format!("serialize policies: {e}")))?;
+        sqlx::query(
+            r#"
+            INSERT INTO vault_tokens
+                (token_hash, role_name, policies, ttl, renewable, expiry_time, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&token.token_hash)
+        .bind(&token.role_name)
+        .bind(&policies_json)
+        .bind(token.ttl)
+        .bind(i64::from(token.renewable))
+        .bind(token.expiry_time)
+        .bind(token.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn find_vault_token_by_hash(&self, hash: &[u8]) -> AuthDbResult<Option<VaultToken>> {
+        let row = sqlx::query(
+            "SELECT token_hash, role_name, policies, ttl, renewable, expiry_time, created_at FROM vault_tokens WHERE token_hash = ?",
+        )
+        .bind(hash)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|r| vault_token_from_row(&r)).transpose()
+    }
+
+    async fn delete_vault_token_by_hash(&self, hash: &[u8]) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM vault_tokens WHERE token_hash = ?")
+            .bind(hash)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn cleanup_expired_vault_entries(&self) -> AuthDbResult<()> {
+        let now = chrono::Utc::now().timestamp();
+        sqlx::query("DELETE FROM vault_tokens WHERE expiry_time > 0 AND expiry_time < ?")
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        sqlx::query(
+            "DELETE FROM vault_secret_ids WHERE expiry_time IS NOT NULL AND expiry_time < ?",
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+}
+
+// ── SQLite row helpers ────────────────────────────────────────────────────────
+
+fn vault_role_from_row(r: &sqlx::sqlite::SqliteRow) -> AuthDbResult<VaultRole> {
+    use sqlx::Row as _;
+    let policies_json: String = r.try_get("token_policies")?;
+    let policies: Vec<String> = serde_json::from_str(&policies_json)
+        .map_err(|e| AuthDbError::Unexpected(format!("deserialize policies: {e}")))?;
+    Ok(VaultRole {
+        role_name: r.try_get("role_name")?,
+        role_id: r.try_get("role_id")?,
+        token_ttl: r.try_get("token_ttl")?,
+        token_policies: policies,
+        secret_id_ttl: r.try_get("secret_id_ttl")?,
+        bind_secret_id: r.try_get::<i64, _>("bind_secret_id")? != 0,
+        created_at: r.try_get("created_at")?,
+    })
+}
+
+fn vault_token_from_row(r: &sqlx::sqlite::SqliteRow) -> AuthDbResult<VaultToken> {
+    use sqlx::Row as _;
+    let policies_json: String = r.try_get("policies")?;
+    let policies: Vec<String> = serde_json::from_str(&policies_json)
+        .map_err(|e| AuthDbError::Unexpected(format!("deserialize token policies: {e}")))?;
+    Ok(VaultToken {
+        token_hash: r.try_get("token_hash")?,
+        role_name: r.try_get("role_name")?,
+        policies,
+        ttl: r.try_get("ttl")?,
+        renewable: r.try_get::<i64, _>("renewable")? != 0,
+        expiry_time: r.try_get("expiry_time")?,
+        created_at: r.try_get("created_at")?,
+    })
 }

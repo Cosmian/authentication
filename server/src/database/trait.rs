@@ -1,4 +1,5 @@
 use crate::database::{AuthDbError, AuthDbResult, hash_password_with_argon2};
+use crate::database::{VaultRole, VaultSecretId, VaultToken};
 use crate::models::{ADMIN_REALM, Admin, AuthScheme, Realm, UserPass};
 use crate::{RealmAuthParams, UsernamePasswordParams};
 use async_trait::async_trait;
@@ -180,4 +181,45 @@ pub trait Database: Send + Sync {
 
     /// Check if 2FA is enabled for a user
     async fn is_totp_enabled(&self, realm: &str, username: &str) -> AuthDbResult<Option<bool>>;
+
+    // ===== Vault AppRole operations =====
+
+    /// Create a new AppRole role.
+    async fn create_vault_role(&self, role: &VaultRole) -> AuthDbResult<()>;
+
+    /// Read an AppRole role by name.
+    async fn get_vault_role(&self, role_name: &str) -> AuthDbResult<Option<VaultRole>>;
+
+    /// Read an AppRole role by its stable `role_id`.
+    async fn get_vault_role_by_role_id(&self, role_id: &str) -> AuthDbResult<Option<VaultRole>>;
+
+    /// Delete an AppRole role and cascade-delete its secret_ids.
+    async fn delete_vault_role(&self, role_name: &str) -> AuthDbResult<()>;
+
+    /// List all AppRole role names.
+    async fn list_vault_roles(&self) -> AuthDbResult<Vec<String>>;
+
+    /// Store a new secret_id entry (the plaintext secret_id is NOT stored — only its SHA-256 hash).
+    async fn create_vault_secret_id(&self, sid: &VaultSecretId) -> AuthDbResult<()>;
+
+    /// Find a secret_id entry by its SHA-256 hash (for login validation).
+    async fn find_vault_secret_id_by_hash(
+        &self,
+        hash: &[u8],
+    ) -> AuthDbResult<Option<VaultSecretId>>;
+
+    /// Revoke a secret_id by its accessor UUID.
+    async fn destroy_vault_secret_id_by_accessor(&self, accessor: &str) -> AuthDbResult<()>;
+
+    /// Store a new token entry (the plaintext token is NOT stored — only its SHA-256 hash).
+    async fn create_vault_token(&self, token: &VaultToken) -> AuthDbResult<()>;
+
+    /// Find a token entry by its SHA-256 hash (for `lookup-self` validation).
+    async fn find_vault_token_by_hash(&self, hash: &[u8]) -> AuthDbResult<Option<VaultToken>>;
+
+    /// Delete a token entry by its SHA-256 hash (for `revoke-self`).
+    async fn delete_vault_token_by_hash(&self, hash: &[u8]) -> AuthDbResult<()>;
+
+    /// Delete all expired token and secret_id entries.  Called once on startup.
+    async fn cleanup_expired_vault_entries(&self) -> AuthDbResult<()>;
 }
