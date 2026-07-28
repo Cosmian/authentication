@@ -229,5 +229,17 @@ pkgs.dockerTools.buildImage {
       for f in ${gccRtLib}/libgcc_s.so*; do
         [ -e "$f" ] && ln -sf "$f" "lib/$(basename "$f")" || true
       done
+
+      ${pkgs.lib.optionalString (adminUiContent != null) ''
+        # Verify admin-ui assets were bundled correctly
+        if [ ! -f srv/admin-ui/index.html ]; then
+          echo "ERROR: /srv/admin-ui/index.html not found in Docker image" >&2
+          echo "Contents of srv/:" >&2
+          find srv/ -type f 2>/dev/null || echo "(srv/ is empty or missing)" >&2
+          exit 1
+        fi
+        UI_FILES=$(find srv/admin-ui -type f | wc -l)
+        echo "admin-ui check PASSED: $UI_FILES files present at /srv/admin-ui/"
+      ''}
     '';
 }
