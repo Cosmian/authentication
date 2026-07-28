@@ -31,7 +31,15 @@ let
     hash =
       let
         placeholder = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-        platformSuffix = if stdenv.hostPlatform.isDarwin then "darwin" else "linux";
+        platformSuffix =
+          if stdenv.hostPlatform.isDarwin then
+            "darwin"
+          else if stdenv.hostPlatform.isx86_64 then
+            "linux-x86_64"
+          else if stdenv.hostPlatform.isAarch64 then
+            "linux-aarch64"
+          else
+            builtins.throw "Unsupported platform for admin-ui pnpm hash: ${stdenv.hostPlatform.system}";
         hashFile = ./expected-hashes + "/admin-ui.pnpm." + platformSuffix + ".sha256";
       in
       if builtins.pathExists hashFile then
