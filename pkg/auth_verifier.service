@@ -7,6 +7,7 @@ After=network.target
 Type=simple
 User=cosmian
 Group=cosmian
+WorkingDirectory=/var/lib/cosmian-auth
 ExecStart=/usr/bin/auth_verifier /etc/cosmian/auth_verifier.toml
 Restart=on-failure
 RestartSec=5

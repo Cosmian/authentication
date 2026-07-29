@@ -39,6 +39,10 @@ jobs:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
 
     steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
       - name: Download package artifacts
         uses: actions/download-artifact@v8
         with:
@@ -111,6 +115,56 @@ jobs:
           echo "$output" | grep -qiE 'failed to read|auth_verifier\.toml|configuration' \
             || { echo "ERROR: unexpected output from auth_verifier"; exit 1; }
 
+      - name: Install curl
+        shell: bash
+        run: |
+          set -ex
+          if command -v curl >/dev/null 2>&1; then
+            echo "curl already available"
+          elif command -v apt-get >/dev/null 2>&1; then
+            apt-get update -qq && apt-get install -y --no-install-recommends curl
+          elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y --nodocs curl
+          elif command -v microdnf >/dev/null 2>&1; then
+            microdnf install -y curl
+          else
+            echo "ERROR: cannot install curl — no known package manager" >&2; exit 1
+          fi
+
+      - name: Start server and verify admin UI
+        shell: bash
+        run: |
+          set -ex
+          # Prepare a writable working directory and use an in-memory DB so the
+          # container test has no filesystem permission issues.
+          WORK=$(mktemp -d)
+          CONFIG=$(mktemp "$WORK/auth_verifier.XXXXXX.toml")
+          cat > "$CONFIG" <<'TOML'
+          host_name = "127.0.0.1"
+          host_port = 8080
+          admin_ui_path = "/usr/share/auth_verifier/admin-ui"
+          roles = ["Admin", "User"]
+          [database_params]
+          backend = "sqlite"
+          connection_url = "sqlite::memory:"
+          TOML
+          BIN="/usr/bin/auth_verifier"
+          if [ ! -x "$BIN" ]; then
+            BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
+          fi
+          "$BIN" "$CONFIG" &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          # Wait up to 15 s for the server to open :8080
+          for i in $(seq 1 30); do
+            if curl -fsSo /dev/null http://127.0.0.1:8080/public/version 2>/dev/null; then
+              echo "Server is up (attempt $i)"
+              break
+            fi
+            sleep 0.5
+          done
+          bash .github/scripts/test/verify_running_ui.sh http://127.0.0.1:8080
+
   systemd-packages-test:
     name: Use GH runners ${{ matrix.link }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
     runs-on: ${{ matrix.runner }}
@@ -171,3 +225,25 @@ jobs:
         run: |
           set -ex
           systemd-analyze security auth_verifier.service
+
+      - name: Start auth_verifier service and verify admin UI
+        shell: bash
+        run: |
+          set -ex
+          sudo systemctl start auth_verifier
+          # Wait up to 30 s for the service to become active
+          for i in $(seq 1 30); do
+            if systemctl is-active --quiet auth_verifier; then
+              echo "Service is active (attempt $i)"
+              break
+            fi
+            sleep 1
+          done
+          if ! systemctl is-active --quiet auth_verifier; then
+            echo "ERROR: auth_verifier service is not active" >&2
+            sudo systemctl status auth_verifier --no-pager || true
+            sudo journalctl -u auth_verifier --no-pager -n 100 || true
+            exit 1
+          fi
+          bash .github/scripts/test/verify_running_ui.sh http://127.0.0.1:8080
+          sudo systemctl stop auth_verifier

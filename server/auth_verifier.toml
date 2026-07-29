@@ -113,7 +113,9 @@ backend = "sqlite"
 #               sqlite::memory:  (in-memory, data lost on restart)
 #   PostgreSQL: postgresql://user:password@host:5432/dbname
 #   MySQL:      mysql://user:password@host:3306/dbname
-connection_url = "sqlite://auth_verifier.db"
+# Absolute path under the package data directory (writable by the systemd
+# service, which runs with ProtectSystem=strict and WorkingDirectory there).
+connection_url = "sqlite:///var/lib/cosmian-auth/auth_verifier.db"
 
 # Maximum number of pooled connections (default: 10).
 # max_connections = 10
