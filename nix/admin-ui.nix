@@ -73,6 +73,11 @@ stdenv.mkDerivation {
   # configHook runs pnpm install --offline --frozen-lockfile
   inherit pnpmDeps;
 
+  # No native binaries — skip the strip/file-detection phase which requires
+  # the `file` command. Without this, Nix's fixupPhase fails on modern nixpkgs
+  # where `file` is not in the stdenv's default PATH.
+  dontStrip = true;
+
   buildPhase = ''
     export HOME=$TMPDIR
     pnpm run build
