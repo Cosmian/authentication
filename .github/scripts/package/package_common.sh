@@ -98,6 +98,30 @@ stage_binary() {
   cp -f "$BIN_OUT" "target/release/auth_verifier"
 }
 
+# ── Build admin UI and stage it where cargo-deb/rpm expect it ──────────────
+
+build_admin_ui() {
+  local ui_link ui_out ui_dist
+  ui_link="$REPO_ROOT/result-admin-ui"
+
+  nix-build -I "nixpkgs=${PIN_URL}" "$REPO_ROOT/default.nix" -A admin-ui -o "$ui_link"
+  ui_out=$(readlink -f "$ui_link" || echo "$ui_link")
+  ui_dist="$ui_out/dist"
+
+  if [ ! -f "$ui_dist/index.html" ]; then
+    echo "ERROR: admin UI not found at $ui_dist/index.html" >&2
+    exit 1
+  fi
+
+  # Stage into both locations: cargo-deb runs from server/ and cargo-generate-rpm
+  # from the repo root, and each resolves asset globs relative to its own CWD.
+  rm -rf "server/target/admin-ui" "target/admin-ui"
+  mkdir -p "server/target/admin-ui" "target/admin-ui"
+  cp -r "$ui_dist/." "server/target/admin-ui/"
+  cp -r "$ui_dist/." "target/admin-ui/"
+  echo "Admin UI staged: $(find "$ui_dist" -type f | wc -l) files"
+}
+
 # ── GPG signing ────────────────────────────────────────────────────────────
 
 gpg_sign_file() {
@@ -220,6 +244,7 @@ build_rpm() {
 prewarm_cargo_registry || true
 build_or_reuse_server
 stage_binary
+build_admin_ui
 
 if [ "$FORMAT" = "deb" ]; then
   build_deb
