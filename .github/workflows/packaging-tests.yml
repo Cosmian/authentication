@@ -235,6 +235,20 @@ jobs:
         shell: bash
         run: |
           set -ex
+          # The service ExecStart passes /etc/cosmian/auth_verifier.toml as config.
+          # Create a minimal config so the service can start in CI.
+          sudo mkdir -p /etc/cosmian
+          sudo tee /etc/cosmian/auth_verifier.toml > /dev/null <<'TOML'
+          host_name = "127.0.0.1"
+          host_port = 8080
+          admin_ui_path = "/usr/share/auth_verifier/admin-ui"
+          roles = ["Admin", "User"]
+          [database_params]
+          backend = "sqlite"
+          connection_url = "sqlite::memory:"
+          TOML
+          sudo chown root:cosmian /etc/cosmian/auth_verifier.toml
+          sudo chmod 440 /etc/cosmian/auth_verifier.toml
           sudo systemctl start auth_verifier
           # Wait up to 30 s for the service to become active
           for i in $(seq 1 30); do
