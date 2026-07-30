@@ -250,16 +250,24 @@ jobs:
           sudo chown root:cosmian /etc/cosmian/auth_verifier.toml
           sudo chmod 440 /etc/cosmian/auth_verifier.toml
           sudo systemctl start auth_verifier
-          # Wait up to 30 s for the service to become active
-          for i in $(seq 1 30); do
-            if systemctl is-active --quiet auth_verifier; then
-              echo "Service is active (attempt $i)"
+          # Wait up to 30 s for the HTTP server to be ready (Type=simple means
+          # systemd marks the service "active" as soon as the process spawns,
+          # before Actix-web has actually bound the port).
+          for i in $(seq 1 60); do
+            if curl -fsSo /dev/null http://127.0.0.1:8080/public/version 2>/dev/null; then
+              echo "HTTP server is up (attempt $i)"
               break
             fi
-            sleep 1
+            if ! systemctl is-active --quiet auth_verifier; then
+              echo "ERROR: auth_verifier service stopped unexpectedly" >&2
+              sudo systemctl status auth_verifier --no-pager || true
+              sudo journalctl -u auth_verifier --no-pager -n 100 || true
+              exit 1
+            fi
+            sleep 0.5
           done
-          if ! systemctl is-active --quiet auth_verifier; then
-            echo "ERROR: auth_verifier service is not active" >&2
+          if ! curl -fsSo /dev/null http://127.0.0.1:8080/public/version 2>/dev/null; then
+            echo "ERROR: auth_verifier did not start serving within 30 s" >&2
             sudo systemctl status auth_verifier --no-pager || true
             sudo journalctl -u auth_verifier --no-pager -n 100 || true
             exit 1
