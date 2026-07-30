@@ -115,6 +115,8 @@ build_admin_ui() {
 
   # Stage into both locations: cargo-deb runs from server/ and cargo-generate-rpm
   # from the repo root, and each resolves asset globs relative to its own CWD.
+  # Nix store files are read-only; grant write permission before removing.
+  chmod -R u+w "server/target/admin-ui" "target/admin-ui" 2>/dev/null || true
   rm -rf "server/target/admin-ui" "target/admin-ui"
   mkdir -p "server/target/admin-ui" "target/admin-ui"
   cp -r "$ui_dist/." "server/target/admin-ui/"
