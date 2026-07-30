@@ -83,7 +83,7 @@ assets = [
   [
     "target/release/auth_verifier",
     "usr/bin/auth_verifier",
-    "500",
+    "755",
   ],
   [
     "../README.md",
@@ -107,7 +107,7 @@ systemd-units = [
 
 [package.metadata.generate-rpm]
 assets = [
-  { source = "target/release/auth_verifier", dest = "/usr/bin/auth_verifier", mode = "0500" },
+  { source = "target/release/auth_verifier", dest = "/usr/bin/auth_verifier", mode = "0755" },
   { source = "../README.md", dest = "/usr/share/doc/cosmian-auth-verifier/README.md", mode = "0644" },
   { source = "../server/auth_verifier.toml", dest = "/etc/cosmian/auth_verifier.toml", mode = "0400" },
   { source = "target/admin-ui/**/*", dest = "/usr/share/auth_verifier/admin-ui/", mode = "0644" },
