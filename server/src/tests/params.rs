@@ -25,7 +25,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
     let server_params = ServerParams {
         host_name: "localhost".to_string(),
         host_port: port,
-        tls_params: Some(TlsParams {
+        tls_params: TlsParams {
             server_certificate: certificates_dir
                 .join("auth.server.cert.pem")
                 .to_string_lossy()
@@ -48,7 +48,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
             tls_cipher_suites: None,
             #[cfg(feature = "rustls")]
             tls_cipher_suites: None,
-        }),
+        },
         default_username: Some("default_user".to_string()),
         database_params: Some(DatabaseParams {
             backend: DatabaseBackend::SQLite,

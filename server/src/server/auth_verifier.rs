@@ -4,15 +4,13 @@ use crate::{
     middleware::{EnsureAuth, JwksManager, JwtAuth},
     server::{
         endpoints::{
-            add_admin_to_realm, approle_login, create_admin, create_or_update_role, create_realm,
-            create_userpass, delete_admin, delete_expired_sessions, delete_realm, delete_role,
-            delete_sessions, delete_sessions_for_realm, delete_userpass, destroy_secret_id,
-            generate_secret_id, get_admin, get_realm, get_role_id, get_session, get_session_by_id,
+            add_admin_to_realm, create_admin, create_realm, create_userpass, delete_admin,
+            delete_expired_sessions, delete_realm, delete_sessions, delete_sessions_for_realm,
+            delete_userpass, get_admin, get_realm, get_session, get_session_by_id,
             get_sessions_for_clients, get_userpass, jwks_well_known, list_admins,
-            list_all_userpass, list_realms, list_roles, list_userpass_by_realm, login,
-            remove_admin_from_realm, roles_endpoint, token_lookup_self, token_renew_self,
-            token_revoke_self, totp_disable, totp_generate, totp_verify, update_admin,
-            update_realm, update_userpass, upsert_session, version_endpoint, whoami,
+            list_all_userpass, list_realms, list_userpass_by_realm, login, remove_admin_from_realm,
+            roles_endpoint, totp_disable, totp_generate, totp_verify, update_admin, update_realm,
+            update_userpass, upsert_session, version_endpoint, whoami,
         },
         parameters::{DatabaseBackend, DatabaseParams, ServerParams},
     },
@@ -25,7 +23,8 @@ use actix_web::{
     dev::{ServerHandle, ServiceFactory, ServiceRequest, ServiceResponse},
     web::{self, Data, JsonConfig, PayloadConfig},
 };
-use cosmian_logger::{info, trace, warn};
+use cosmian_logger::{debug, info, trace};
+use jsonwebtoken::Algorithm;
 use std::{
     io,
     sync::{Arc, mpsc},
@@ -55,7 +54,7 @@ pub async fn start_auth_verifier(
             .context("failed to send server handle")?;
     }
 
-    info!("Starting the Auth server...");
+    info!("Starting the HTTPS Auth auth server...");
     // Run the server and return the result
     server
         .await
@@ -121,9 +120,28 @@ async fn prepare_auth_verifier(
     //     )
     // });
 
-    let (jwt_token_config, jwks_data) = resolve_jwt_config(&params)?;
-    let jwt_token_config = Arc::new(jwt_token_config);
-    let jwks_data = Arc::new(jwks_data);
+    let jwt_token_config = Arc::new(JwtTokenConfig {
+        algorithm: Algorithm::ES256,
+        encoding_key: params.get_jwt_encoding_key()?,
+        decoding_key: params.get_jwt_decoding_key()?,
+    });
+
+    // Build the JWKS document once from the JWT signing public key.
+    // Reads the same PEM path that get_jwt_decoding_key() uses.
+    let jwks_pem_path = params
+        .session_jwt_params
+        .as_ref()
+        .map(|p| p.jwt_ec_public_key.clone())
+        .unwrap_or_else(|| params.tls_params.server_certificate.clone());
+    let jwks_pem = std::fs::read_to_string(&jwks_pem_path).map_err(|e| {
+        crate::AuthError::Init(format!(
+            "Failed to read JWT public key PEM for JWKS ({jwks_pem_path}): {e}"
+        ))
+    })?;
+    let jwks_data = Arc::new(
+        crate::session::build_jwks_from_pem(&jwks_pem)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?,
+    );
 
     // Clone test server params for HttpServer closure
     let server_params = params.clone();
@@ -148,106 +166,24 @@ async fn prepare_auth_verifier(
         ))
         .client_request_timeout(std::time::Duration::from_secs(10));
 
-    let protocol = if params.tls_params.is_some() {
-        "https"
-    } else {
-        "http"
-    };
-    info!("Starting Authentication Server on {protocol}://{address}");
-
     #[cfg(feature = "openssl")]
-    let http_server = if let Some(ref tls_params) = params.tls_params {
-        http_server
-            .on_connect(extract_openssl_peer_certificate)
-            .bind_openssl(&address, create_openssl_acceptor(tls_params)?)
-            .map_err(|e| {
-                crate::AuthError::Init(format!("Failed binding the OpenSSL TLS connector: {e}"))
-            })?
-    } else {
-        http_server
-            .bind(&address)
-            .map_err(|e| crate::AuthError::Init(format!("Failed binding the HTTP server: {e}")))?
-    };
+    let http_server = http_server
+        .on_connect(extract_openssl_peer_certificate)
+        .bind_openssl(&address, create_openssl_acceptor(&params.tls_params)?)
+        .map_err(|e| {
+            crate::AuthError::Init(format!("Failed binding the OpenSSL TLS connector: {e}"))
+        })?;
 
     #[cfg(feature = "rustls")]
-    let http_server = if let Some(ref tls_params) = params.tls_params {
-        http_server
-            .on_connect(extract_rustls_peer_certificate)
-            .bind_rustls_0_23(&address, rustls_server_config(tls_params)?)
-            .map_err(|e| {
-                crate::AuthError::Init(format!("Failed binding the Rustls TLS connector: {e}"))
-            })?
-    } else {
-        http_server
-            .bind(&address)
-            .map_err(|e| crate::AuthError::Init(format!("Failed binding the HTTP server: {e}")))?
-    };
-    Ok((http_server.run(), collector_handle))
-}
-
-/// Resolve JWT signing keys and build the JWKS document.
-///
-/// Priority:
-///   1. Dedicated `[session_jwt_params]` — EC key files configured explicitly.
-///   2. Reuse TLS key pair — `[tls_params]` is present but no JWT-specific keys.
-///   3. Ephemeral HS256 — neither TLS nor JWT keys configured (dev/demo mode).
-///      Sessions are invalidated on every restart; configure [session_jwt_params]
-///      for persistence.
-fn resolve_jwt_config(params: &ServerParams) -> crate::AuthResult<(JwtTokenConfig, JwksData)> {
-    use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey};
-
-    // Case 1: dedicated JWT key pair
-    if let Some(ref jwt_params) = params.session_jwt_params {
-        let priv_pem = std::fs::read_to_string(&jwt_params.jwt_ec_private_key)
-            .map_err(|e| crate::AuthError::Init(format!("Failed to read JWT private key: {e}")))?;
-        let pub_pem = std::fs::read_to_string(&jwt_params.jwt_ec_public_key)
-            .map_err(|e| crate::AuthError::Init(format!("Failed to read JWT public key: {e}")))?;
-        let encoding_key = EncodingKey::from_ec_pem(priv_pem.as_bytes())
-            .map_err(|e| crate::AuthError::Init(format!("Invalid JWT encoding key PEM: {e}")))?;
-        let decoding_key = DecodingKey::from_ec_pem(pub_pem.as_bytes())
-            .map_err(|e| crate::AuthError::Init(format!("Invalid JWT decoding key PEM: {e}")))?;
-        let jwks = crate::session::build_jwks_from_pem(&pub_pem)
-            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?;
-        return Ok((
-            JwtTokenConfig::new(Algorithm::ES256, encoding_key, decoding_key),
-            jwks,
-        ));
-    }
-
-    // Case 2: reuse TLS cert/key for JWT signing
-    if let Some(ref tls_params) = params.tls_params {
-        let encoding_key = params.get_jwt_encoding_key()?;
-        let decoding_key = params.get_jwt_decoding_key()?;
-        let cert_pem = std::fs::read_to_string(&tls_params.server_certificate).map_err(|e| {
-            crate::AuthError::Init(format!("Failed to read TLS certificate for JWKS: {e}"))
+    let http_server = http_server
+        .on_connect(extract_rustls_peer_certificate)
+        .bind_rustls_0_23(&address, rustls_server_config(&params.tls_params)?)
+        .map_err(|e| {
+            crate::AuthError::Init(format!("Failed binding the Rustls TLS connector: {e}"))
         })?;
-        let jwks = crate::session::build_jwks_from_pem(&cert_pem)
-            .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?;
-        return Ok((
-            JwtTokenConfig::new(Algorithm::ES256, encoding_key, decoding_key),
-            jwks,
-        ));
-    }
 
-    // Case 3: no persistent keys — use ephemeral HS256
-    warn!("No [tls_params] or [session_jwt_params] configured.");
-    warn!("Using an ephemeral HS256 JWT signing key — all sessions will be lost on restart.");
-    warn!(
-        "Configure [tls_params] or [session_jwt_params] for persistent EC-based session signing."
-    );
-    let mut secret = [0u8; 64];
-    {
-        use rand::RngCore as _;
-        rand::thread_rng().fill_bytes(&mut secret);
-    }
-    let encoding_key = EncodingKey::from_secret(&secret);
-    let decoding_key = DecodingKey::from_secret(&secret);
-    // HS256 is symmetric — no public key to expose in JWKS.
-    let jwks = JwksData(serde_json::json!({ "keys": [] }));
-    Ok((
-        JwtTokenConfig::new(Algorithm::HS256, encoding_key, decoding_key),
-        jwks,
-    ))
+    debug!("Starting Authentication Server on {} ", &address,);
+    Ok((http_server.run(), collector_handle))
 }
 
 /// Builds the Actix App with the given session middleware.
@@ -397,33 +333,6 @@ fn build_app(
         .service(add_admin_to_realm)
         .service(remove_admin_from_realm);
 
-    // ── Vault-compatible AppRole auth (/v1/auth/*) ────────────────────────────
-    // Admin-protected role management is nested under `/approle/role/` to separate
-    // it from the unauthenticated login and token operations at the same scope level.
-    let vault_approle_role_scope = web::scope("/approle/role")
-        .wrap(AdminAuth::new(database.clone()))
-        .wrap(CookieAuthSameServer::new(
-            session_store.clone(),
-            jwt_token_config.clone(),
-        ))
-        .wrap(Cors::permissive())
-        .service(list_roles)
-        .service(create_or_update_role)
-        .service(delete_role)
-        .service(get_role_id)
-        .service(generate_secret_id)
-        .service(destroy_secret_id);
-
-    let vault_auth_scope = web::scope("/v1/auth")
-        .wrap(Cors::permissive())
-        .service(vault_approle_role_scope)
-        // Public: AppRole login (no admin session required)
-        .service(approle_login)
-        // Token operations: read X-Vault-Token, no admin session required
-        .service(token_lookup_self)
-        .service(token_renew_self)
-        .service(token_revoke_self);
-
     let app = app
         .service(public_scope)
         .service(well_known_scope)
@@ -432,8 +341,7 @@ fn build_app(
         .service(sessions_scope)
         .service(realms_crud_scope)
         .service(app_scope)
-        .service(admins_scope)
-        .service(vault_auth_scope);
+        .service(admins_scope);
 
     #[cfg(feature = "admin-ui")]
     let app = {

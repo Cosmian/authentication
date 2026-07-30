@@ -2,23 +2,15 @@
 # Debian post-install script for auth_verifier
 set -e
 
-# Create cosmian user/group if they don't already exist
-if ! getent group cosmian >/dev/null 2>&1; then
-  groupadd --system cosmian
-fi
-if ! getent passwd cosmian >/dev/null 2>&1; then
-  useradd --system --no-create-home --shell /usr/sbin/nologin --gid cosmian cosmian
-fi
+has_systemd() {
+  command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]
+}
 
-# Create data directory
-mkdir -p /var/lib/cosmian-auth
-chown cosmian:cosmian /var/lib/cosmian-auth
-chmod 750 /var/lib/cosmian-auth
-
-# Protect config file
-if [ -f /etc/cosmian/auth_verifier.toml ]; then
-  chmod 400 /etc/cosmian/auth_verifier.toml
-  chown root:cosmian /etc/cosmian/auth_verifier.toml
+# Service management is handled by the deb-systemd-* helpers that cargo-deb
+# injects below. Avoid hard-failing on environments without systemd (containers,
+# WSL, chroots).
+if has_systemd; then
+  systemctl daemon-reload >/dev/null 2>&1 || true
 fi
 
 #DEBHELPER#

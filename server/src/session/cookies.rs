@@ -16,14 +16,10 @@ pub fn session_id_from_cookie_value(cookie_value: &[u8]) -> AuthResult<String> {
     Ok(hex::encode(session_id))
 }
 
-pub fn build_cookie(
-    value: &str,
-    max_age_seconds: i64,
-    secure: bool,
-) -> Result<Cookie<'static>, AuthError> {
+pub fn build_cookie(value: &str, max_age_seconds: i64) -> Result<Cookie<'static>, AuthError> {
     let mut cookie = Cookie::new(COOKIE_NAME.to_owned(), value.to_owned());
 
-    cookie.set_secure(secure);
+    cookie.set_secure(true);
     cookie.set_http_only(true);
     cookie.set_same_site(Some(SameSite::Strict));
     cookie.set_path("/");
