@@ -150,8 +150,8 @@ EOF
   # Runtime directories
   authDirectories = pkgs.runCommand "auth-verifier-directories" { } ''
     mkdir -p $out/home/auth
-    mkdir -p $out/etc/cosmian
-    chmod 777 $out/etc/cosmian
+    mkdir -p $out/etc/cosmian/dev
+    chmod 777 $out/etc/cosmian/dev
     mkdir -p $out/tmp
     chmod 1777 $out/tmp
   '';
