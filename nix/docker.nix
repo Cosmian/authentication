@@ -65,7 +65,36 @@ if [ ! -f "$CONF_PATH" ]; then
   echo "To use a custom configuration:"
   echo "  Mount your TOML at /etc/cosmian/auth_verifier.toml, or"
   echo "  set AUTH_SERVER_CONF to the path of your configuration file."
-  CONF_PATH="/etc/cosmian/dev/auth_verifier.toml"
+
+  # Generate self-signed certs at runtime
+  DEV_DIR="/etc/cosmian/dev"
+  mkdir -p "$DEV_DIR"
+  if [ ! -f "$DEV_DIR/dev.key.pem" ]; then
+    echo "Generating self-signed TLS certificates..."
+    openssl ecparam -genkey -name prime256v1 -noout -out "$DEV_DIR/dev.key.pem"
+    openssl req -new -x509 -key "$DEV_DIR/dev.key.pem" \
+      -out "$DEV_DIR/dev.cert.pem" -days 36500 \
+      -subj "/CN=localhost" \
+      -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+    cp "$DEV_DIR/dev.cert.pem" "$DEV_DIR/dev.ca.pem"
+  fi
+
+  cat > "$DEV_DIR/auth_verifier.toml" << 'TOML'
+host_name = "0.0.0.0"
+host_port = 8080
+admin_ui_path = "/srv/admin-ui"
+roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+
+[tls_params]
+server_private_key = "/etc/cosmian/dev/dev.key.pem"
+server_certificate = "/etc/cosmian/dev/dev.cert.pem"
+server_ca_chain = "/etc/cosmian/dev/dev.ca.pem"
+
+[database_params]
+backend = "sqlite"
+connection_url = "sqlite::memory:"
+TOML
+  CONF_PATH="$DEV_DIR/auth_verifier.toml"
 fi
 
 echo "Starting auth_verifier with configuration: $CONF_PATH"
@@ -74,45 +103,9 @@ EOF
     chmod +x $out/bin/docker-entrypoint.sh
   '';
 
-  # Self-signed TLS certificates for the dev config (EC P-256, SAN=localhost).
-  # Output under /etc/cosmian/dev/ so buildEnv's pathsToLink ["/etc"] links them.
-  devCerts = pkgs.runCommand "auth-verifier-dev-certs" {
-    nativeBuildInputs = [ pkgs.openssl ];
-  } ''
-    mkdir -p $out/etc/cosmian/dev
-    openssl ecparam -genkey -name prime256v1 -noout -out "$out/etc/cosmian/dev/dev.key.pem"
-    openssl req -new -x509 -key "$out/etc/cosmian/dev/dev.key.pem" \
-      -out "$out/etc/cosmian/dev/dev.cert.pem" -days 36500 \
-      -subj "/CN=localhost" \
-      -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-    cp "$out/etc/cosmian/dev/dev.cert.pem" "$out/etc/cosmian/dev/dev.ca.pem"
-  '';
-
-  devConfig = pkgs.writeTextFile {
-    name = "auth-verifier-dev-config";
-    text = ''
-      # Development/demo configuration — self-signed TLS, in-memory SQLite.
-      # Uses auto-generated certificates (NOT for production).
-      # Sessions are lost on restart.
-      #
-      # For production, mount a proper auth_verifier.toml with real TLS certs
-      # and optionally [session_jwt_params].
-      host_name = "0.0.0.0"
-      host_port = 8080
-      admin_ui_path = "/srv/admin-ui"
-      roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
-
-      [tls_params]
-      server_private_key = "/etc/cosmian/dev/dev.key.pem"
-      server_certificate = "/etc/cosmian/dev/dev.cert.pem"
-      server_ca_chain = "/etc/cosmian/dev/dev.ca.pem"
-
-      [database_params]
-      backend        = "sqlite"
-      connection_url = "sqlite::memory:"
-    '';
-    destination = "/etc/cosmian/dev/auth_verifier.toml";
-  };
+  # Self-signed TLS certificates are generated at runtime by the entrypoint
+  # script when no configuration file is found. This avoids Nix store path
+  # linking issues and ensures the certs are always available.
 
   runtimeEnv = pkgs.buildEnv {
     name = "auth-verifier-runtime-env";
@@ -121,6 +114,7 @@ EOF
       pkgs.tzdata
       pkgs.coreutils
       pkgs.bash
+      pkgs.openssl
     ];
   };
 
@@ -157,6 +151,7 @@ EOF
   authDirectories = pkgs.runCommand "auth-verifier-directories" { } ''
     mkdir -p $out/home/auth
     mkdir -p $out/etc/cosmian
+    chmod 777 $out/etc/cosmian
     mkdir -p $out/tmp
     chmod 1777 $out/tmp
   '';
@@ -177,8 +172,6 @@ pkgs.dockerTools.buildImage {
         pkgs.dockerTools.caCertificates
         startupScript
         authDirectories
-        devConfig
-        devCerts
       ]
       ++ pkgs.lib.optional (adminUiContent != null) adminUiContent;
     pathsToLink = [

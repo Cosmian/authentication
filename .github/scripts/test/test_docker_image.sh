@@ -57,9 +57,9 @@ assert_contains() {
 
 # ── Start container ────────────────────────────────────────────────────────
 
-CID=$(docker run -d --rm -p "${PORT}:${PORT}" "$IMAGE_NAME" 2>/dev/null)
+CID=$(docker run -d -p "${PORT}:${PORT}" "$IMAGE_NAME" 2>/dev/null)
 echo "Container ID: $CID"
-trap 'echo "Stopping container…"; docker stop "$CID" 2>/dev/null || true' EXIT
+trap 'echo "Stopping container…"; docker stop "$CID" 2>/dev/null || true; docker rm -f "$CID" 2>/dev/null || true' EXIT
 
 # ── Wait for readiness ─────────────────────────────────────────────────────
 
@@ -71,12 +71,18 @@ for i in $(seq 1 30); do
     READY=true
     break
   fi
+  # Check if container is still running
+  if ! docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null | grep -q true; then
+    echo "ERROR: Container exited prematurely"
+    docker logs "$CID" 2>&1 || true
+    exit 1
+  fi
   sleep 1
 done
 
 if [ "$READY" != true ]; then
   echo "ERROR: Server did not become ready within 30 seconds"
-  docker logs "$CID" || true
+  docker logs "$CID" 2>&1 || true
   exit 1
 fi
 
