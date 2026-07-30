@@ -115,12 +115,16 @@ build_admin_ui() {
 
   # Stage into both locations: cargo-deb runs from server/ and cargo-generate-rpm
   # from the repo root, and each resolves asset globs relative to its own CWD.
-  # Nix store files are read-only; grant write permission before removing.
+  # Nix store outputs are read-only (dirs 0555, files 0444). A previous build run
+  # (e.g. DEB before RPM) may have left those read-only copies here. Make them
+  # writable before attempting removal, otherwise rm -rf fails on the subdirs.
   chmod -R u+w "server/target/admin-ui" "target/admin-ui" 2>/dev/null || true
   rm -rf "server/target/admin-ui" "target/admin-ui"
   mkdir -p "server/target/admin-ui" "target/admin-ui"
   cp -r "$ui_dist/." "server/target/admin-ui/"
   cp -r "$ui_dist/." "target/admin-ui/"
+  # Make staged files writable so future rm -rf calls succeed.
+  chmod -R u+w "server/target/admin-ui" "target/admin-ui"
   echo "Admin UI staged: $(find "$ui_dist" -type f | wc -l) files"
 }
 
