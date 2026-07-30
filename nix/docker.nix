@@ -75,16 +75,17 @@ EOF
   '';
 
   # Self-signed TLS certificates for the dev config (EC P-256, SAN=localhost).
+  # Output under /etc/cosmian/dev/ so buildEnv's pathsToLink ["/etc"] links them.
   devCerts = pkgs.runCommand "auth-verifier-dev-certs" {
     nativeBuildInputs = [ pkgs.openssl ];
   } ''
-    mkdir -p $out
-    openssl ecparam -genkey -name prime256v1 -noout -out "$out/dev.key.pem"
-    openssl req -new -x509 -key "$out/dev.key.pem" \
-      -out "$out/dev.cert.pem" -days 36500 \
+    mkdir -p $out/etc/cosmian/dev
+    openssl ecparam -genkey -name prime256v1 -noout -out "$out/etc/cosmian/dev/dev.key.pem"
+    openssl req -new -x509 -key "$out/etc/cosmian/dev/dev.key.pem" \
+      -out "$out/etc/cosmian/dev/dev.cert.pem" -days 36500 \
       -subj "/CN=localhost" \
       -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
-    cp "$out/dev.cert.pem" "$out/dev.ca.pem"
+    cp "$out/etc/cosmian/dev/dev.cert.pem" "$out/etc/cosmian/dev/dev.ca.pem"
   '';
 
   devConfig = pkgs.writeTextFile {
