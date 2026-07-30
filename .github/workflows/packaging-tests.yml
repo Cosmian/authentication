@@ -111,21 +111,23 @@ jobs:
           echo "$output" | grep -qiE 'failed to read|auth_verifier\.toml|configuration' \
             || { echo "ERROR: unexpected output from auth_verifier"; exit 1; }
 
-      - name: Install curl
+      - name: Install curl and openssl
         shell: bash
         run: |
           set -ex
-          if command -v curl >/dev/null 2>&1; then
-            echo "curl already available"
-          elif command -v apt-get >/dev/null 2>&1; then
-            apt-get update -qq && apt-get install -y --no-install-recommends curl
-          elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y --nodocs curl
-          elif command -v microdnf >/dev/null 2>&1; then
-            microdnf install -y curl
-          else
-            echo "ERROR: cannot install curl — no known package manager" >&2; exit 1
-          fi
+          install_pkg() {
+            if command -v apt-get >/dev/null 2>&1; then
+              apt-get update -qq && apt-get install -y --no-install-recommends "$@"
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y --nodocs "$@"
+            elif command -v microdnf >/dev/null 2>&1; then
+              microdnf install -y "$@"
+            else
+              echo "ERROR: cannot install packages — no known package manager" >&2; exit 1
+            fi
+          }
+          command -v curl >/dev/null 2>&1 || install_pkg curl
+          command -v openssl >/dev/null 2>&1 || install_pkg openssl
 
       - name: Start server and verify admin UI
         shell: bash
@@ -134,12 +136,25 @@ jobs:
           # Prepare a writable working directory and use an in-memory DB so the
           # container test has no filesystem permission issues.
           WORK=$(mktemp -d)
+
+          # Generate self-signed EC certs (required by the server's TLS stack)
+          openssl ecparam -genkey -name prime256v1 -noout -out "$WORK/dev.key.pem"
+          openssl req -new -x509 -key "$WORK/dev.key.pem" \
+            -out "$WORK/dev.cert.pem" -days 1 \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+          cp "$WORK/dev.cert.pem" "$WORK/dev.ca.pem"
+
           CONFIG=$(mktemp "$WORK/auth_verifier.XXXXXX.toml")
-          cat > "$CONFIG" <<'TOML'
+          cat > "$CONFIG" <<TOML
           host_name = "127.0.0.1"
           host_port = 8080
           admin_ui_path = "/usr/share/auth_verifier/admin-ui"
           roles = ["Admin", "User"]
+          [tls_params]
+          server_private_key = "$WORK/dev.key.pem"
+          server_certificate = "$WORK/dev.cert.pem"
+          server_ca_chain = "$WORK/dev.ca.pem"
           [database_params]
           backend = "sqlite"
           connection_url = "sqlite::memory:"
@@ -153,22 +168,22 @@ jobs:
           trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
           # Wait up to 15 s for the server to open :8080
           for i in $(seq 1 30); do
-            if curl -fsSo /dev/null http://127.0.0.1:8080/public/version 2>/dev/null; then
+            if curl -kfsSo /dev/null https://127.0.0.1:8080/public/version 2>/dev/null; then
               echo "Server is up (attempt $i)"
               break
             fi
             sleep 0.5
           done
           # Inline the UI verification (no git/checkout available in Docker containers)
-          HTTP=$(curl -o /tmp/_idx.html -w '%{http_code}' -s http://127.0.0.1:8080/admin-ui/index.html)
+          HTTP=$(curl -k -o /tmp/_idx.html -w '%{http_code}' -s https://127.0.0.1:8080/admin-ui/index.html)
           case "$HTTP" in 2*) ;; *) echo "ERROR: /admin-ui/index.html returned $HTTP"; exit 1;; esac
           grep -qiE '<html|<!doctype|<div id="root"' /tmp/_idx.html \
             || { echo "ERROR: index.html body is not HTML"; exit 1; }
           ASSET=$(grep -oE '/admin-ui/assets/[^"]+\.(js|css)' /tmp/_idx.html | head -1)
           [ -n "$ASSET" ] || { echo "ERROR: no asset URL in index.html"; exit 1; }
-          HTTP=$(curl -o /dev/null -w '%{http_code}' -s "http://127.0.0.1:8080${ASSET}")
+          HTTP=$(curl -k -o /dev/null -w '%{http_code}' -s "https://127.0.0.1:8080${ASSET}")
           case "$HTTP" in 2*) ;; *) echo "ERROR: asset $ASSET returned $HTTP"; exit 1;; esac
-          HTTP=$(curl -o /dev/null -w '%{http_code}' -s http://127.0.0.1:8080/public/version)
+          HTTP=$(curl -k -o /dev/null -w '%{http_code}' -s https://127.0.0.1:8080/public/version)
           case "$HTTP" in 2*) echo "All UI checks PASSED";; *) echo "ERROR: /public/version returned $HTTP"; exit 1;; esac
 
   systemd-packages-test:
@@ -238,24 +253,38 @@ jobs:
           # The service ExecStart passes /etc/cosmian/auth_verifier.toml as config.
           # Create a minimal config so the service can start in CI.
           sudo mkdir -p /etc/cosmian
+
+          # Generate self-signed EC certs for the CI test
+          sudo openssl ecparam -genkey -name prime256v1 -noout -out /etc/cosmian/dev.key.pem
+          sudo openssl req -new -x509 -key /etc/cosmian/dev.key.pem \
+            -out /etc/cosmian/dev.cert.pem -days 1 \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+          sudo cp /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
+
           sudo tee /etc/cosmian/auth_verifier.toml > /dev/null <<'TOML'
           host_name = "127.0.0.1"
           host_port = 8080
           admin_ui_path = "/usr/share/auth_verifier/admin-ui"
           roles = ["Admin", "User"]
+          [tls_params]
+          server_private_key = "/etc/cosmian/dev.key.pem"
+          server_certificate = "/etc/cosmian/dev.cert.pem"
+          server_ca_chain = "/etc/cosmian/dev.ca.pem"
           [database_params]
           backend = "sqlite"
           connection_url = "sqlite::memory:"
           TOML
-          sudo chown root:cosmian /etc/cosmian/auth_verifier.toml
+          sudo chown root:cosmian /etc/cosmian/auth_verifier.toml /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
           sudo chmod 440 /etc/cosmian/auth_verifier.toml
+          sudo chmod 644 /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
           sudo systemctl start auth_verifier
-          # Wait up to 30 s for the HTTP server to be ready (Type=simple means
+          # Wait up to 30 s for the HTTPS server to be ready (Type=simple means
           # systemd marks the service "active" as soon as the process spawns,
           # before Actix-web has actually bound the port).
           for i in $(seq 1 60); do
-            if curl -fsSo /dev/null http://127.0.0.1:8080/public/version 2>/dev/null; then
-              echo "HTTP server is up (attempt $i)"
+            if curl -kfsSo /dev/null https://127.0.0.1:8080/public/version 2>/dev/null; then
+              echo "HTTPS server is up (attempt $i)"
               break
             fi
             if ! systemctl is-active --quiet auth_verifier; then
@@ -266,11 +295,11 @@ jobs:
             fi
             sleep 0.5
           done
-          if ! curl -fsSo /dev/null http://127.0.0.1:8080/public/version 2>/dev/null; then
+          if ! curl -kfsSo /dev/null https://127.0.0.1:8080/public/version 2>/dev/null; then
             echo "ERROR: auth_verifier did not start serving within 30 s" >&2
             sudo systemctl status auth_verifier --no-pager || true
             sudo journalctl -u auth_verifier --no-pager -n 100 || true
             exit 1
           fi
-          bash .github/scripts/test/verify_running_ui.sh http://127.0.0.1:8080
+          bash .github/scripts/test/verify_running_ui.sh https://127.0.0.1:8080
           sudo systemctl stop auth_verifier

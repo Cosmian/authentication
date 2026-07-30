@@ -8,7 +8,7 @@ set -euo pipefail
 
 IMAGE_NAME="${DOCKER_IMAGE_NAME:-cosmian-auth-verifier:latest}"
 PORT="${AUTH_SERVER_PORT:-8080}"
-HTTPS="${AUTH_SERVER_HTTPS:-false}"
+HTTPS="${AUTH_SERVER_HTTPS:-true}"
 if [ "$HTTPS" = "true" ]; then
   BASE_URL="https://127.0.0.1:${PORT}"
 else

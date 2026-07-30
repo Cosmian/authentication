@@ -58,9 +58,9 @@ fi
 
 if [ ! -f "$CONF_PATH" ]; then
   echo "No configuration file found at '$CONF_PATH'."
-  echo "Using built-in development configuration (plain HTTP on port 8080, in-memory SQLite)."
-  echo "WARNING: no TLS and no JWT keys configured — sessions use an ephemeral HS256 key"
-  echo "         and will be invalidated on restart.  NOT for production use."
+  echo "Using built-in development configuration (self-signed TLS on port 8080, in-memory SQLite)."
+  echo "WARNING: self-signed certificates and no JWT keys configured — sessions use"
+  echo "         the TLS key and will be invalidated on restart.  NOT for production use."
   echo ""
   echo "To use a custom configuration:"
   echo "  Mount your TOML at /etc/cosmian/auth_verifier.toml, or"
@@ -74,18 +74,37 @@ EOF
     chmod +x $out/bin/docker-entrypoint.sh
   '';
 
+  # Self-signed TLS certificates for the dev config (EC P-256, SAN=localhost).
+  devCerts = pkgs.runCommand "auth-verifier-dev-certs" {
+    nativeBuildInputs = [ pkgs.openssl ];
+  } ''
+    mkdir -p $out
+    openssl ecparam -genkey -name prime256v1 -noout -out "$out/dev.key.pem"
+    openssl req -new -x509 -key "$out/dev.key.pem" \
+      -out "$out/dev.cert.pem" -days 36500 \
+      -subj "/CN=localhost" \
+      -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+    cp "$out/dev.cert.pem" "$out/dev.ca.pem"
+  '';
+
   devConfig = pkgs.writeTextFile {
     name = "auth-verifier-dev-config";
     text = ''
-      # Development/demo configuration — plain HTTP, in-memory SQLite.
-      # No TLS and no JWT keys: the server generates an ephemeral HS256 signing
-      # key at startup. Sessions are lost on restart.
+      # Development/demo configuration — self-signed TLS, in-memory SQLite.
+      # Uses auto-generated certificates (NOT for production).
+      # Sessions are lost on restart.
       #
-      # For production, mount a proper auth_verifier.toml with [tls_params] and
-      # optionally [session_jwt_params].
+      # For production, mount a proper auth_verifier.toml with real TLS certs
+      # and optionally [session_jwt_params].
       host_name = "0.0.0.0"
       host_port = 8080
+      admin_ui_path = "/srv/admin-ui"
       roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+
+      [tls_params]
+      server_private_key = "/etc/cosmian/dev/dev.key.pem"
+      server_certificate = "/etc/cosmian/dev/dev.cert.pem"
+      server_ca_chain = "/etc/cosmian/dev/dev.ca.pem"
 
       [database_params]
       backend        = "sqlite"
@@ -158,6 +177,7 @@ pkgs.dockerTools.buildImage {
         startupScript
         authDirectories
         devConfig
+        devCerts
       ]
       ++ pkgs.lib.optional (adminUiContent != null) adminUiContent;
     pathsToLink = [

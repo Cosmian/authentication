@@ -20,6 +20,12 @@ if ! command -v curl >/dev/null 2>&1; then
   exit 1
 fi
 
+# Detect HTTPS and add -k (skip cert verification) for self-signed certs
+CURL_OPTS=""
+case "$BASE_URL" in
+  https://*) CURL_OPTS="-k" ;;
+esac
+
 echo "==========================================="
 echo "Verifying admin UI at $BASE_URL"
 echo "==========================================="
@@ -29,7 +35,7 @@ index_url="$BASE_URL/admin-ui/index.html"
 echo "GET $index_url"
 index_body=$(mktemp)
 trap 'rm -f "$index_body"' EXIT
-http_code=$(curl -fsSL -o "$index_body" -w '%{http_code}' "$index_url")
+http_code=$(curl $CURL_OPTS -fsSL -o "$index_body" -w '%{http_code}' "$index_url")
 echo "  -> HTTP $http_code"
 if ! grep -qiE '<html|<!doctype html|<div id="root"' "$index_body"; then
   echo "ERROR: /admin-ui/index.html does not look like the UI HTML document" >&2
@@ -47,14 +53,14 @@ if [ -z "$asset_path" ]; then
 fi
 asset_url="$BASE_URL$asset_path"
 echo "GET $asset_url"
-asset_code=$(curl -fsSL -o /dev/null -w '%{http_code}' "$asset_url")
+asset_code=$(curl $CURL_OPTS -fsSL -o /dev/null -w '%{http_code}' "$asset_url")
 echo "  -> HTTP $asset_code"
 echo "  asset check PASSED ($asset_path)"
 
 # ── 3. public API endpoint ─────────────────────────────────────────────────
 version_url="$BASE_URL/public/version"
 echo "GET $version_url"
-version_code=$(curl -fsSL -o /dev/null -w '%{http_code}' "$version_url")
+version_code=$(curl $CURL_OPTS -fsSL -o /dev/null -w '%{http_code}' "$version_url")
 echo "  -> HTTP $version_code"
 echo "  /public/version check PASSED"
 
