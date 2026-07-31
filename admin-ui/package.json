@@ -19,7 +19,7 @@
     },
     "dependencies": {
         "@ant-design/icons": "^6.1.0",
-        "@tailwindcss/vite": "^4.2.2",
+        "@tailwindcss/vite": "^4.3.3",
         "antd": "^6.5.2",
         "qrcode": "^1.5.4",
         "react": "^19.2.8",
