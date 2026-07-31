@@ -137,8 +137,8 @@ jobs:
           # container test has no filesystem permission issues.
           WORK=$(mktemp -d)
 
-          # Generate self-signed EC certs (required by the server's TLS stack)
-          openssl ecparam -genkey -name prime256v1 -noout -out "$WORK/dev.key.pem"
+          # Generate self-signed EC certs in PKCS#8 format (required by the server's TLS stack)
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "$WORK/dev.key.pem"
           openssl req -new -x509 -key "$WORK/dev.key.pem" \
             -out "$WORK/dev.cert.pem" -days 1 \
             -subj "/CN=localhost" \
