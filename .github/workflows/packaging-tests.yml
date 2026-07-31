@@ -275,7 +275,7 @@ jobs:
           backend = "sqlite"
           connection_url = "sqlite::memory:"
           TOML
-          sudo chown root:cosmian /etc/cosmian/auth_verifier.toml /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
+          sudo chown root:root /etc/cosmian/auth_verifier.toml /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
           sudo chmod 440 /etc/cosmian/auth_verifier.toml
           sudo chmod 644 /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
           sudo systemctl start auth_verifier

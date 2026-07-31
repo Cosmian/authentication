@@ -147,11 +147,12 @@ EOF
     destination = "/etc/nsswitch.conf";
   };
 
-  # Runtime directories
+  # Runtime directories — only home/auth and tmp are created here.
+  # /etc/cosmian/dev is created in extraCommands so it is a real writable
+  # directory in the image layer (buildEnv links /etc from the read-only
+  # Nix store, so a directory created here would not be writable at runtime).
   authDirectories = pkgs.runCommand "auth-verifier-directories" { } ''
     mkdir -p $out/home/auth
-    mkdir -p $out/etc/cosmian/dev
-    chmod 777 $out/etc/cosmian/dev
     mkdir -p $out/tmp
     chmod 1777 $out/tmp
   '';
@@ -239,6 +240,12 @@ pkgs.dockerTools.buildImage {
       for f in ${gccRtLib}/libgcc_s.so*; do
         [ -e "$f" ] && ln -sf "$f" "lib/$(basename "$f")" || true
       done
+
+      # Writable directory for runtime-generated dev certificates.
+      # Must be created here (not in buildEnv) because buildEnv links /etc
+      # from the read-only Nix store.
+      mkdir -p etc/cosmian/dev
+      chmod 777 etc/cosmian/dev
 
       ${pkgs.lib.optionalString (adminUiContent != null) ''
         # Verify admin-ui assets were bundled correctly
