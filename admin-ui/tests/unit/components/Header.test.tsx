@@ -90,12 +90,12 @@ describe("Header", () => {
             error: null,
             refreshRealms: vi.fn(),
         });
-        const { container } = render(<Header />);
-        // Ant Design Select sets aria-busy="true" on the combobox when loading
-        const combobox = container.querySelector(".ant-select-selector");
-        expect(combobox).not.toBeNull();
-        // The Select should be present; when loading=true Ant Design shows a spinner
-        const loadingSpinner = container.querySelector(".ant-select-arrow .anticon-loading");
-        expect(loadingSpinner).not.toBeNull();
+        render(<Header />);
+        // When loading, the Ant Design Select renders a combobox with a
+        // loading class and the raw realm ID as the selected value.
+        const combobox = screen.getByRole("combobox");
+        expect(combobox).toBeInTheDocument();
+        const select = combobox.closest(".ant-select");
+        expect(select).toHaveClass("ant-select-loading");
     });
 });
