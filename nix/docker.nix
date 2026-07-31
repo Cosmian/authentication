@@ -242,8 +242,9 @@ pkgs.dockerTools.buildImage {
       done
 
       # Writable directory for runtime-generated dev certificates.
-      # buildEnv links /etc as a symlink to the read-only Nix store, so we
-      # must replace it with a real directory before creating subdirectories.
+      # buildEnv creates /etc as a directory with read-only Nix store
+      # permissions (555).  Make it writable so we can create subdirectories.
+      # If /etc is a symlink (older Nixpkgs), replace it with a real dir.
       if [ -L etc ]; then
         etc_target=$(readlink etc)
         rm etc
@@ -251,6 +252,8 @@ pkgs.dockerTools.buildImage {
         if [ -d "$etc_target" ]; then
           cp -a "$etc_target/." etc/
         fi
+      else
+        chmod u+rwx etc
       fi
       mkdir -p etc/cosmian/dev
       chmod 777 etc/cosmian/dev
