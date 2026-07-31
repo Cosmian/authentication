@@ -67,7 +67,7 @@ pub async fn start_test_server(server_params: ServerParams) -> AuthResult<TestsC
     Ok(TestsContext {
         server_params,
         server_handle,
-        thread_handle,
+        thread_handle: Some(thread_handle),
     })
 }
 

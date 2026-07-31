@@ -9,8 +9,9 @@ use crate::{
 };
 
 /// Atomic counter for generating unique port numbers for parallel tests.
-/// Starts at 49998 and increments for each test server instance.
-static PORT_COUNTER: AtomicU16 = AtomicU16::new(49998);
+/// Starts at 59100 and increments for each test server instance.
+/// Ports below 59000 are avoided to prevent conflicts with common applications.
+static PORT_COUNTER: AtomicU16 = AtomicU16::new(59100);
 
 pub fn get_default_server_params() -> AuthResult<ServerParams> {
     // Get a unique port for this test server instance
@@ -23,7 +24,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
     let certificates_dir = cargo_manifest_dir.join("src/tests/certificates/ec");
 
     let server_params = ServerParams {
-        host_name: "localhost".to_string(),
+        host_name: "127.0.0.1".to_string(),
         host_port: port,
         tls_params: TlsParams {
             server_certificate: certificates_dir
