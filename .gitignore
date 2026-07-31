@@ -4,3 +4,4 @@ result*
 admin-ui/node_modules/
 admin-ui/dist/
 .github/agents/
+.qwen

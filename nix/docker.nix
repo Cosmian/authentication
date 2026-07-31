@@ -241,12 +241,6 @@ pkgs.dockerTools.buildImage {
         [ -e "$f" ] && ln -sf "$f" "lib/$(basename "$f")" || true
       done
 
-      # Writable directory for runtime-generated dev certificates.
-      # Must be created here (not in buildEnv) because buildEnv links /etc
-      # from the read-only Nix store.
-      mkdir -p etc/cosmian/dev
-      chmod 777 etc/cosmian/dev
-
       ${pkgs.lib.optionalString (adminUiContent != null) ''
         # Verify admin-ui assets were bundled correctly
         if [ ! -f srv/admin-ui/index.html ]; then
@@ -259,4 +253,13 @@ pkgs.dockerTools.buildImage {
         echo "admin-ui check PASSED: $UI_FILES files present at /srv/admin-ui/"
       ''}
     '';
+
+  # Writable directory for runtime-generated dev certificates.
+  # Must be created with fakeroot because buildEnv links /etc from the
+  # read-only Nix store; extraCommands runs as nixbld and cannot create
+  # subdirectories under /etc.
+  fakeRootCommands = ''
+    mkdir -p etc/cosmian/dev
+    chmod 777 etc/cosmian/dev
+  '';
 }
