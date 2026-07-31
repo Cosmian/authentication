@@ -254,8 +254,8 @@ jobs:
           # Create a minimal config so the service can start in CI.
           sudo mkdir -p /etc/cosmian
 
-          # Generate self-signed EC certs for the CI test
-          sudo openssl ecparam -genkey -name prime256v1 -noout -out /etc/cosmian/dev.key.pem
+          # Generate self-signed EC certs for the CI test (PKCS#8 format)
+          sudo openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out /etc/cosmian/dev.key.pem
           sudo openssl req -new -x509 -key /etc/cosmian/dev.key.pem \
             -out /etc/cosmian/dev.cert.pem -days 1 \
             -subj "/CN=localhost" \

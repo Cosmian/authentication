@@ -71,7 +71,7 @@ if [ ! -f "$CONF_PATH" ]; then
   mkdir -p "$DEV_DIR"
   if [ ! -f "$DEV_DIR/dev.key.pem" ]; then
     echo "Generating self-signed TLS certificates..."
-    openssl ecparam -genkey -name prime256v1 -noout -out "$DEV_DIR/dev.key.pem"
+    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "$DEV_DIR/dev.key.pem"
     openssl req -new -x509 -key "$DEV_DIR/dev.key.pem" \
       -out "$DEV_DIR/dev.cert.pem" -days 36500 \
       -subj "/CN=localhost" \
@@ -241,6 +241,20 @@ pkgs.dockerTools.buildImage {
         [ -e "$f" ] && ln -sf "$f" "lib/$(basename "$f")" || true
       done
 
+      # Writable directory for runtime-generated dev certificates.
+      # buildEnv links /etc as a symlink to the read-only Nix store, so we
+      # must replace it with a real directory before creating subdirectories.
+      if [ -L etc ]; then
+        etc_target=$(readlink etc)
+        rm etc
+        mkdir -p etc
+        if [ -d "$etc_target" ]; then
+          cp -a "$etc_target/." etc/
+        fi
+      fi
+      mkdir -p etc/cosmian/dev
+      chmod 777 etc/cosmian/dev
+
       ${pkgs.lib.optionalString (adminUiContent != null) ''
         # Verify admin-ui assets were bundled correctly
         if [ ! -f srv/admin-ui/index.html ]; then
@@ -254,12 +268,4 @@ pkgs.dockerTools.buildImage {
       ''}
     '';
 
-  # Writable directory for runtime-generated dev certificates.
-  # Must be created with fakeroot because buildEnv links /etc from the
-  # read-only Nix store; extraCommands runs as nixbld and cannot create
-  # subdirectories under /etc.
-  fakeRootCommands = ''
-    mkdir -p etc/cosmian/dev
-    chmod 777 etc/cosmian/dev
-  '';
 }
