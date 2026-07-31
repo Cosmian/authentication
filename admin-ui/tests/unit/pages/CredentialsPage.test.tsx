@@ -1,6 +1,6 @@
 import { render, screen, act, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import CredentialsPage from "../../../src/pages/CredentialsPage";
 import { useRealm } from "../../../src/contexts/RealmContext";
 import type { UserPass } from "../../../src/types/api";

@@ -1,6 +1,6 @@
 import { Alert, Layout } from "antd";
 import React, { useCallback, useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet } from "react-router";
 import { API_VERSION } from "../../constants/apiPaths";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRealm } from "../../contexts/RealmContext";

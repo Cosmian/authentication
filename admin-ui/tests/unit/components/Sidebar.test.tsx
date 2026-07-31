@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { Sidebar } from "../../../src/components/layout/Sidebar";
 
 // Mutable context — individual tests override fields as needed.

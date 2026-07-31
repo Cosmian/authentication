@@ -1,7 +1,7 @@
 import { Alert, Badge, Card, Col, Row, Steps, Tag, Typography } from "antd";
 import { ArrowRightOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import { API_VERSION, SUPER_ADMIN_REALM_ID } from "../constants/apiPaths";
 import { useAuth } from "../contexts/AuthContext";
 import { useRealm } from "../contexts/RealmContext";

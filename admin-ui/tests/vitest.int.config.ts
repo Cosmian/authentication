@@ -7,7 +7,7 @@ export default defineConfig({
     test: {
         server: {
             deps: {
-                inline: ["react-router", "react-router-dom"],
+                inline: ["react-router", "react-router"],
             },
         },
         environment: "node",
