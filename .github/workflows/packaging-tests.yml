@@ -111,6 +111,81 @@ jobs:
           echo "$output" | grep -qiE 'failed to read|auth_verifier\.toml|configuration' \
             || { echo "ERROR: unexpected output from auth_verifier"; exit 1; }
 
+      - name: Install curl and openssl
+        shell: bash
+        run: |
+          set -ex
+          install_pkg() {
+            if command -v apt-get >/dev/null 2>&1; then
+              apt-get update -qq && apt-get install -y --no-install-recommends "$@"
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y --nodocs "$@"
+            elif command -v microdnf >/dev/null 2>&1; then
+              microdnf install -y "$@"
+            else
+              echo "ERROR: cannot install packages — no known package manager" >&2; exit 1
+            fi
+          }
+          command -v curl >/dev/null 2>&1 || install_pkg curl
+          command -v openssl >/dev/null 2>&1 || install_pkg openssl
+
+      - name: Start server and verify admin UI
+        shell: bash
+        run: |
+          set -ex
+          # Prepare a writable working directory and use an in-memory DB so the
+          # container test has no filesystem permission issues.
+          WORK=$(mktemp -d)
+
+          # Generate self-signed EC certs in PKCS#8 format (required by the server's TLS stack)
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "$WORK/dev.key.pem"
+          openssl req -new -x509 -key "$WORK/dev.key.pem" \
+            -out "$WORK/dev.cert.pem" -days 1 \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+          cp "$WORK/dev.cert.pem" "$WORK/dev.ca.pem"
+
+          CONFIG=$(mktemp "$WORK/auth_verifier.XXXXXX.toml")
+          cat > "$CONFIG" <<TOML
+          host_name = "127.0.0.1"
+          host_port = 8080
+          admin_ui_path = "/usr/share/auth_verifier/admin-ui"
+          roles = ["Admin", "User"]
+          [tls_params]
+          server_private_key = "$WORK/dev.key.pem"
+          server_certificate = "$WORK/dev.cert.pem"
+          server_ca_chain = "$WORK/dev.ca.pem"
+          [database_params]
+          backend = "sqlite"
+          connection_url = "sqlite::memory:"
+          TOML
+          BIN="/usr/bin/auth_verifier"
+          if [ ! -x "$BIN" ]; then
+            BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
+          fi
+          "$BIN" "$CONFIG" &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
+          # Wait up to 15 s for the server to open :8080
+          for i in $(seq 1 30); do
+            if curl -kfsSo /dev/null https://127.0.0.1:8080/public/version 2>/dev/null; then
+              echo "Server is up (attempt $i)"
+              break
+            fi
+            sleep 0.5
+          done
+          # Inline the UI verification (no git/checkout available in Docker containers)
+          HTTP=$(curl -k -o /tmp/_idx.html -w '%{http_code}' -s https://127.0.0.1:8080/admin-ui/index.html)
+          case "$HTTP" in 2*) ;; *) echo "ERROR: /admin-ui/index.html returned $HTTP"; exit 1;; esac
+          grep -qiE '<html|<!doctype|<div id="root"' /tmp/_idx.html \
+            || { echo "ERROR: index.html body is not HTML"; exit 1; }
+          ASSET=$(grep -oE '/admin-ui/assets/[^"]+\.(js|css)' /tmp/_idx.html | head -1)
+          [ -n "$ASSET" ] || { echo "ERROR: no asset URL in index.html"; exit 1; }
+          HTTP=$(curl -k -o /dev/null -w '%{http_code}' -s "https://127.0.0.1:8080${ASSET}")
+          case "$HTTP" in 2*) ;; *) echo "ERROR: asset $ASSET returned $HTTP"; exit 1;; esac
+          HTTP=$(curl -k -o /dev/null -w '%{http_code}' -s https://127.0.0.1:8080/public/version)
+          case "$HTTP" in 2*) echo "All UI checks PASSED";; *) echo "ERROR: /public/version returned $HTTP"; exit 1;; esac
+
   systemd-packages-test:
     name: Use GH runners ${{ matrix.link }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
     runs-on: ${{ matrix.runner }}
@@ -160,7 +235,6 @@ jobs:
           [ -f "$BIN" ] || { echo "ERROR: auth_verifier not found"; exit 1; }
           sudo ldd "$BIN" || true
           # Verify the binary executes and exits with a config error (not a crash)
-          # Binary is installed root-only (-r-x------); run via sudo
           output=$(sudo "$BIN" 2>&1 || true)
           echo "$output"
           echo "$output" | grep -qiE 'failed to read|auth_verifier\.toml|configuration' \
@@ -171,3 +245,61 @@ jobs:
         run: |
           set -ex
           systemd-analyze security auth_verifier.service
+
+      - name: Start auth_verifier service and verify admin UI
+        shell: bash
+        run: |
+          set -ex
+          # The service ExecStart passes /etc/cosmian/auth_verifier.toml as config.
+          # Create a minimal config so the service can start in CI.
+          sudo mkdir -p /etc/cosmian
+
+          # Generate self-signed EC certs for the CI test (PKCS#8 format)
+          sudo openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out /etc/cosmian/dev.key.pem
+          sudo openssl req -new -x509 -key /etc/cosmian/dev.key.pem \
+            -out /etc/cosmian/dev.cert.pem -days 1 \
+            -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+          sudo cp /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
+
+          sudo tee /etc/cosmian/auth_verifier.toml > /dev/null <<'TOML'
+          host_name = "127.0.0.1"
+          host_port = 8080
+          admin_ui_path = "/usr/share/auth_verifier/admin-ui"
+          roles = ["Admin", "User"]
+          [tls_params]
+          server_private_key = "/etc/cosmian/dev.key.pem"
+          server_certificate = "/etc/cosmian/dev.cert.pem"
+          server_ca_chain = "/etc/cosmian/dev.ca.pem"
+          [database_params]
+          backend = "sqlite"
+          connection_url = "sqlite::memory:"
+          TOML
+          sudo chown root:root /etc/cosmian/auth_verifier.toml /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
+          sudo chmod 440 /etc/cosmian/auth_verifier.toml
+          sudo chmod 644 /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
+          sudo systemctl start auth_verifier
+          # Wait up to 30 s for the HTTPS server to be ready (Type=simple means
+          # systemd marks the service "active" as soon as the process spawns,
+          # before Actix-web has actually bound the port).
+          for i in $(seq 1 60); do
+            if curl -kfsSo /dev/null https://127.0.0.1:8080/public/version 2>/dev/null; then
+              echo "HTTPS server is up (attempt $i)"
+              break
+            fi
+            if ! systemctl is-active --quiet auth_verifier; then
+              echo "ERROR: auth_verifier service stopped unexpectedly" >&2
+              sudo systemctl status auth_verifier --no-pager || true
+              sudo journalctl -u auth_verifier --no-pager -n 100 || true
+              exit 1
+            fi
+            sleep 0.5
+          done
+          if ! curl -kfsSo /dev/null https://127.0.0.1:8080/public/version 2>/dev/null; then
+            echo "ERROR: auth_verifier did not start serving within 30 s" >&2
+            sudo systemctl status auth_verifier --no-pager || true
+            sudo journalctl -u auth_verifier --no-pager -n 100 || true
+            exit 1
+          fi
+          bash .github/scripts/test/verify_running_ui.sh https://127.0.0.1:8080
+          sudo systemctl stop auth_verifier

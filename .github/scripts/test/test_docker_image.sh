@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Functional tests for the auth_verifier Docker image.
-# The container is expected to expose the auth server over HTTPS on PORT (default 8443).
-# TLS is verified with --insecure because the image generates a self-signed certificate
-# at startup when no external configuration is provided.
-# To supply a custom config, set AUTH_SERVER_CONF inside the container or mount a TOML
-# at /etc/cosmian/auth_verifier.toml.
+# The container is expected to expose the auth server over HTTP on PORT (default 8080)
+# when running with the built-in development configuration (no TLS).
+# To supply a custom config with TLS, set AUTH_SERVER_CONF inside the container or
+# mount a TOML at /etc/cosmian/auth_verifier.toml and set AUTH_SERVER_HTTPS=true.
 set -euo pipefail
 
 IMAGE_NAME="${DOCKER_IMAGE_NAME:-cosmian-auth-verifier:latest}"
-PORT="${AUTH_SERVER_PORT:-8443}"
-BASE_URL="https://127.0.0.1:${PORT}"
+PORT="${AUTH_SERVER_PORT:-8080}"
+HTTPS="${AUTH_SERVER_HTTPS:-true}"
+if [ "$HTTPS" = "true" ]; then
+  BASE_URL="https://127.0.0.1:${PORT}"
+else
+  BASE_URL="http://127.0.0.1:${PORT}"
+fi
 
 # Default admin credentials seeded on first start (username=admin, password=change_me)
 ADMIN_BASIC=$(printf 'admin:change_me' | base64)
@@ -24,7 +28,7 @@ echo "=========================================="
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-# curl wrapper: skip TLS verification (image uses an auto-generated self-signed cert)
+# curl wrapper: works for both plain HTTP and HTTPS (--insecure for self-signed certs)
 ca_curl() {
   curl --insecure --silent --show-error "$@"
 }
@@ -53,13 +57,13 @@ assert_contains() {
 
 # ── Start container ────────────────────────────────────────────────────────
 
-CID=$(docker run -d --rm -p "${PORT}:${PORT}" "$IMAGE_NAME" 2>/dev/null)
+CID=$(docker run -d -p "${PORT}:${PORT}" "$IMAGE_NAME" 2>/dev/null)
 echo "Container ID: $CID"
-trap 'echo "Stopping container…"; docker stop "$CID" 2>/dev/null || true' EXIT
+trap 'echo "Stopping container…"; docker stop "$CID" 2>/dev/null || true; docker rm -f "$CID" 2>/dev/null || true' EXIT
 
-# ── Wait for HTTPS readiness ───────────────────────────────────────────────
+# ── Wait for readiness ─────────────────────────────────────────────────────
 
-echo "Waiting for server to start (HTTPS, self-signed cert)…"
+echo "Waiting for server to start (${BASE_URL})…"
 READY=false
 for i in $(seq 1 30); do
   if ca_curl -o /dev/null -w '' "$BASE_URL/public/version" 2>/dev/null; then
@@ -67,12 +71,18 @@ for i in $(seq 1 30); do
     READY=true
     break
   fi
+  # Check if container is still running
+  if ! docker inspect -f '{{.State.Running}}' "$CID" 2>/dev/null | grep -q true; then
+    echo "ERROR: Container exited prematurely"
+    docker logs "$CID" 2>&1 || true
+    exit 1
+  fi
   sleep 1
 done
 
 if [ "$READY" != true ]; then
   echo "ERROR: Server did not become ready within 30 seconds"
-  docker logs "$CID" || true
+  docker logs "$CID" 2>&1 || true
   exit 1
 fi
 

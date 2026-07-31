@@ -306,15 +306,16 @@ GH_PAGER=cat gh run view <run-id> --repo Cosmian/authentication --log-failed
 
 ### Changelog
 
-Every agent-driven change **must** be recorded in a new file under `CHANGELOG/`.
+Every agent-driven change **must** be recorded in a single changelog file per branch under `CHANGELOG/`.
 
-- **File name**: `CHANGELOG/<short_slug>.md` — use a brief kebab-case description of the change (e.g. `remove-admin-ui-mocks.md`).
-- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`, `## CI`, `## Docs`) with bullet points beneath. See `CHANGELOG/ci_add_packaging.md` as a reference.
+- **File name**: `CHANGELOG/<branch_name>.md` — use the current git branch name (e.g. `nix_ui_derivation.md`). All changes on the same branch are appended to this single file.
+- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`, `## CI`, `## Docs`, `## Testing`, `## Security`) with bullet points beneath.
 - Each bullet must be a single complete sentence summarising **what** changed and **why**, sufficient for a human to understand without reading the diff.
+- If a `CHANGELOG/<branch_name>.md` already exists, append new entries to the existing file under the appropriate heading(s) rather than creating a new file.
 - Do not add a changelog entry for pure formatting/linting-only commits.
 
 ```text
-CHANGELOG/<short_slug>.md
+CHANGELOG/<branch_name>.md
 ```
 
 ### Formatting (Rust)

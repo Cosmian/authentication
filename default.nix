@@ -165,6 +165,11 @@ let
     doCheck = false;
   };
 
+  # Build admin-ui (pure pnpm+Vite frontend, no WASM)
+  admin-ui = pkgs.callPackage ./nix/admin-ui.nix {
+    version = authVersion;
+  };
+
   # Build auth-verifier for static linkage
   auth-verifier-static = pkgs.callPackage ./nix/auth-verifier.nix {
     inherit pkgs pkgs234 rustPlatform;
@@ -183,6 +188,7 @@ let
   docker-image = pkgs.callPackage ./nix/docker.nix {
     inherit pkgs;
     authServer = auth-verifier-static;
+    adminUi = admin-ui;
     version = authVersion;
   };
 
@@ -190,6 +196,7 @@ in
 {
   # Build attributes accessible via -A
   inherit
+    admin-ui
     auth-verifier-static
     auth-verifier-dynamic
     docker-image

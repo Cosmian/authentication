@@ -94,6 +94,16 @@ assets = [
     "etc/cosmian/auth_verifier.toml",
     "400",
   ],
+  [
+    "target/admin-ui/*",
+    "usr/share/auth_verifier/admin-ui/",
+    "644",
+  ],
+  [
+    "target/admin-ui/assets/*",
+    "usr/share/auth_verifier/admin-ui/assets/",
+    "644",
+  ],
 ]
 systemd-units = [
   { unit-name = "auth_verifier", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
@@ -104,6 +114,8 @@ assets = [
   { source = "target/release/auth_verifier", dest = "/usr/bin/auth_verifier", mode = "0500" },
   { source = "../README.md", dest = "/usr/share/doc/cosmian-auth-verifier/README.md", mode = "0644" },
   { source = "../server/auth_verifier.toml", dest = "/etc/cosmian/auth_verifier.toml", mode = "0400" },
+  { source = "target/admin-ui/*", dest = "/usr/share/auth_verifier/admin-ui/", mode = "0644" },
+  { source = "target/admin-ui/assets/*", dest = "/usr/share/auth_verifier/admin-ui/assets/", mode = "0644" },
 ]
 [package.metadata.generate-rpm.requires]
 

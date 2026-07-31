@@ -44,6 +44,15 @@ if echo "$INTERP" | grep -q "/nix/store/"; then
 fi
 echo "ELF interpreter: ${INTERP:-<none / statically linked>}"
 
+# Admin UI check: the pre-built UI must be bundled at /usr/share/auth_verifier/admin-ui
+UI_INDEX=$(find "$TMPDIR_EXTRACT" -type f -path '*/usr/share/auth_verifier/admin-ui/index.html' | head -1)
+if [ -z "$UI_INDEX" ]; then
+  echo "ERROR: admin UI index.html not found under usr/share/auth_verifier/admin-ui in $RPM_FILE" >&2
+  exit 1
+fi
+UI_FILES=$(find "$(dirname "$UI_INDEX")" -type f | wc -l)
+echo "Admin UI check PASSED ($UI_FILES files at usr/share/auth_verifier/admin-ui/)"
+
 echo "==========================================="
 echo "Smoke test PASSED for $RPM_FILE"
 echo "==========================================="

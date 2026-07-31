@@ -5,8 +5,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=cosmian
-Group=cosmian
+User=root
+WorkingDirectory=/var/lib/cosmian-auth
 ExecStart=/usr/bin/auth_verifier /etc/cosmian/auth_verifier.toml
 Restart=on-failure
 RestartSec=5
@@ -14,11 +14,13 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=auth_verifier
 
+# Runtime directories (created automatically by systemd)
+StateDirectory=cosmian-auth
+
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/cosmian-auth
 
 [Install]
 WantedBy=multi-user.target

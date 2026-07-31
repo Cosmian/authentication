@@ -1,20 +1,27 @@
-use std::{
-    path::PathBuf,
-    sync::atomic::{AtomicU16, Ordering},
-};
+use std::{net::TcpListener, path::PathBuf};
 
 use crate::{
     AuthError, AuthResult,
     server::parameters::{DatabaseBackend, DatabaseParams, ServerParams, TlsParams},
 };
 
-/// Atomic counter for generating unique port numbers for parallel tests.
-/// Starts at 49998 and increments for each test server instance.
-static PORT_COUNTER: AtomicU16 = AtomicU16::new(49998);
+/// Finds a free TCP port by binding to port 0 (OS-assigned) and immediately
+/// releasing the socket. This is race-free in practice because tests run
+/// sequentially within a single binary and the window between releasing the
+/// port and the server binding it is microseconds.
+fn find_free_port() -> AuthResult<u16> {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .map_err(|e| AuthError::Unexpected(format!("Failed to find a free port: {e}")))?;
+    let port = listener
+        .local_addr()
+        .map_err(|e| AuthError::Unexpected(format!("Failed to get local address: {e}")))?
+        .port();
+    // Listener is dropped here, releasing the port.
+    Ok(port)
+}
 
 pub fn get_default_server_params() -> AuthResult<ServerParams> {
-    // Get a unique port for this test server instance
-    let port = PORT_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let port = find_free_port()?;
 
     let cargo_manifest_dir = PathBuf::from(
         std::env::var("CARGO_MANIFEST_DIR")
@@ -23,7 +30,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
     let certificates_dir = cargo_manifest_dir.join("src/tests/certificates/ec");
 
     let server_params = ServerParams {
-        host_name: "localhost".to_string(),
+        host_name: "127.0.0.1".to_string(),
         host_port: port,
         tls_params: TlsParams {
             server_certificate: certificates_dir
