@@ -1,6 +1,6 @@
 import { Alert, Button } from "antd";
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { PageHeader } from "../components/common/PageHeader";
 
 const TotpPage: React.FC = () => {

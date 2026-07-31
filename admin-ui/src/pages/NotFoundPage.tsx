@@ -1,5 +1,5 @@
 import { Button, Result } from "antd";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 
 const NotFoundPage: React.FC = () => (
     <Result

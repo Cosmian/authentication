@@ -1,6 +1,6 @@
 import { Layout, Menu, MenuProps } from "antd";
 import React, { useMemo } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import { menuItems } from "../../menuItems";
 import { useRealm } from "../../contexts/RealmContext";
 import { useTheme } from "../../contexts/ThemeProvider";
