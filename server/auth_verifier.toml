@@ -15,6 +15,18 @@
 
 
 # -----------------------------------------------------------------------------
+# Console logging
+# -----------------------------------------------------------------------------
+
+[log]
+# The minimum log level emitted to stdout.
+# Accepted values: "error", "warn", "info", "debug", "trace".
+# Target-qualified filters like "info,auth_verifier=debug" are also supported.
+# When omitted, defaults to "info". Can be overridden by the RUST_LOG env var.
+level = "info"
+
+
+# -----------------------------------------------------------------------------
 # Network binding
 # -----------------------------------------------------------------------------
 

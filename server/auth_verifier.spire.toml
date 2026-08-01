@@ -44,11 +44,12 @@
 # each SPIRE tenant an isolated key namespace.
 #
 # ── Log verbosity ────────────────────────────────────────────────────────────
-# Log level is NOT a TOML field. The binary calls `log_init(None)`, so verbosity
-# is controlled by the RUST_LOG environment variable, for example:
-#
-#   RUST_LOG="info,auth_verifier=debug" auth_verifier auth_verifier.spire.toml
-#
+# The minimum log level emitted to stdout.
+# Accepted values: "error", "warn", "info", "debug", "trace".
+# Can be overridden at runtime by setting the RUST_LOG environment variable.
+[log]
+level = "info"
+
 # =============================================================================
 
 # ── Network binding ──────────────────────────────────────────────────────────

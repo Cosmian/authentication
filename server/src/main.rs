@@ -18,19 +18,12 @@ use std::{path::PathBuf, sync::Arc};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    cosmian_logger::log_init(None);
-
     // The first positional argument is the config file path.
     // Default: auth_verifier.toml in the current working directory.
     let config_path: PathBuf = std::env::args()
         .nth(1)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("auth_verifier.toml"));
-
-    info!(
-        "Loading Auth Authentication Server configuration from: {}",
-        config_path.display()
-    );
 
     let config_content = std::fs::read_to_string(&config_path).map_err(|e| {
         format!(
@@ -48,7 +41,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
     })?;
 
-    info!("Configuration loaded successfully");
+    // Initialize logging from the config file's [log] section, defaulting to info.
+    // The `level` string is passed as the RUST_LOG directive, so target-qualified
+    // filters like "info,auth_verifier=debug" are supported.
+    let log_level = server_params
+        .log
+        .as_ref()
+        .map(|l| l.level.as_str())
+        .unwrap_or("info");
+    cosmian_logger::log_init(Some(log_level));
+
+    info!(
+        "Configuration loaded successfully from: {}",
+        config_path.display()
+    );
 
     start_auth_verifier(Arc::new(server_params), None)
         .await

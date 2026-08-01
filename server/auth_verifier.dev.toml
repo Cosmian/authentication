@@ -1,5 +1,5 @@
 # =============================================================================
-# Auth Server — Local Development Configuration (plain HTTP, no TLS)
+# Authentication Verifier — Local Development Configuration (plain HTTP, no TLS)
 # =============================================================================
 #
 # Start the server from the authentication/ directory:
@@ -17,15 +17,16 @@ host_name = "127.0.0.1"
 host_port = 8080
 
 # ---------------------------------------------------------------------------
+# Console logging
+# ---------------------------------------------------------------------------
+[log]
+level = "debug"
+
+# ---------------------------------------------------------------------------
 # Admin UI — serves the pre-built admin UI at /admin-ui.
 # Build the UI first: cd admin-ui && pnpm build
 # ---------------------------------------------------------------------------
 admin_ui_path = "admin-ui/dist"
-
-# ---------------------------------------------------------------------------
-# RBAC roles
-# ---------------------------------------------------------------------------
-roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
 
 # ---------------------------------------------------------------------------
 # JWT signing keys — required when tls_params is absent.

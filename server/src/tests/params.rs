@@ -76,6 +76,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
         stale_session_collector_config: None,
         dev_seed: None,
         admin_ui_path: None,
+        log: None,
         roles: Vec::new(),
     };
 

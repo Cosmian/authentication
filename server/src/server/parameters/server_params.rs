@@ -40,6 +40,9 @@ pub struct ServerParams {
     /// Intended only for `auth_verifier.dev.toml` — do not use in production.
     pub dev_seed: Option<DevSeedParams>,
 
+    /// Console logging configuration. When omitted, defaults to info level.
+    pub log: Option<crate::server::parameters::LogConfig>,
+
     /// Path to the pre-built admin UI `dist/` directory.
     /// When set and the `admin-ui` feature is enabled, the server serves those
     /// static files at `/admin-ui` with a SPA fallback for client-side routing.

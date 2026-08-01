@@ -4,6 +4,9 @@ pub use auth_params::SessionJwtParams;
 mod database_params;
 pub use database_params::{DatabaseBackend, DatabaseParams};
 
+mod log_params;
+pub use log_params::LogConfig;
+
 mod proxy_params;
 pub use proxy_params::ProxyParams;
 
