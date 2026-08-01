@@ -38,8 +38,23 @@
   `GET /auth/kubernetes/role/{name}` (role config, with stored JSON fields parsed back to
   arrays). Kubernetes role listing is backed by a new `list_k8s_role_names()` database
   method (SQLite, PostgreSQL, MySQL). Client DTOs and `openapi.yaml` updated to match.
+- **Configurable console log level**: added an optional `[log]` section to the
+  server TOML configuration. The `level` field sets the minimum log verbosity
+  (`"error"`, `"warn"`, `"info"`, `"debug"`, `"trace"`) and defaults to `"info"`.
+  Target-qualified `RUST_LOG`-style filters are also supported. The `RUST_LOG`
+  environment variable still overrides the config file value.
 
 ## Bug Fixes
+
+- **Admin userpass credentials can now be created via the UI**: newly created admins
+  (e.g. alice, bob) had no `UserPass` record in the database, so they could never log in.
+  The server now auto-links `admin.userpass` when a credential is created in the `_` realm
+  via `POST /realms/_/userpass`, and auto-unlinks it when that credential is deleted. The
+  admin UI gained a "Credential" button on the Admins page that opens a modal to set or
+  change the admin's password. The "New Admin" drawer now includes optional password fields
+  and a TOTP toggle so credentials can be created at the same time as the admin. The
+  misleading `userpass` text field was removed from the realm-admin create form since
+  credentials are now managed separately.
 
 - Fixed a `clippy::unnecessary_unwrap` warning in `server/src/server/auth_verifier.rs` by replacing `is_some()` + `.unwrap()` with `if let Some(tls_params)` for both the OpenSSL and Rustls TLS bind branches.
 
