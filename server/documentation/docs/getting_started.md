@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks through deploying the auth-verifier from scratch: compiling the binary, writing a configuration file, bootstrapping the first administrator, and verifying the setup using `curl` and the `auth_client` crate.
+This guide walks through deploying the Authentication Verifier from scratch: compiling the binary, writing a configuration file, bootstrapping the first administrator, and verifying the setup using `curl` and the `auth_client` crate.
 
 ---
 

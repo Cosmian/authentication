@@ -1,25 +1,29 @@
-import { Alert, Button, Drawer, Form, Input, message, Select } from "antd";
+import { Alert, Button, Checkbox, Drawer, Form, Input, message, Select } from "antd";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { Admin } from "../../types/api";
 import { SUPER_ADMIN_REALM_ID } from "../../constants/apiPaths";
 import { useAuth } from "../../contexts/AuthContext";
 import { useRealm } from "../../contexts/RealmContext";
 import { createAdminsApi } from "../../services/adminsApi";
+import { createCredentialsApi } from "../../services/credentialsApi";
+import { TotpManagementModal } from "./TotpManagementModal";
 
 interface AdminFormDrawerProps {
     open: boolean;
     admin: Admin | null;
     onClose: () => void;
     onSuccess: () => void;
+    onTotpSetup?: (adminId: string) => void;
 }
 
-export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, onClose, onSuccess }) => {
+export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, onClose, onSuccess, onTotpSetup }) => {
     const [form] = Form.useForm();
     const { serverUrl } = useAuth();
     const { realms } = useRealm();
     const [loading, setLoading] = useState(false);
     const [canSubmit, setCanSubmit] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
+    const [totpSetupAdmin, setTotpSetupAdmin] = useState<string | null>(null);
     // Store original admin for dirty detection — ref so no extra re-render cycle
     const originalAdminRef = useRef<Admin | null>(null);
 
@@ -40,6 +44,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             } else if (originalAdminRef.current !== null) {
                 const orig = originalAdminRef.current;
                 const isDirty =
+                    !!values.password ||
                     (values.jwt ?? "") !== (orig.jwt ?? "") ||
                     JSON.stringify([...(values.realms ?? [])].sort()) !== JSON.stringify([...orig.realms].sort());
                 setCanSubmit(isDirty);
@@ -105,11 +110,60 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             if (isEdit) {
                 await adminsApi.update(admin!.id, payload);
                 message.success(`Admin "${admin!.id}" updated`);
+
+                // Update userpass credential if a new password was provided
+                if (values.password) {
+                    const credentialsApi = createCredentialsApi(serverUrl);
+                    const passwordBytes = Array.from(new TextEncoder().encode(values.password as string));
+                    if (admin!.userpass) {
+                        // Update existing credential
+                        await credentialsApi.update(SUPER_ADMIN_REALM_ID, adminId, {
+                            realm: SUPER_ADMIN_REALM_ID,
+                            username: adminId,
+                            password: passwordBytes,
+                            change_password: (values.change_password as boolean | undefined) ?? false,
+                            roles: [],
+                        });
+                    } else {
+                        // Create new credential (auto-links admin.userpass on server)
+                        await credentialsApi.create(SUPER_ADMIN_REALM_ID, {
+                            realm: SUPER_ADMIN_REALM_ID,
+                            username: adminId,
+                            password: passwordBytes,
+                            change_password: (values.change_password as boolean | undefined) ?? false,
+                            roles: [],
+                        });
+                    }
+                    message.success(`Password updated for admin "${adminId}"`);
+                }
             } else {
                 await adminsApi.create(payload);
                 message.success(`Admin "${adminId}" created`);
+
+                // Create userpass credential if a password was provided
+                if (values.password) {
+                    const credentialsApi = createCredentialsApi(serverUrl);
+                    const passwordBytes = Array.from(new TextEncoder().encode(values.password as string));
+                    await credentialsApi.create(SUPER_ADMIN_REALM_ID, {
+                        realm: SUPER_ADMIN_REALM_ID,
+                        username: adminId,
+                        password: passwordBytes,
+                        change_password: (values.change_password as boolean | undefined) ?? false,
+                        roles: [],
+                    });
+                    message.success(`Credential created for admin "${adminId}"`);
+                }
             }
             onSuccess();
+
+            // Open TOTP setup modal after drawer closes
+            if (!isEdit && values.enable_totp) {
+                if (onTotpSetup) {
+                    onTotpSetup(adminId);
+                } else {
+                    setTotpSetupAdmin(adminId);
+                }
+            }
         } catch (err) {
             if (err instanceof Error) {
                 setSubmitError(err.message);
@@ -145,6 +199,52 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                     <Form.Item name="jwt" label="JWT">
                         <Input placeholder="JWT identifier" />
                     </Form.Item>
+
+                    <Form.Item
+                        name="password"
+                        label={isEdit ? "New Password" : "Password"}
+                        rules={[
+                            ({ getFieldValue }) => ({
+                                validator(_, value) {
+                                    // Required in create mode (unless TOTP is enabled)
+                                    if (!isEdit && !value && !getFieldValue("enable_totp")) {
+                                        return Promise.reject(new Error("Password is required (or enable TOTP)"));
+                                    }
+                                    return Promise.resolve();
+                                },
+                            }),
+                        ]}
+                    >
+                        <Input.Password placeholder={isEdit ? "Leave empty to keep current" : "Admin login password"} />
+                    </Form.Item>
+                    <Form.Item
+                        name="confirm"
+                        label="Confirm Password"
+                        dependencies={["password"]}
+                        rules={[
+                            ({ getFieldValue }) => ({
+                                validator(_, value) {
+                                    const password = getFieldValue("password");
+                                    if (!password) return Promise.resolve();
+                                    if (!value) return Promise.reject(new Error("Please confirm the password"));
+                                    if (password !== value) return Promise.reject(new Error("Passwords do not match"));
+                                    return Promise.resolve();
+                                },
+                            }),
+                        ]}
+                    >
+                        <Input.Password placeholder="Confirm password" />
+                    </Form.Item>
+                    <Form.Item name="change_password" valuePropName="checked">
+                        <Checkbox>Require password change on next login</Checkbox>
+                    </Form.Item>
+
+                    {!isEdit && (
+                        <Form.Item name="enable_totp" valuePropName="checked">
+                            <Checkbox>Enable TOTP (two-factor authentication)</Checkbox>
+                        </Form.Item>
+                    )}
+
                     {submitError && (
                         <Form.Item>
                             <Alert type="error" message={submitError} showIcon />
@@ -152,6 +252,20 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                     )}
                 </Form>
             </div>
+
+            {totpSetupAdmin && (
+                <TotpManagementModal
+                    open={!!totpSetupAdmin}
+                    adminId={totpSetupAdmin}
+                    realmId={SUPER_ADMIN_REALM_ID}
+                    totpEnabled={false}
+                    onClose={() => setTotpSetupAdmin(null)}
+                    onSuccess={() => {
+                        setTotpSetupAdmin(null);
+                        onSuccess();
+                    }}
+                />
+            )}
         </Drawer>
     );
 };

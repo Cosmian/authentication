@@ -1,6 +1,6 @@
 # Installation
 
-This guide covers **deploying the auth-verifier as a running service**: obtaining
+This guide covers **deploying the Authentication Verifier as a running service**: obtaining
 the binary, provisioning TLS certificates, writing a configuration file,
 bootstrapping the initial administrator, and running and verifying the server.
 
@@ -23,7 +23,7 @@ reference.
 
 ## 2. Obtain the Binary
 
-The auth-verifier is distributed as source. Build the release binary from the
+The Authentication Verifier is distributed as source. Build the release binary from the
 workspace root:
 
 ```bash
@@ -172,7 +172,7 @@ sudo systemctl enable --now auth-verifier
 sudo systemctl status auth-verifier
 ```
 
-> The auth-verifier can also run as a container; mount the config, certificates,
+> The Authentication Verifier can also run as a container; mount the config, certificates,
 > and a persistent volume for the database, and publish port `8443`.
 
 ---
@@ -200,6 +200,6 @@ curl --cacert ca.cert.pem -c cookies.txt \
   reference.
 - [AppRole, Kubernetes & Token Authentication](app_auth_api.md) — machine-to-machine
   auth used by the Cosmian KMS SPIRE integration.
-- **SPIRE / SPIFFE integration** — to run the auth-verifier as the authentication
+- **SPIRE / SPIFFE integration** — to run the Authentication Verifier as the authentication
   backend behind a Cosmian KMS for SPIRE, see the KMS documentation's
   *Integrations → SPIRE / SPIFFE* page.

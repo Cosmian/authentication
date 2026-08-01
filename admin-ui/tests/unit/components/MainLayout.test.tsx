@@ -67,7 +67,7 @@ describe("MainLayout", () => {
 
         expect(screen.getByText("Auth Admin")).toBeInTheDocument();
         expect(screen.getByText("Dashboard")).toBeInTheDocument();
-        expect(screen.getByText(/Auth Server/)).toBeInTheDocument();
+        expect(screen.getByText(/Authentication Verifier/)).toBeInTheDocument();
     });
 
     it("should render content outlet area", async () => {

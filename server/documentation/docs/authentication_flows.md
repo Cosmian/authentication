@@ -1,6 +1,6 @@
 # Authentication Flows
 
-This document describes every authentication flow supported by the auth-verifier:
+This document describes every authentication flow supported by the Authentication Verifier:
 
 | # | Flow | Credential | Output |
 |---|------|------------|--------|
@@ -18,10 +18,10 @@ Flows 1–4 produce a **session cookie** (`_ea_`) used by human and administrato
 
 ## Overview
 
-The auth-verifier sits in front of your application. Every **client** must prove its identity to the auth-verifier before it can access any protected resource. Once authenticated, the server issues a **session cookie** (`_ea_`) that the client presents on subsequent API requests.
+The Authentication Verifier sits in front of your application. Every **client** must prove its identity to the Authentication Verifier before it can access any protected resource. Once authenticated, the server issues a **session cookie** (`_ea_`) that the client presents on subsequent API requests.
 
 ```text
-Client ──► Auth Server ──► Session Cookie ──► Your API ──► Services
+Client ──► Authentication Verifier ──► Session Cookie ──► Your API ──► Services
 ```
 
 > **Terminology note:** Throughout this documentation, **client** means any entity that authenticates against the `/login` endpoint — a human via browser, the Auth CLI, or a machine/service account. An **Admin** (capitalised) is a database record representing an administrator account (super admin or realm admin). See [index.md](index.md#terminology) for the full glossary.
@@ -51,7 +51,7 @@ This is the most common flow for clients (human or automated) such as web browse
 sequenceDiagram
     autonumber
     participant U as Client / Browser
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant SS as Session Store
     participant API as Your API
 
@@ -107,7 +107,7 @@ sequenceDiagram
     autonumber
     participant U as Client / Browser
     participant App as Authenticator App
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant SS as Session Store
 
     U->>EA: POST /login?realm={realm}<br/>{"username":"alice","password":"secret"}
@@ -145,7 +145,7 @@ sequenceDiagram
     autonumber
     participant C as Client (Service)
     participant IDP as External Identity Provider
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant API as Your API
     participant SS as Session Store
 
@@ -188,7 +188,7 @@ For high-assurance scenarios, clients authenticate using an EC P-256 client cert
 sequenceDiagram
     autonumber
     participant C as Client
-    participant EA as Auth Server (TLS)
+    participant EA as Authentication Verifier (TLS)
     participant SS as Session Store
     participant API as Your API
 
@@ -217,7 +217,7 @@ sequenceDiagram
     autonumber
     participant O as Operator (Admin)
     participant S as Service / SPIRE
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant DB as Database
 
     O->>EA: POST /auth/approle/role/{name}<br/>Cookie: _ea_=<admin session><br/>{ token_ttl: 3600, bind_secret_id: true }
@@ -260,7 +260,7 @@ sequenceDiagram
     participant O as Operator (Admin)
     participant P as Pod (workload)
     participant K8s as Kubernetes API Server
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
 
     O->>EA: POST /auth/kubernetes/role/{name}<br/>Cookie: _ea_=<admin session><br/>{ jwks_url, bound_sa_names, bound_sa_namespaces, token_ttl }
     EA-->>O: 204 No Content
@@ -290,7 +290,7 @@ All app tokens — regardless of which method produced them (AppRole or Kubernet
 sequenceDiagram
     autonumber
     participant S as Service
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
 
     note over S: Service holds a token from AppRole or Kubernetes login
 
@@ -488,7 +488,7 @@ When fetching a session you can pass an optional `sessions_action` in the reques
 sequenceDiagram
     autonumber
     participant U as Client
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant SS as Session Store
 
     U->>EA: POST /sessions/{session_a}<br/>{sessions_action: "LogoutOtherSessions", authenticated_clients: [...]}
@@ -508,7 +508,7 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant U as Client
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant SS as Session Store
 
     U->>EA: POST /sessions/{session_a}<br/>{sessions_action: "LogoutAllSessions", authenticated_clients: [...]}

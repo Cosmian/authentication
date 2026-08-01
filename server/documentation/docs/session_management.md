@@ -11,7 +11,7 @@ This document covers the session lifecycle, the three strategies for validating 
   - [The Session Cookie](#the-session-cookie)
   - [Session Lifecycle](#session-lifecycle)
   - [Session Validation Strategies](#session-validation-strategies)
-    - [Strategy 1 — Auth Server Session Endpoint (recommended)](#strategy-1--auth-verifier-session-endpoint-recommended)
+    - [Strategy 1 — Auth Verifier Session Endpoint (recommended)](#strategy-1--auth-verifier-session-endpoint-recommended)
     - [Strategy 2 — Direct Session Store Query](#strategy-2--direct-session-store-query)
     - [Strategy 3 — Offline JWT Validation](#strategy-3--offline-jwt-validation)
   - [Session Actions — Bulk Logout](#session-actions--bulk-logout)
@@ -78,7 +78,7 @@ The stale-session collector (a background task) periodically purges expired sess
 Your API server can validate incoming sessions using three strategies. Choose based on your deployment's security requirements and performance constraints.
 
 ```text
-Client ──► Your API ──► Validate Session ──► Auth Server
+Client ──► Your API ──► Validate Session ──► Authentication Verifier
 ```
 
 ### Strategy 1 — Auth Verifier Session Endpoint (recommended)

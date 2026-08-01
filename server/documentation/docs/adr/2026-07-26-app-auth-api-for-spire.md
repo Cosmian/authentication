@@ -33,11 +33,11 @@ Both flows return an opaque app token that the caller then presents as
 `X-Vault-Token: <token>` on every subsequent request to the KMS's crypto engines
 (`/v1/transit/`, `/v1/<pki_mount>/` — see the companion KMS ADR
 `documentation/docs/adr/2026-07-26-spire-spiffe-via-vault-api.md`). The KMS validates
-that token by calling back into auth-verifier's `GET /v1/auth/token/lookup-self`.
+that token by calling back into Authentication Verifier's `GET /v1/auth/token/lookup-self`.
 
 ### Problem
 
-Before this feature, auth-verifier had no concept of an app-style bearer token, AppRole,
+Before this feature, Authentication Verifier had no concept of an app-style bearer token, AppRole,
 or Kubernetes service-account login — its only authentication schemes were
 username/password, JWT/OIDC, and mTLS, all designed around human/administrator sessions
 (`_ea_` cookie) rather than short-lived machine credentials consumed by a third-party
@@ -157,7 +157,7 @@ token, since validation only depends on the token hash row, not on how it was cr
 SPIRE server (UpstreamAuthority plugin)
   └─ POST /auth/approle/login  { role_id, secret_id }
         ↓
-auth-verifier (approle_login)
+Authentication Verifier (approle_login)
   └─ look up role by role_id, consume secret_id, issue token
         ↓
   { auth: { client_token: "hvs....", renewable: true, lease_duration: 3600 } }
@@ -168,7 +168,7 @@ SPIRE server
 KMS (app token middleware)
   └─ GET /auth/token/lookup-self  (X-Vault-Token: hvs....)   [30s cache]
         ↓
-auth-verifier (auth_token_lookup_self)
+Authentication Verifier (auth_token_lookup_self)
   └─ { data: { policies, renewable, ttl, creation_time } }
         ↓
 KMS
@@ -179,7 +179,7 @@ KMS
 
 ### Positive
 
-- SPIRE (and any other auth-API-speaking tool using the same protocol) can authenticate against auth-verifier
+- SPIRE (and any other auth-API-speaking tool using the same protocol) can authenticate against Authentication Verifier
   with zero changes to its own auth-method implementation — only `auth_api_addr` changes.
 - AppRole and Kubernetes credentials are fully isolated from human admin/session data;
   compromising one does not expose the other.

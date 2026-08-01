@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Footer } from "../../../src/components/layout/Footer";
 
 describe("Footer", () => {
@@ -10,6 +10,6 @@ describe("Footer", () => {
 
     it("should render empty version gracefully", () => {
         render(<Footer version="" />);
-        expect(screen.getByText(/Auth Server/)).toBeInTheDocument();
+        expect(screen.getByText(/Authentication Verifier/)).toBeInTheDocument();
     });
 });

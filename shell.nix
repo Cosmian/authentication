@@ -49,6 +49,6 @@ pkgs.mkShell {
     ++ pkgs.lib.optionals withCurl [ pkgs.curl ];
 
   shellHook = ''
-    echo "Auth Server dev shell (Rust $(rustc --version))"
+    echo "Authentication Verifier dev shell (Rust $(rustc --version))"
   '';
 }

@@ -184,7 +184,7 @@ pub async fn swagger_ui_endpoint(_req: HttpRequest) -> Result<HttpResponse, Auth
          <head>\n\
            <meta charset=\"UTF-8\" />\n\
            <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\
-           <title>Cosmian Auth Server {version} \u{2014} API</title>\n\
+           <title>Cosmian Authentication Verifier {version} \u{2014} API</title>\n\
            <link rel=\"stylesheet\" \
                  href=\"https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css\" \
                  integrity=\"sha384-rcbEi6xgdPk0iWkAQzT2F3FeBJXdG+ydrawGlfHAFIZG7wU6aKbQaRewysYpmrlW\" \

@@ -7,6 +7,6 @@ interface FooterProps {
 
 export const Footer: React.FC<FooterProps> = ({ version }) => (
     <Layout.Footer className="text-center">
-        <p className="m-0">Auth Server Version: {version}</p>
+        <p className="m-0">Authentication Verifier Version: {version}</p>
     </Layout.Footer>
 );

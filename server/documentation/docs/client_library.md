@@ -1,10 +1,10 @@
 # Client Library Guide
 
-The `auth_client` crate provides an HTTP client and shared types for interacting with the auth-verifier. It is used by:
+The `auth_client` crate provides an HTTP client and shared types for interacting with the Authentication Verifier. It is used by:
 
 - **API servers** that need to validate incoming session cookies and manage sessions.
 - **Admin tools** that manage realms, users, and credentials.
-- The auth-verifier itself (internal use).
+- The Authentication Verifier itself (internal use).
 
 ---
 
@@ -39,7 +39,7 @@ Add to your `Cargo.toml`:
 auth_client = { path = "../authentication_client" }
 ```
 
-No Cargo features are required for session validation. The `_server` feature enables additional `actix-web` integrations and is only needed inside the auth-verifier crate itself.
+No Cargo features are required for session validation. The `_server` feature enables additional `actix-web` integrations and is only needed inside the Authentication Verifier crate itself.
 
 ---
 
@@ -67,7 +67,7 @@ println!("Base URL: {}", client.base_url());
 
 ## Authentication Schemes
 
-`AuthClientScheme` controls how the client authenticates to the auth-verifier crate itself. For simple session validation no authentication is needed; admin operations require a logged-in session.
+`AuthClientScheme` controls how the client authenticates to the Authentication Verifier crate itself. For simple session validation no authentication is needed; admin operations require a logged-in session.
 
 ```rust
 use auth_client::AuthClientScheme;
@@ -667,7 +667,7 @@ empty-array check.
 
 ## Actix-web Integration Example
 
-A complete pattern for an Actix-web API server that validates sessions via the auth-verifier.
+A complete pattern for an Actix-web API server that validates sessions via the Authentication Verifier.
 
 ```rust
 use std::sync::Arc;

@@ -10,7 +10,7 @@ This document explains how Time-based One-Time Passwords (TOTP) are used as a se
 
 TOTP (RFC 6238) generates a 6-digit code that changes every 30 seconds. The user's authenticator app (Google Authenticator, Authy, 1Password, Apple Passwords, etc.) and the server share a secret. Both independently compute the current code using the same algorithm — there is no network communication between the app and the server to verify. If the codes match, the user has proven they possess the shared secret.
 
-```
+```text
 shared_secret + current_time_window ──► HMAC-{algorithm} ──► 6-digit code
                                         (default: SHA1; configurable per realm)
 ```
@@ -84,7 +84,7 @@ sequenceDiagram
     autonumber
     participant U as Client
     participant App as Authenticator App
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant DB as Database
 
     U->>EA: POST /realms/{realm}/totp/generate?realm={realm}<br/>{"username":"alice"}
@@ -112,13 +112,13 @@ sequenceDiagram
 
 The URL encodes everything the authenticator app needs:
 
-```
+```text
 otpauth://totp/{issuer}:{username}?secret={base32}&issuer={issuer}&algorithm={algorithm}&digits=6&period={step}
 ```
 
 The `algorithm` and `period` values come from the realm's TOTP configuration (`auth_params.totp_params`). Example for a realm using the defaults (SHA1, 30-second step):
 
-```
+```text
 otpauth://totp/Auth:alice?secret=JBSWY3DPEHPK3PXP&issuer=Auth&algorithm=SHA1&digits=6&period=30
 ```
 
@@ -142,7 +142,7 @@ sequenceDiagram
     autonumber
     participant U as Client
     participant App as Authenticator App
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant DB as Database
 
     U->>EA: POST /login?realm={realm}<br/>{"public_key_pem": null}
@@ -190,7 +190,7 @@ pub enum AuthenticationNextStep {
 
 An administrator can disable TOTP on a client's account via:
 
-```
+```text
 DELETE /realms/{realm}/totp/{username}?realm={realm}
 ```
 
@@ -200,7 +200,7 @@ This clears the stored secret and `totp_enabled` flag on the `Admin` record. Req
 sequenceDiagram
     autonumber
     participant Admin as Admin
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant DB as Database
 
     Admin->>EA: DELETE /realms/{realm}/totp/{username}?realm={realm}
@@ -217,7 +217,7 @@ After this, the client logs in via primary credentials only, with no TOTP code r
 
 ## Code Path Reference
 
-```
+```text
 ── TOTP enrollment ──
 
 POST /realms/{realm}/totp/generate?realm={realm}

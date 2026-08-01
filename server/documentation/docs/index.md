@@ -1,11 +1,11 @@
 
-# auth-verifier Documentation
+# Authentication Verifier Documentation
 
-The auth-verifier handles many authentication methods while providing a simple and consistent interface for API servers to validate client sessions.
+The Authentication Verifier handles many authentication methods while providing a simple and consistent interface for API servers to validate client sessions.
 
 ## Introduction
 
-The auth-verifier's **primary role** is to provide login mechanisms that issue a session cookie, which external Auth API servers then use to validate each incoming request.
+The Authentication Verifier's **primary role** is to provide login mechanisms that issue a session cookie, which external Auth API servers then use to validate each incoming request.
 
 The server manages client authentication in isolated realms. The following authentication methods are **currently implemented**:
 
@@ -25,9 +25,9 @@ The following methods are **planned for future implementation**:
 - Two-factor authentication using WebAuthn, Hardware Tokens, or OOB (SMS/Email)
 
 Once a client is authenticated, the server issues a session cookie which is returned to the client. This cookie is then used by the client to authenticate subsequent requests to an API server.
-The API server validates the session cookie with the auth-verifier to ensure the client is authenticated.
+The API server validates the session cookie with the Authentication Verifier to ensure the client is authenticated.
 
-> **Note on Users vs Clients:** `Admin` records (super admins and realm admins) are simply authenticated clients that also hold a `Admin` record granting them server-administration privileges. Every admin must still log in through the normal `/login` endpoint — there is no separate admin login path. A `Admin` record has no special meaning outside the auth-verifier's own administration APIs.
+> **Note on Users vs Clients:** `Admin` records (super admins and realm admins) are simply authenticated clients that also hold a `Admin` record granting them server-administration privileges. Every admin must still log in through the normal `/login` endpoint — there is no separate admin login path. A `Admin` record has no special meaning outside the Authentication Verifier's own administration APIs.
 
 ## Authentication Flow
 
@@ -55,7 +55,7 @@ sequenceDiagram
 2. Authentication server validates the provided credentials
 3. Upon successful validation, session cookie is issued to the client
 4. Client makes API request, including the session cookie
-5. API server validates the session with auth-verifier
+5. API server validates the session with Authentication Verifier
 6. Authentication server confirms session is valid
 7. API server calls the requested service
 8. Service returns response to API server
@@ -63,7 +63,7 @@ sequenceDiagram
 
 ## Cross-Scheme Session Lookup and Forced Logout
 
-Once a session has been validated on the Auth Server, the API can use that session to query all active sessions belonging to the same client identity — regardless of which authentication scheme was used to create them. This enables scenarios such as enforcing a single active session, detecting concurrent logins from unexpected locations, or explicitly logging a client out from all other devices and methods.
+Once a session has been validated on the Authentication Verifier, the API can use that session to query all active sessions belonging to the same client identity — regardless of which authentication scheme was used to create them. This enables scenarios such as enforcing a single active session, detecting concurrent logins from unexpected locations, or explicitly logging a client out from all other devices and methods.
 
 The `POST /sessions/realms/{realm}/clients` endpoint accepts a list of `AuthenticatedClientScheme` entries — each combining a `username` with one of the supported authentication schemes (`up`, `jwt`, `cc`, `f2`, `dc`). It returns the matching session IDs across all those schemes. The API can then call `DELETE /sessions` with any subset of those IDs to selectively revoke them.
 
@@ -72,7 +72,7 @@ sequenceDiagram
     autonumber
     participant C as Client
     participant API as Your API
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
     participant SS as Session Store
 
     C->>API: GET /api/resource<br/>Cookie: _ea_=<encrypted_jwt>
@@ -104,7 +104,7 @@ sequenceDiagram
 
 ## Application Programming Interfaces (APIs)
 
-The auth-verifier exposes a RESTful API.
+The Authentication Verifier exposes a RESTful API.
 
 The API is separated into 3 sections:
 
@@ -134,7 +134,7 @@ Administrator clients authenticate against the special `_` realm. The API endpoi
 
 | Document | Description |
 |----------|-------------|
-| [Installation](installation.md) | Deploy the auth-verifier as a service: obtain the binary, TLS certificates, configuration file, first-admin bootstrap, running (foreground / systemd), and verification. |
+| [Installation](installation.md) | Deploy the Authentication Verifier as a service: obtain the binary, TLS certificates, configuration file, first-admin bootstrap, running (foreground / systemd), and verification. |
 | [Getting Started](getting_started.md) | First-run walkthrough: bootstrap, creating your first realm and user, verifying the setup. |
 | [Server Configuration](server_configuration.md) | Complete reference for the `auth_verifier.toml` configuration file: TLS, database backends, session store, proxy, stale-session cleanup, and JWT signing keys. |
 | [Authentication Flows](authentication_flows.md) | Sequence diagrams for every authentication method: username/password, JWT bearer, mTLS, TOTP, AppRole, Kubernetes service-account, and token self-service. Includes session lifecycle, endpoint reference tables, and a request-authentication decision flowchart. |

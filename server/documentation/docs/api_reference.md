@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for all HTTP endpoints exposed by the auth-verifier.
+Complete reference for all HTTP endpoints exposed by the Authentication Verifier.
 
 All endpoints are served over **HTTPS only**. The base URL is `https://{host}:{port}`.
 
