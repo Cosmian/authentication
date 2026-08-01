@@ -337,7 +337,7 @@ test.describe("Machine Credentials — Token tab", () => {
         await page.getByRole("button", { name: "Lookup" }).click();
         await expect(page.getByText("3200s")).toBeVisible();
         await page.getByRole("button", { name: "Renew" }).click();
-        await expect(page.getByText("7200s")).toBeVisible();
+        await expect(page.getByText("7200s", { exact: true })).toBeVisible();
     });
 
     test("revokes a token and clears the view", async ({ page }) => {

@@ -136,6 +136,11 @@
   tests caused by React 19's scheduler queuing `setImmediate` callbacks during component
   unmount that could fire after jsdom began tearing down in CI Linux environments. The
   `afterEach` hook now flushes pending `setImmediate` tasks after `cleanup()`.
+- Fixed an E2E test strict-mode violation in the token-renew test
+  (`machine-credentials.spec.ts:340`): after clicking "Renew", a toast
+  notification "Token renewed — new lease 7200s" appeared alongside the
+  TTL display "7200s", causing `getByText("7200s")` to match two
+  elements. Changed to `getByText("7200s", { exact: true })`.
 
 ## CI
 
