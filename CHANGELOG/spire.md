@@ -132,3 +132,13 @@
   array, consistent with the `bind_secret_id = false` use-case) and added the
   `expected_issuer` and `bound_audiences` fields to the OpenAPI `K8sRoleRequest` schema,
   which were present in the Rust DTO but missing from the specification.
+- Fixed an unhandled `ReferenceError: window is not defined` in the admin-ui vitest unit
+  tests caused by React 19's scheduler queuing `setImmediate` callbacks during component
+  unmount that could fire after jsdom began tearing down in CI Linux environments. The
+  `afterEach` hook now flushes pending `setImmediate` tasks after `cleanup()`.
+
+## CI
+
+- Updated stale Nix pnpm dependency hashes for the admin-ui (`linux-x86_64` and
+  `linux-aarch64`) after `pnpm-lock.yaml` changes caused a hash mismatch in the
+  packaging workflow.

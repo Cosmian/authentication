@@ -2,8 +2,12 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
-afterEach(() => {
+afterEach(async () => {
     cleanup();
+    // React 19's scheduler may queue setImmediate callbacks during unmount.
+    // In CI environments those can fire after jsdom begins tearing down,
+    // causing "window is not defined". Flushing the event loop here prevents it.
+    await new Promise<void>((resolve) => setImmediate(() => resolve()));
     vi.restoreAllMocks();
 });
 
