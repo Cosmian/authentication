@@ -4,10 +4,15 @@ import { afterEach, vi } from "vitest";
 
 afterEach(async () => {
     cleanup();
-    // React 19's scheduler may queue setImmediate callbacks during unmount.
-    // In CI environments those can fire after jsdom begins tearing down,
-    // causing "window is not defined". Flushing the event loop here prevents it.
-    await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    // React 19 + scheduler@0.27 chains setImmediate callbacks:
+    // performWorkUntilDeadline → schedulePerformWorkUntilDeadline → repeat.
+    // A single flush is not enough after the antd v6 upgrade which queues more
+    // async work; draining three rounds covers all known cases.
+    // If "window is not defined" returns, increase the loop count.
+    for (let i = 0; i < 3; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    }
     vi.restoreAllMocks();
 });
 
