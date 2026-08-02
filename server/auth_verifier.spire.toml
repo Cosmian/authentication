@@ -70,9 +70,9 @@ level = "info"
 host_name = "0.0.0.0"
 host_port = 8443
 
-# Available RBAC role names exposed via GET /public/roles. Keep the defaults
-# unless your OPA policy expects a different set.
-roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+# Available RBAC role names exposed via GET /public/roles.
+# When omitted, no roles are advertised — define your own list matching your OPA policy.
+# roles = ["Admin", "User"]
 
 # ── TLS (required) ───────────────────────────────────────────────────────────
 # All three PEM files are mandatory. IMPORTANT: the server certificate's SANs

@@ -55,7 +55,9 @@ host_port = 8443 # <REQUIRED>
 # Available role names exposed via GET /public/roles.
 # The admin UI role-selection dropdowns are populated from this list.
 # This must match the roles expected by your OPA policy.
-roles = ["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]
+# When omitted (or empty), no roles are advertised by the server — define your
+# own list matching your organisation's OPA policy.
+# roles = [Admin, User]
 
 
 # -----------------------------------------------------------------------------

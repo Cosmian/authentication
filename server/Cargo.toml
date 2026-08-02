@@ -108,7 +108,7 @@ assets = [
   ],
 ]
 systemd-units = [
-  { unit-name = "auth_verifier", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
+  { unit-name = "cosmian_auth_verifier", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
 ]
 
 [package.metadata.generate-rpm]

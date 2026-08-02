@@ -12,7 +12,7 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=auth_verifier
+SyslogIdentifier=cosmian_auth_verifier
 
 # Runtime directories (created automatically by systemd)
 StateDirectory=cosmian-auth
