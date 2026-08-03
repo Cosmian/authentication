@@ -25,6 +25,7 @@ admin-ui = ["dep:actix-files"]
 [dependencies]
 actix-cors = { workspace = true }
 actix-files = { workspace = true, optional = true }
+actix-governor = { workspace = true }
 actix-tls = { workspace = true }
 actix-web = { workspace = true, features = ["macros", "cookies"] }
 argon2 = { workspace = true }

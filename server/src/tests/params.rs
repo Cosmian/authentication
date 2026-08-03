@@ -78,6 +78,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
         admin_ui_path: None,
         log: None,
         roles: Vec::new(),
+        allowed_origins: Vec::new(),
     };
 
     Ok(server_params)

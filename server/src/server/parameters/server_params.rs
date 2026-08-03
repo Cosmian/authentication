@@ -53,6 +53,20 @@ pub struct ServerParams {
     /// Example: `["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]`
     #[serde(default)]
     pub roles: Vec<String>,
+
+    /// Allowed CORS origins for authenticated (admin) scopes.
+    ///
+    /// When non-empty, only the listed origins receive `Access-Control-Allow-Origin` headers
+    /// on admin endpoints (`/admins/*`, `/realms/*`, `/sessions`, `/auth/approle`,
+    /// `/auth/kubernetes`). When empty (the default) these scopes use same-origin policy
+    /// and reject all cross-origin requests.
+    ///
+    /// Public endpoints (`/login`, `/.well-known`, `/public`, AppRole/K8s login) always
+    /// remain permissive so that browser clients and external services can reach them.
+    ///
+    /// Example: `["https://admin.example.com", "https://localhost:3000"]`
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
 }
 
 /// Parameters for seeding a realm-admin on first start in development mode.
@@ -63,7 +77,12 @@ pub struct DevSeedParams {
     /// Username for the realm-admin account.
     pub admin_username: String,
     /// Plain-text password for the realm-admin account.
-    pub admin_password: String,
+    /// Either this or `admin_password_env` must be set.
+    pub admin_password: Option<String>,
+    /// Name of an environment variable that holds the admin password.
+    /// Takes precedence over `admin_password` when both are set.
+    /// Allows keeping secrets out of config files.
+    pub admin_password_env: Option<String>,
     /// Username for a TOTP-enabled regular user in the seeded realm (optional).
     pub totp_username: Option<String>,
     /// Plain-text password for the TOTP-enabled user (optional).
@@ -71,6 +90,27 @@ pub struct DevSeedParams {
     /// Fixed Base32 TOTP secret for the TOTP user (optional).
     /// If omitted, a random secret is generated and logged at startup.
     pub totp_secret: Option<String>,
+}
+
+impl DevSeedParams {
+    /// Return the resolved admin password: `admin_password_env` takes precedence over `admin_password`.
+    ///
+    /// Returns an error if neither is set.
+    pub fn resolve_admin_password(&self) -> crate::AuthResult<String> {
+        if let Some(ref env_name) = self.admin_password_env {
+            return std::env::var(env_name).map_err(|_| {
+                crate::AuthError::Init(format!(
+                    "dev_seed: environment variable '{}' (admin_password_env) is not set",
+                    env_name
+                ))
+            });
+        }
+        self.admin_password.clone().ok_or_else(|| {
+            crate::AuthError::Init(
+                "dev_seed: neither `admin_password` nor `admin_password_env` is set".to_string(),
+            )
+        })
+    }
 }
 
 impl ServerParams {

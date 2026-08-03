@@ -16,10 +16,16 @@ pub fn session_id_from_cookie_value(cookie_value: &[u8]) -> AuthResult<String> {
     Ok(hex::encode(session_id))
 }
 
-pub fn build_cookie(value: &str, max_age_seconds: i64) -> Result<Cookie<'static>, AuthError> {
+pub fn build_cookie(
+    value: &str,
+    max_age_seconds: i64,
+    is_https: bool,
+) -> Result<Cookie<'static>, AuthError> {
     let mut cookie = Cookie::new(COOKIE_NAME.to_owned(), value.to_owned());
 
-    cookie.set_secure(true);
+    // Only set the Secure flag when the server is running over HTTPS.
+    // Setting it on plain HTTP would prevent the browser from ever sending the cookie.
+    cookie.set_secure(is_https);
     cookie.set_http_only(true);
     cookie.set_same_site(Some(SameSite::Strict));
     cookie.set_path("/");

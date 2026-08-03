@@ -1160,14 +1160,16 @@ async fn test_session_replay_after_logout() -> AuthResult<()> {
         "Session must be retrievable after login"
     );
 
-    // Simulate explicit logout: delete the session.
+    // Simulate explicit logout: delete the session via the victim client.
     victim_client
         .delete_sessions(std::slice::from_ref(&session_id))
         .await?;
     info!("Session '{session_id}' deleted (logout)");
 
-    // The session must now be gone from the store.
-    let replayed = victim_client.get_session(&session_id).await?;
+    // The session must now be gone from the store.  Use the super_admin client
+    // (which has its own independent session) to verify — after deletion the
+    // victim_client's cookie is invalid and would return 401, not None.
+    let replayed = super_admin.get_session(&session_id).await?;
     assert!(
         replayed.is_none(),
         "Session must not be retrievable after deletion (replay blocked)"

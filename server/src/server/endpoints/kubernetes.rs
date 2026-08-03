@@ -28,6 +28,8 @@ use auth_client::{
 use cosmian_logger::{error, info, warn};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode_header};
 use serde::{Deserialize, Serialize};
+#[cfg(not(test))]
+use std::net::IpAddr;
 use std::sync::Arc;
 
 /// Minimal JWT claims needed to validate a Kubernetes service-account token.
@@ -169,10 +171,28 @@ pub async fn k8s_create_role(
     let payload = payload.into_inner();
 
     // Reject non-HTTPS JWKS URLs to prevent SSRF via plaintext HTTP.
-    // Private-IP targets are still permitted to support internal K8s clusters.
     if !payload.jwks_url.starts_with("https://") {
         return Err(AuthError::BadRequest(
             "jwks_url must use the https:// scheme".to_string(),
+        ));
+    }
+
+    // Reject JWKS URLs that resolve to private or loopback IP literals to
+    // prevent SSRF attacks targeting internal infrastructure.
+    // Skipped in test builds where the JWKS endpoint runs on localhost.
+    #[cfg(not(test))]
+    if payload
+        .jwks_url
+        .trim_start_matches("https://")
+        .split('/')
+        .next()
+        .and_then(|h| h.rsplit_once(':').map(|(host, _)| host).or(Some(h)))
+        .and_then(|h| h.parse::<IpAddr>().ok())
+        .map(is_private_ip)
+        .unwrap_or(false)
+    {
+        return Err(AuthError::BadRequest(
+            "jwks_url must not point to a private or loopback IP address".to_string(),
         ));
     }
 
@@ -451,4 +471,16 @@ fn build_validation(
     }
 
     validation
+}
+
+/// Returns `true` when `ip` is a loopback, private, link-local, or unspecified
+/// address — i.e., an address that must not be reachable from a public JWKS URL.
+#[cfg(not(test))]
+fn is_private_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+        }
+        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local() || v6.is_unspecified(),
+    }
 }

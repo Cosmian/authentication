@@ -37,7 +37,6 @@ pub async fn create_userpass(
     // Hash the plaintext password bytes before storing.
     // Clients always send plaintext UTF-8 bytes; the server is responsible for hashing.
     userpass.password = hash_password_with_argon2(
-        &userpass.username,
         &String::from_utf8(userpass.password)
             .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
     )
@@ -127,11 +126,10 @@ pub async fn update_userpass(
             .update_userpass_metadata(&realm, &username, userpass.change_password, &userpass.roles)
             .await?;
     } else {
-        userpass.password = hash_password_with_argon2(
-            &userpass.username,
-            &String::from_utf8(userpass.password)
-                .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
-        )?;
+        userpass.password =
+            hash_password_with_argon2(&String::from_utf8(userpass.password).map_err(|e| {
+                AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
+            })?)?;
         database.update_userpass(&userpass).await?;
     }
     info!(

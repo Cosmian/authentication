@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     database::{
-        AuthDbError, AuthDbResult, hash_password_with_argon2,
+        AuthDbError, AuthDbResult,
         r#trait::{AppRole, AppSecretId, AppToken, Database, K8sRole},
     },
     models::{Admin, AuthScheme, Realm, UserPass},
@@ -555,15 +555,10 @@ impl Database for SqliteDatabase {
         match row {
             Some(row) => {
                 let stored_password: Vec<u8> = row.try_get("password")?;
-                if stored_password
-                    == hash_password_with_argon2(username, password)
-                        .map_err(|e| crate::database::AuthDbError::Unexpected(e.to_string()))?
-                {
-                    let change_password: bool = row.try_get("change_password")?;
-                    Ok(change_password)
-                } else {
-                    Err(crate::database::AuthDbError::InvalidCredentials)
-                }
+                crate::database::verify_password_argon2(&stored_password, password)
+                    .map_err(|_| crate::database::AuthDbError::InvalidCredentials)?;
+                let change_password: bool = row.try_get("change_password")?;
+                Ok(change_password)
             }
             None => Err(crate::database::AuthDbError::InvalidCredentials),
         }

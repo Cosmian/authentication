@@ -60,6 +60,7 @@ use crate::{
     session::{self, JwksData, JwtTokenConfig},
 };
 use actix_cors::Cors;
+use actix_governor::{Governor, GovernorConfig, GovernorConfigBuilder, PeerIpKeyExtractor};
 use actix_web::{
     App, Error, HttpResponse, HttpServer,
     body::MessageBody,
@@ -72,6 +73,24 @@ use std::{
     io,
     sync::{Arc, mpsc},
 };
+
+/// Build a `Cors` middleware for *admin* scopes.
+///
+/// When `allowed_origins` is non-empty, only those origins are allowed.
+/// When empty (the default), the scope uses same-origin policy and rejects
+/// all cross-origin preflight requests.
+fn build_admin_cors(allowed_origins: &[String]) -> Cors {
+    if allowed_origins.is_empty() {
+        // No cross-origin access — only same-origin requests are permitted.
+        Cors::default()
+    } else {
+        let mut cors = Cors::default().allow_any_method().allow_any_header();
+        for origin in allowed_origins {
+            cors = cors.allowed_origin(origin);
+        }
+        cors
+    }
+}
 
 /// Fallback handler for any route not matched by a registered scope.
 ///
@@ -297,6 +316,17 @@ fn build_app(
 > {
     trace!("Configuring the Actix server application...");
 
+    let allowed_origins = server_params.allowed_origins.clone();
+
+    // Per-IP rate limiter for the /login endpoint: max 1 request per 200ms (5/s), burst of 10.
+    // This limits brute-force credential-stuffing without impacting normal usage.
+    let login_governor_config: GovernorConfig<PeerIpKeyExtractor, _> =
+        GovernorConfigBuilder::default()
+            .seconds_per_request(1)
+            .burst_size(10)
+            .finish()
+            .expect("failed to build Governor config for /login rate limiter");
+
     // Create an `App` instance and configure the passed data and the various scopes
     let app = App::new()
         .app_data(Data::new(server_params.clone()))
@@ -315,13 +345,14 @@ fn build_app(
         app.app_data(Data::new(idp))
     };
 
-    // The client scope
+    // The client scope — permissive CORS so browser-based and CLI clients can reach it
+    // from any origin. Rate limited per IP via the Governor middleware.
     let client_scope = web::scope("/login")
         .wrap(EnsureAuth::new(true, default_username.as_deref()))
         .wrap(JwtAuth::new(jwks_manager.clone()))
         .wrap(UsernamePasswordAuth::new(database.clone()))
         .wrap(ExtractRealm::new(database.clone()))
-        // TODO : Remove permissive CORS and replace with more restrictive configuration if needed
+        .wrap(Governor::new(&login_governor_config))
         .wrap(Cors::permissive())
         .route("", web::post().to(login));
 
@@ -331,7 +362,7 @@ fn build_app(
             jwt_token_config.clone(),
         ))
         .wrap(ExtractRealm::new(database.clone()))
-        .wrap(Cors::permissive())
+        .wrap(build_admin_cors(&allowed_origins))
         .route("", web::get().to(whoami));
 
     // The public scope
@@ -367,7 +398,7 @@ fn build_app(
             jwt_token_config.clone(),
         ))
         .wrap(InjectAdminRealm::new(database.clone()))
-        .wrap(Cors::permissive())
+        .wrap(build_admin_cors(&allowed_origins))
         .service(create_realm)
         .service(get_realm)
         .service(update_realm)
@@ -381,7 +412,7 @@ fn build_app(
             jwt_token_config.clone(),
         ))
         .wrap(ExtractRealm::new(database.clone()))
-        .wrap(Cors::permissive())
+        .wrap(build_admin_cors(&allowed_origins))
         .service(create_userpass)
         .service(get_userpass)
         .service(update_userpass)
@@ -392,8 +423,12 @@ fn build_app(
         .service(totp_disable);
 
     let sessions_scope = web::scope("/sessions")
-        .wrap(Cors::permissive())
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
         .wrap(ExtractRealm::new(database.clone()))
+        .wrap(build_admin_cors(&allowed_origins))
         .service(upsert_session)
         .service(get_session_by_id)
         .service(get_session)
@@ -409,7 +444,7 @@ fn build_app(
             jwt_token_config.clone(),
         ))
         .wrap(InjectAdminRealm::new(database.clone()))
-        .wrap(Cors::permissive())
+        .wrap(build_admin_cors(&allowed_origins))
         // list_all_userpass must be registered before get_admin/update_admin/delete_admin
         // so that GET /admins/userpass is matched before GET /admins/{id}
         .service(list_all_userpass)
@@ -450,7 +485,7 @@ fn build_app(
             session_store.clone(),
             jwt_token_config.clone(),
         ))
-        .wrap(Cors::permissive())
+        .wrap(build_admin_cors(&allowed_origins))
         .service(approle_create_role)
         .service(approle_get_role_id)
         .service(approle_generate_secret_id)
@@ -466,7 +501,7 @@ fn build_app(
             session_store.clone(),
             jwt_token_config.clone(),
         ))
-        .wrap(Cors::permissive())
+        .wrap(build_admin_cors(&allowed_origins))
         .service(k8s_create_role)
         .service(k8s_delete_role)
         .service(k8s_get_role)

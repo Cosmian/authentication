@@ -16,7 +16,7 @@ use actix_web::{
     body::{BoxBody, EitherBody},
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
 };
-use cosmian_logger::{debug, error};
+use cosmian_logger::{debug, error, warn};
 use futures::{
     Future,
     future::{Ready, ok},
@@ -42,6 +42,14 @@ impl EnsureAuth {
     /// * `auth_is_configured` - Indicates if any authentication method is configured
     #[must_use]
     pub fn new(auth_is_configured: bool, default_username: Option<&str>) -> Self {
+        if let Some(username) = default_username.filter(|_| !auth_is_configured) {
+            warn!(
+                "SECURITY: auth-verifier is running with no authentication configured; \
+                 all requests will be treated as user '{}'. \
+                 Set up an authentication method for production use.",
+                username
+            );
+        }
         Self {
             auth_is_configured,
             default_username: default_username.map(String::from),

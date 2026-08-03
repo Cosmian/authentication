@@ -17,7 +17,7 @@ use actix_web::{
     http::header::AUTHORIZATION,
 };
 use base64::Engine;
-use cosmian_logger::{debug, trace};
+use cosmian_logger::{debug, trace, warn};
 use futures::{
     Future,
     future::{Ready, ok},
@@ -178,7 +178,13 @@ where
                             Ok(res.map_into_left_body())
                         }
                         Err(e) => {
-                            debug!("UsernamePassword: credential validation error: {e}");
+                            warn!(
+                                event = "auth.login.failure",
+                                realm = %realm.id,
+                                username = %username,
+                                reason = %e,
+                                "login failed: invalid credentials"
+                            );
                             Ok(req
                                 .into_response(
                                     HttpResponse::Unauthorized()
