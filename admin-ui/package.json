@@ -18,7 +18,7 @@
         "ci": "eslint . --fix && prettier . --write && vitest --run -c tests/vitest.unit.config.ts && vitest --run -c tests/vitest.int.config.ts && playwright test"
     },
     "dependencies": {
-        "@ant-design/icons": "^6.1.0",
+        "@ant-design/icons": "^6.3.2",
         "@tailwindcss/vite": "^4.2.2",
         "antd": "^6.5.2",
         "qrcode": "^1.5.4",
