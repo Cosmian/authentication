@@ -14,7 +14,7 @@
 # =============================================================================
 
 host_name = "127.0.0.1"
-host_port = 8080
+host_port = 8443
 
 # ---------------------------------------------------------------------------
 # Admin UI — serves the pre-built admin UI at /admin-ui.
@@ -28,30 +28,35 @@ admin_ui_path = "admin-ui/dist"
 [log]
 level = "debug"
 
+[tls_params]
+server_ca_chain = "server/src/tests/certificates/ec/auth.ca.pem"
+server_certificate = "server/src/tests/certificates/ec/auth.server.cert.pem"
+server_private_key = "server/src/tests/certificates/ec/auth.server.key.pem"
+
 # ---------------------------------------------------------------------------
 # JWT signing keys — required when tls_params is absent.
 # Uses the test EC P-256 keys bundled with the source tree.
 # ---------------------------------------------------------------------------
 [session_jwt_params]
 jwt_ec_private_key = "server/src/tests/certificates/ec/auth.server.key.pem"
-jwt_ec_public_key  = "server/src/tests/certificates/ec/auth.server.cert.pem"
+jwt_ec_public_key = "server/src/tests/certificates/ec/auth.server.cert.pem"
 
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 [database_params]
-backend        = "sqlite"
-connection_url = "sqlite:///tmp/path.db"
 auto_init_schema = true
+backend = "sqlite"
+connection_url = "sqlite:///tmp/path.db"
 
 # ---------------------------------------------------------------------------
 # Dev seed
 # ---------------------------------------------------------------------------
 [dev_seed]
-realm_id       = "dev-realm"
-admin_username = "realm-admin"
 admin_password = "change_me"
+admin_username = "realm-admin"
+realm_id = "dev-realm"
 
-totp_username = "totp-user"
 totp_password = "change_me"
-totp_secret   = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+totp_secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+totp_username = "totp-user"
