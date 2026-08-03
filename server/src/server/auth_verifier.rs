@@ -1,7 +1,7 @@
 use crate::{
     AdminAuth, AppTokenExtract, AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm,
     InjectAdminRealm, UsernamePasswordAuth,
-    middleware::{EnsureAuth, JwksManager, JwtAuth},
+    middleware::{EnsureAuth, JwksManager, JwtAuth, LoginRateLimit},
     server::{
         endpoints::{
             add_admin_to_realm,
@@ -60,7 +60,6 @@ use crate::{
     session::{self, JwksData, JwtTokenConfig},
 };
 use actix_cors::Cors;
-use actix_governor::{Governor, GovernorConfig, GovernorConfigBuilder, PeerIpKeyExtractor};
 use actix_web::{
     App, Error, HttpResponse, HttpServer,
     body::MessageBody,
@@ -318,14 +317,9 @@ fn build_app(
 
     let allowed_origins = server_params.allowed_origins.clone();
 
-    // Per-IP rate limiter for the /login endpoint: max 1 request per 200ms (5/s), burst of 10.
+    // Per-IP rate limiter for the /login endpoint: max 5 req/s, burst of 10.
     // This limits brute-force credential-stuffing without impacting normal usage.
-    let login_governor_config: GovernorConfig<PeerIpKeyExtractor, _> =
-        GovernorConfigBuilder::default()
-            .seconds_per_request(1)
-            .burst_size(10)
-            .finish()
-            .expect("failed to build Governor config for /login rate limiter");
+    let login_rate_limit = LoginRateLimit::new(5, 10);
 
     // Create an `App` instance and configure the passed data and the various scopes
     let app = App::new()
@@ -352,7 +346,7 @@ fn build_app(
         .wrap(JwtAuth::new(jwks_manager.clone()))
         .wrap(UsernamePasswordAuth::new(database.clone()))
         .wrap(ExtractRealm::new(database.clone()))
-        .wrap(Governor::new(&login_governor_config))
+        .wrap(login_rate_limit)
         .wrap(Cors::permissive())
         .route("", web::post().to(login));
 

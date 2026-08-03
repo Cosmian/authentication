@@ -13,6 +13,9 @@ pub use inject_admin_realm::InjectAdminRealm;
 mod jwt;
 pub use jwt::{JwksManager, JwtAuth};
 
+mod login_rate_limit;
+pub use login_rate_limit::LoginRateLimit;
+
 mod totp;
 pub use totp::TotpMiddleware;
 
