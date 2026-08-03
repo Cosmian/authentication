@@ -23,9 +23,7 @@ use futures::{
     future::{Ready, ok},
 };
 use governor::{
-    Quota, RateLimiter,
-    clock::DefaultClock,
-    middleware::NoOpMiddleware,
+    Quota, RateLimiter, clock::DefaultClock, middleware::NoOpMiddleware,
     state::keyed::DefaultKeyedStateStore,
 };
 
