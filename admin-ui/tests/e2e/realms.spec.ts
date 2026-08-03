@@ -163,7 +163,8 @@ test.describe("Realms page", () => {
         await createBtn.click();
 
         // The drawer should close and the new realm should appear in the table.
-        await expect(page.getByText("e2e-test-realm")).toBeVisible();
+        // Scope to `.ant-card` to avoid matching the ephemeral success toast.
+        await expect(page.locator(".ant-card").filter({ hasText: "e2e-test-realm" })).toBeVisible();
     });
 
     test("should open the Edit Realm drawer for an existing realm", async ({ page }) => {
