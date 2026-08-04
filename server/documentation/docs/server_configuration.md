@@ -1,6 +1,6 @@
 # Server Configuration Reference
 
-The authentication server is configured entirely through a TOML file. Start the server with:
+The Authentication Verifier is configured entirely through a TOML file. Start the server with:
 
 ```bash
 # Default: reads ./auth_verifier.toml from the current working directory
@@ -244,7 +244,7 @@ cleanup_interval_seconds = 300
 
 ## Forward Proxy
 
-When the authentication server needs to fetch JWKs from an external Identity Provider through an HTTP proxy:
+When the Authentication Verifier needs to fetch JWKs from an external Identity Provider through an HTTP proxy:
 
 ```toml
 [proxy_params]

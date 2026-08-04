@@ -84,10 +84,17 @@ Per component, always test:
 
 ### Changelog
 
-Every agent-driven change **must** be recorded in a new file under `CHANGELOG/` at the **workspace root** (not inside `admin-ui/`).
+Every agent-driven change **must** be recorded in the **single per-branch** changelog file
+under `CHANGELOG/` at the **workspace root** (not inside `admin-ui/`).
 
-- **File name**: `CHANGELOG/<short_slug>.md` — use a brief kebab-case description (e.g. `remove-admin-ui-mocks.md`).
-- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`, `## CI`, `## Docs`) with bullet points. See `CHANGELOG/ci_add_packaging.md` as a reference.
+- **File name**: `CHANGELOG/<branch-name>.md` — one file per branch, named after the current
+  git branch with any `/` replaced by `_` (e.g. branch `spire` → `CHANGELOG/spire.md`).
+  **Never** create a new file per change (no `<short_slug>.md` files).
+- **Append, don't proliferate**: add each new entry as a bullet under the appropriate
+  category heading in the existing branch file. Create the file only if it does not yet exist.
+- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`,
+  `## CI`, `## Docs`, `## Tests`) with bullet points. Keep the file clear and compact:
+  merge related bullets, avoid duplication, and group same-category changes together.
 - Each bullet must be a single complete sentence summarising **what** changed and **why**, sufficient for a human to understand without reading the diff.
 - Do not add a changelog entry for pure formatting/linting-only commits.
 

@@ -222,7 +222,7 @@ OPA sidecar  POST /v1/data/kms/allow
 - The Admin UI can assign roles without hardcoding role names in the frontend.
 - The JWT is smaller (one fewer claim after removing `as_domain`).
 - Role vocabulary is decoupled: replacing or extending the OPA policy with new
-  role names requires no Auth Server change.
+  role names requires no Authentication Verifier change.
 
 ### Negative / risks
 
@@ -253,10 +253,10 @@ OPA sidecar  POST /v1/data/kms/allow
 **Rejected**: adds a JOIN or a second query on every login; roles are small
 per-user sets that change rarely; JSON column is simpler and adequate.
 
-### B — Resolve roles from OPA data bundle, not the Auth Server
+### B — Resolve roles from OPA data bundle, not the Authentication Verifier
 
 **Rejected**: would require OPA data to be authoritative for both role
-*assignment* (write path) and role *evaluation* (read path). The Auth Server is
+*assignment* (write path) and role *evaluation* (read path). The Authentication Verifier is
 the existing system of record for user identity; it is simpler and more coherent
 to store roles alongside the credential they apply to.
 

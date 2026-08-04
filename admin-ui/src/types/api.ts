@@ -154,3 +154,66 @@ export interface TotpVerifyRequest {
     secret: string;
     issuer?: string | null;
 }
+
+// ── Machine credentials (Vault-compatible auth methods) ─────────────────────
+
+/** AppRole role configuration returned by GET /auth/approle/role/{name}. */
+export interface AppRoleRoleConfig {
+    role_id: string;
+    token_ttl: number;
+    secret_id_ttl: number;
+    bind_secret_id: boolean;
+    token_policies: string[];
+}
+
+/** Request body to create/update an AppRole role (POST /auth/approle/role/{name}). */
+export interface AppRoleRoleRequest {
+    secret_id_ttl: number;
+    token_ttl: number;
+    token_policies: string[];
+    bind_secret_id: boolean;
+}
+
+/** Request body to generate a SecretID (POST /auth/approle/role/{name}/secret-id). */
+export interface AppRoleSecretIdRequest {
+    /** 0 = use the role default. */
+    ttl: number;
+    /** 0 = unlimited uses. */
+    num_uses: number;
+}
+
+/** Result of generating a SecretID — the `secret_id` is shown only once. */
+export interface AppRoleSecretIdResult {
+    secret_id: string;
+    secret_id_accessor: string;
+}
+
+/** Kubernetes role configuration returned by GET /auth/kubernetes/role/{name}. */
+export interface K8sRoleConfig {
+    jwks_url: string;
+    bound_service_account_names: string[];
+    bound_service_account_namespaces: string[];
+    token_ttl: number;
+    expected_issuer: string | null;
+    bound_audiences: string[];
+}
+
+/** Request body to create/update a Kubernetes role (POST /auth/kubernetes/role/{name}). */
+export interface K8sRoleRequest {
+    jwks_url: string;
+    bound_service_account_names: string[];
+    bound_service_account_namespaces: string[];
+    token_ttl: number;
+    expected_issuer: string | null;
+    bound_audiences: string[];
+}
+
+/** Token metadata returned by GET /auth/token/lookup-self. */
+export interface TokenInfo {
+    id: string;
+    entity_id: string;
+    policies: string[];
+    renewable: boolean;
+    ttl: number;
+    creation_time: number;
+}

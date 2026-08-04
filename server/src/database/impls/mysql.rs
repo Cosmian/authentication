@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    database::{AuthDbError, AuthDbResult, hash_password_with_argon2, r#trait::Database},
+    database::{
+        AuthDbError, AuthDbResult,
+        r#trait::{AppRole, AppSecretId, AppToken, Database, K8sRole},
+    },
     models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
@@ -117,6 +120,80 @@ impl Database for MySqlDatabase {
         if realm_count.0 == 0 {
             self.initialize_db().await?;
         }
+
+        // ── App auth tables ─────────────────────────────────────────────────
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS app_tokens (
+                token_hash          BLOB        NOT NULL,
+                entity              TEXT        NOT NULL,
+                policies            TEXT        NOT NULL,
+                expiry              BIGINT      NOT NULL,
+                renewable           TINYINT(1)  NOT NULL DEFAULT 0,
+                lease_duration_secs BIGINT      NOT NULL DEFAULT 3600,
+                created_at          BIGINT      NOT NULL,
+                PRIMARY KEY (token_hash(64))
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS approle_roles (
+                name                VARCHAR(255) NOT NULL PRIMARY KEY,
+                role_id             VARCHAR(255) NOT NULL UNIQUE,
+                secret_id_ttl_secs  BIGINT       NOT NULL DEFAULT 0,
+                token_ttl_secs      BIGINT       NOT NULL DEFAULT 3600,
+                bind_secret_id      TINYINT(1)   NOT NULL DEFAULT 1,
+                token_policies      TEXT         NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS app_secret_ids (
+                accessor            VARCHAR(36)  NOT NULL PRIMARY KEY,
+                secret_id_hash      BLOB         NOT NULL,
+                role_name           VARCHAR(255) NOT NULL,
+                expiry              BIGINT       NOT NULL DEFAULT 0,
+                num_uses_remaining  BIGINT       NOT NULL DEFAULT -1,
+                FOREIGN KEY (role_name) REFERENCES approle_roles(name) ON DELETE CASCADE
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS k8s_roles (
+                name                    VARCHAR(255) NOT NULL PRIMARY KEY,
+                jwks_url                TEXT         NOT NULL,
+                bound_sa_names          TEXT         NOT NULL,
+                bound_sa_namespaces     TEXT         NOT NULL,
+                token_ttl_secs          BIGINT       NOT NULL DEFAULT 3600,
+                expected_issuer         TEXT,
+                bound_audiences         TEXT         NOT NULL DEFAULT '[]'
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Add columns to pre-existing tables (IF NOT EXISTS requires MySQL 8.0.3+).
+        let _ = sqlx::query("ALTER TABLE k8s_roles ADD COLUMN IF NOT EXISTS expected_issuer TEXT")
+            .execute(&self.pool)
+            .await;
+        let _ = sqlx::query(
+            "ALTER TABLE k8s_roles ADD COLUMN IF NOT EXISTS bound_audiences TEXT NOT NULL DEFAULT '[]'",
+        )
+        .execute(&self.pool)
+        .await;
 
         Ok(())
     }
@@ -465,15 +542,10 @@ impl Database for MySqlDatabase {
         match row {
             Some(row) => {
                 let stored_password: Vec<u8> = row.try_get("password")?;
-                if stored_password
-                    == hash_password_with_argon2(username, password)
-                        .map_err(|e| crate::database::AuthDbError::Unexpected(e.to_string()))?
-                {
-                    let change_password: bool = row.try_get("change_password")?;
-                    Ok(change_password)
-                } else {
-                    Err(crate::database::AuthDbError::InvalidCredentials)
-                }
+                crate::database::verify_password_argon2(&stored_password, password)
+                    .map_err(|_| crate::database::AuthDbError::InvalidCredentials)?;
+                let change_password: bool = row.try_get("change_password")?;
+                Ok(change_password)
             }
             None => Err(crate::database::AuthDbError::InvalidCredentials),
         }
@@ -873,5 +945,353 @@ impl Database for MySqlDatabase {
             Some(row) => Ok(row.try_get("totp_enabled")?),
             None => Ok(None),
         }
+    }
+
+    // ── app token operations ────────────────────────────────────────────────
+
+    async fn issue_app_token(&self, token: &AppToken) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO app_tokens
+                (token_hash, entity, policies, expiry, renewable, lease_duration_secs, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&token.token_hash)
+        .bind(&token.entity)
+        .bind(serde_json::to_string(&token.policies).unwrap_or_else(|_| "[]".to_string()))
+        .bind(token.expiry)
+        .bind(token.renewable as i64)
+        .bind(token.lease_duration_secs)
+        .bind(token.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn lookup_app_token(&self, token_hash: &[u8]) -> AuthDbResult<Option<AppToken>> {
+        let now = chrono::Utc::now().timestamp();
+        let row = sqlx::query(
+            r#"
+            SELECT token_hash, entity, policies, expiry, renewable, lease_duration_secs, created_at
+            FROM app_tokens
+            WHERE token_hash = ? AND (expiry = 0 OR expiry > ?)
+            "#,
+        )
+        .bind(token_hash)
+        .bind(now)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(r) => Ok(Some(AppToken {
+                token_hash: r.try_get("token_hash")?,
+                entity: r.try_get("entity")?,
+                policies: {
+                    let s: String = r.try_get("policies")?;
+                    serde_json::from_str(&s).unwrap_or_default()
+                },
+                expiry: r.try_get("expiry")?,
+                renewable: r.try_get::<i8, _>("renewable")? != 0,
+                lease_duration_secs: r.try_get("lease_duration_secs")?,
+                created_at: r.try_get("created_at")?,
+            })),
+            None => Ok(None),
+        }
+    }
+
+    async fn renew_app_token(&self, token_hash: &[u8]) -> AuthDbResult<()> {
+        let now = chrono::Utc::now().timestamp();
+        // Non-expiring tokens (expiry = 0) must be excluded: renewing them would
+        // set expiry = now + lease_duration_secs, which collapses to `now` when
+        // lease_duration_secs = 0 and immediately expires a previously non-expiring token.
+        let rows_affected = sqlx::query(
+            r#"
+            UPDATE app_tokens
+            SET expiry = ? + lease_duration_secs
+            WHERE token_hash = ? AND renewable = 1 AND expiry > 0 AND expiry > ?
+            "#,
+        )
+        .bind(now)
+        .bind(token_hash)
+        .bind(now)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+        if rows_affected == 0 {
+            // Renewal is a no-op for non-expiring renewable tokens (expiry = 0).
+            let non_expiring: bool = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM app_tokens WHERE token_hash = ? AND renewable = 1 AND expiry = 0",
+            )
+            .bind(token_hash)
+            .fetch_one(&self.pool)
+            .await
+            .map(|n: i64| n > 0)
+            .unwrap_or(false);
+            if !non_expiring {
+                return Err(AuthDbError::Unexpected(
+                    "token not found, expired, or not renewable".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn revoke_app_token(&self, token_hash: &[u8]) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM app_tokens WHERE token_hash = ?")
+            .bind(token_hash)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // ── AppRole operations ──────────────────────────────────────────────────
+
+    async fn create_approle(&self, role: &AppRole) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO approle_roles
+                (name, role_id, secret_id_ttl_secs, token_ttl_secs, bind_secret_id, token_policies)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                role_id             = VALUES(role_id),
+                secret_id_ttl_secs  = VALUES(secret_id_ttl_secs),
+                token_ttl_secs      = VALUES(token_ttl_secs),
+                bind_secret_id      = VALUES(bind_secret_id),
+                token_policies      = VALUES(token_policies)
+            "#,
+        )
+        .bind(&role.name)
+        .bind(&role.role_id)
+        .bind(role.secret_id_ttl_secs)
+        .bind(role.token_ttl_secs)
+        .bind(role.bind_secret_id as i64)
+        .bind(serde_json::to_string(&role.token_policies).unwrap_or_else(|_| "[]".to_string()))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_approle_by_role_id(&self, role_id: &str) -> AuthDbResult<Option<AppRole>> {
+        let row = sqlx::query(
+            r#"
+            SELECT name, role_id, secret_id_ttl_secs, token_ttl_secs, bind_secret_id, token_policies
+            FROM approle_roles WHERE role_id = ?
+            "#,
+        )
+        .bind(role_id)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| {
+            let policies_json: String = r.try_get("token_policies").unwrap_or_default();
+            AppRole {
+                name: r.try_get("name").unwrap_or_default(),
+                role_id: r.try_get("role_id").unwrap_or_default(),
+                secret_id_ttl_secs: r.try_get("secret_id_ttl_secs").unwrap_or_default(),
+                token_ttl_secs: r.try_get("token_ttl_secs").unwrap_or(3600),
+                bind_secret_id: r
+                    .try_get::<i8, _>("bind_secret_id")
+                    .map(|v| v != 0)
+                    .unwrap_or(true),
+                token_policies: serde_json::from_str(&policies_json).unwrap_or_default(),
+            }
+        }))
+    }
+
+    async fn get_approle_by_name(&self, name: &str) -> AuthDbResult<Option<AppRole>> {
+        let row = sqlx::query(
+            r#"
+            SELECT name, role_id, secret_id_ttl_secs, token_ttl_secs, bind_secret_id, token_policies
+            FROM approle_roles WHERE name = ?
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(row.map(|r| {
+            let policies_json: String = r.try_get("token_policies").unwrap_or_default();
+            AppRole {
+                name: r.try_get("name").unwrap_or_default(),
+                role_id: r.try_get("role_id").unwrap_or_default(),
+                secret_id_ttl_secs: r.try_get("secret_id_ttl_secs").unwrap_or_default(),
+                token_ttl_secs: r.try_get("token_ttl_secs").unwrap_or(3600),
+                bind_secret_id: r
+                    .try_get::<i8, _>("bind_secret_id")
+                    .map(|v| v != 0)
+                    .unwrap_or(true),
+                token_policies: serde_json::from_str(&policies_json).unwrap_or_default(),
+            }
+        }))
+    }
+
+    async fn delete_approle(&self, name: &str) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM approle_roles WHERE name = ?")
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_approle_names(&self) -> AuthDbResult<Vec<String>> {
+        let rows = sqlx::query("SELECT name FROM approle_roles ORDER BY name")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| r.try_get("name").unwrap_or_default())
+            .collect())
+    }
+
+    async fn create_secret_id(&self, secret_id: &AppSecretId) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO app_secret_ids
+                (accessor, secret_id_hash, role_name, expiry, num_uses_remaining)
+            VALUES (?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&secret_id.accessor)
+        .bind(&secret_id.secret_id_hash)
+        .bind(&secret_id.role_name)
+        .bind(secret_id.expiry)
+        .bind(secret_id.num_uses_remaining)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn consume_secret_id(
+        &self,
+        role_name: &str,
+        secret_id_hash: &[u8],
+    ) -> AuthDbResult<Option<String>> {
+        let now = chrono::Utc::now().timestamp();
+        // All reads and the subsequent update/delete run inside a single
+        // transaction to prevent concurrent logins from consuming the
+        // same secret-ID twice (TOCTOU race condition).
+        let mut tx = self.pool.begin().await?;
+
+        let row = sqlx::query(
+            r#"
+            SELECT accessor, num_uses_remaining
+            FROM app_secret_ids
+            WHERE role_name = ? AND secret_id_hash = ? AND (expiry = 0 OR expiry > ?)
+            FOR UPDATE
+            "#,
+        )
+        .bind(role_name)
+        .bind(secret_id_hash)
+        .bind(now)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        let Some(row) = row else {
+            tx.rollback().await?;
+            return Ok(None);
+        };
+        let accessor: String = row.try_get("accessor")?;
+        let num_uses: i64 = row.try_get("num_uses_remaining")?;
+
+        if num_uses == 1 {
+            sqlx::query("DELETE FROM app_secret_ids WHERE accessor = ?")
+                .bind(&accessor)
+                .execute(&mut *tx)
+                .await?;
+        } else if num_uses > 1 {
+            sqlx::query(
+                "UPDATE app_secret_ids SET num_uses_remaining = num_uses_remaining - 1 WHERE accessor = ?",
+            )
+            .bind(&accessor)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
+        Ok(Some(accessor))
+    }
+
+    async fn destroy_secret_id(&self, role_name: &str, accessor: &str) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM app_secret_ids WHERE accessor = ? AND role_name = ?")
+            .bind(accessor)
+            .bind(role_name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // ── Kubernetes role operations ──────────────────────────────────────────
+
+    async fn create_k8s_role(&self, role: &K8sRole) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO k8s_roles
+                (name, jwks_url, bound_sa_names, bound_sa_namespaces, token_ttl_secs,
+                 expected_issuer, bound_audiences)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                jwks_url                = VALUES(jwks_url),
+                bound_sa_names          = VALUES(bound_sa_names),
+                bound_sa_namespaces     = VALUES(bound_sa_namespaces),
+                token_ttl_secs          = VALUES(token_ttl_secs),
+                expected_issuer         = VALUES(expected_issuer),
+                bound_audiences         = VALUES(bound_audiences)
+            "#,
+        )
+        .bind(&role.name)
+        .bind(&role.jwks_url)
+        .bind(&role.bound_sa_names)
+        .bind(&role.bound_sa_namespaces)
+        .bind(role.token_ttl_secs)
+        .bind(&role.expected_issuer)
+        .bind(&role.bound_audiences)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_k8s_role(&self, name: &str) -> AuthDbResult<Option<K8sRole>> {
+        let row = sqlx::query(
+            r#"
+            SELECT name, jwks_url, bound_sa_names, bound_sa_namespaces, token_ttl_secs
+                   , expected_issuer, bound_audiences
+            FROM k8s_roles WHERE name = ?
+            "#,
+        )
+        .bind(name)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            Some(r) => Ok(Some(K8sRole {
+                name: r.try_get("name")?,
+                jwks_url: r.try_get("jwks_url")?,
+                bound_sa_names: r.try_get("bound_sa_names")?,
+                bound_sa_namespaces: r.try_get("bound_sa_namespaces")?,
+                token_ttl_secs: r.try_get("token_ttl_secs")?,
+                expected_issuer: r.try_get("expected_issuer")?,
+                bound_audiences: r
+                    .try_get::<String, _>("bound_audiences")
+                    .unwrap_or_else(|_| "[]".to_string()),
+            })),
+            None => Ok(None),
+        }
+    }
+
+    async fn delete_k8s_role(&self, name: &str) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM k8s_roles WHERE name = ?")
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_k8s_role_names(&self) -> AuthDbResult<Vec<String>> {
+        let rows = sqlx::query("SELECT name FROM k8s_roles ORDER BY name")
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows
+            .into_iter()
+            .map(|r| r.try_get("name").unwrap_or_default())
+            .collect())
     }
 }

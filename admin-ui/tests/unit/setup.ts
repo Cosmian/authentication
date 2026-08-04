@@ -2,8 +2,16 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
-afterEach(() => {
+afterEach(async () => {
     cleanup();
+    // React 19 + scheduler@0.27 chains setImmediate callbacks:
+    // performWorkUntilDeadline → schedulePerformWorkUntilDeadline → repeat.
+    // A single flush is not enough after the antd v6 upgrade which queues more
+    // async work; draining five rounds covers all known cases.
+    // If "window is not defined" returns, increase the loop count.
+    for (let i = 0; i < 5; i++) {
+        await new Promise<void>((resolve) => setImmediate(() => resolve()));
+    }
     vi.restoreAllMocks();
 });
 

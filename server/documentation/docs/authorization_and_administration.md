@@ -152,7 +152,7 @@ All `/realms/{realm}/userpass` endpoints require `can_administer_realm(realm)`.
 
 The most important protection for realm admins is the **exclusive-ownership rule**: a realm admin may only CRUD a `Admin` record if **every realm in that record's `realms` list** is administered by the requester.
 
-```
+```text
 allowed iff:
     !target.realms.is_empty()
     && target.realms.iter().all(|r| requester.can_administer_realm(r))
@@ -163,9 +163,9 @@ The intent is:
 - A realm admin cannot view or modify `Admin` records that span multiple realms from different admins.
 - A realm admin cannot delete a super admin (`Admin` records for super admins have `"_"` in their `realms` list, and realm admins cannot administer `"_"`).
 
-### `PUT /admins/{id}` runs the rule **twice**:
+### `PUT /admins/{id}` runs the rule **twice**
 
-```
+```text
 Check 1 (current state): requester can own the user as it is now.
 Check 2 (incoming body): requester can own the user as it would become.
 ```
@@ -212,7 +212,7 @@ Below is the step-by-step process for creating a realm admin for a realm named `
 sequenceDiagram
     autonumber
     participant SA as Super Admin
-    participant EA as Auth Server
+    participant EA as Authentication Verifier
 
     SA->>EA: POST /admins/realms<br/>{"id":"my_realm","name":"My Realm",…}
     EA-->>SA: 201 Created
@@ -287,7 +287,7 @@ When a `Admin` record is deleted, all associated `UserPass` credentials are **ca
 
 ### No non-admin client accounts
 
-There is no built-in concept of a client whose presence in the database does not confer administrative rights. Any `Admin` record that exists with at least one realm in its `realms` list is a realm admin for that realm. Applications that need non-admin client accounts should model that distinction at the application level, outside the authentication server.
+There is no built-in concept of a client whose presence in the database does not confer administrative rights. Any `Admin` record that exists with at least one realm in its `realms` list is a realm admin for that realm. Applications that need non-admin client accounts should model that distinction at the application level, outside the Authentication Verifier.
 
 ### Concurrent realm admin creation
 

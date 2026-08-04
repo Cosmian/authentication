@@ -7,7 +7,7 @@ Rust workspace with two crates:
 - `client/` (`auth_client`) — HTTP client, shared models, DTOs, error types, and params. This is the contract surface used by both the server and external API servers.
 - `server/` (`auth_verifier`) — Actix-web HTTPS server: middleware pipeline, endpoints, database layer, session store, TOTP, and TLS configuration.
 
-Project documentation lives in `server/documentation/`. Start with `server/documentation/index.md`.
+Project documentation lives in `server/documentation/`. Start with `server/documentation/docs/index.md`.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ Two-tier: super admin vs realm admin. Authorization is enforced in endpoint hand
 - **Exclusive-ownership rule** — realm admin can only CRUD an `Admin` if *every* realm in that admin's `realms` list is one they administer
 - PUT endpoints run the ownership check twice: once on current state, once on incoming body (prevents privilege escalation)
 
-See `server/documentation/authorization_and_administration.md`.
+See `server/documentation/docs/authorization_and_administration.md`.
 
 ## Conventions
 

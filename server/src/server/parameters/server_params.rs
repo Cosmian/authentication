@@ -11,7 +11,8 @@ use crate::{
 pub struct ServerParams {
     pub host_name: String,
     pub host_port: u16,
-    pub tls_params: TlsParams,
+    /// TLS configuration. When `None`, the server binds plain HTTP (dev only).
+    pub tls_params: Option<TlsParams>,
     pub default_username: Option<String>,
 
     pub session_jwt_params: Option<SessionJwtParams>,
@@ -39,6 +40,9 @@ pub struct ServerParams {
     /// Intended only for `auth_verifier.dev.toml` — do not use in production.
     pub dev_seed: Option<DevSeedParams>,
 
+    /// Console logging configuration. When omitted, defaults to info level.
+    pub log: Option<crate::server::parameters::LogConfig>,
+
     /// Path to the pre-built admin UI `dist/` directory.
     /// When set and the `admin-ui` feature is enabled, the server serves those
     /// static files at `/admin-ui` with a SPA fallback for client-side routing.
@@ -49,6 +53,20 @@ pub struct ServerParams {
     /// Example: `["SuperAdmin", "DomainAdmin", "CryptoOfficer", "Auditor", "User"]`
     #[serde(default)]
     pub roles: Vec<String>,
+
+    /// Allowed CORS origins for authenticated (admin) scopes.
+    ///
+    /// When non-empty, only the listed origins receive `Access-Control-Allow-Origin` headers
+    /// on admin endpoints (`/admins/*`, `/realms/*`, `/sessions`, `/auth/approle`,
+    /// `/auth/kubernetes`). When empty (the default) these scopes use same-origin policy
+    /// and reject all cross-origin requests.
+    ///
+    /// Public endpoints (`/login`, `/.well-known`, `/public`, AppRole/K8s login) always
+    /// remain permissive so that browser clients and external services can reach them.
+    ///
+    /// Example: `["https://admin.example.com", "https://localhost:3000"]`
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
 }
 
 /// Parameters for seeding a realm-admin on first start in development mode.
@@ -59,7 +77,12 @@ pub struct DevSeedParams {
     /// Username for the realm-admin account.
     pub admin_username: String,
     /// Plain-text password for the realm-admin account.
-    pub admin_password: String,
+    /// Either this or `admin_password_env` must be set.
+    pub admin_password: Option<String>,
+    /// Name of an environment variable that holds the admin password.
+    /// Takes precedence over `admin_password` when both are set.
+    /// Allows keeping secrets out of config files.
+    pub admin_password_env: Option<String>,
     /// Username for a TOTP-enabled regular user in the seeded realm (optional).
     pub totp_username: Option<String>,
     /// Plain-text password for the TOTP-enabled user (optional).
@@ -69,13 +92,43 @@ pub struct DevSeedParams {
     pub totp_secret: Option<String>,
 }
 
+impl DevSeedParams {
+    /// Return the resolved admin password: `admin_password_env` takes precedence over `admin_password`.
+    ///
+    /// Returns an error if neither is set.
+    pub fn resolve_admin_password(&self) -> crate::AuthResult<String> {
+        if let Some(ref env_name) = self.admin_password_env {
+            return std::env::var(env_name).map_err(|_| {
+                crate::AuthError::Init(format!(
+                    "dev_seed: environment variable '{}' (admin_password_env) is not set",
+                    env_name
+                ))
+            });
+        }
+        self.admin_password.clone().ok_or_else(|| {
+            crate::AuthError::Init(
+                "dev_seed: neither `admin_password` nor `admin_password_env` is set".to_string(),
+            )
+        })
+    }
+}
+
 impl ServerParams {
     pub fn get_jwt_decoding_key(&self) -> Result<DecodingKey, AuthError> {
         let jwt_decoding_key_path = self
             .session_jwt_params
             .as_ref()
             .map(|auth_params| auth_params.jwt_ec_public_key.clone())
-            .unwrap_or(self.tls_params.server_certificate.clone());
+            .or_else(|| {
+                self.tls_params
+                    .as_ref()
+                    .map(|t| t.server_certificate.clone())
+            })
+            .ok_or_else(|| {
+                AuthError::Init(
+                    "No JWT decoding key: set session_jwt_params or tls_params".to_owned(),
+                )
+            })?;
         let jwt_decoding_key = std::fs::read_to_string(&jwt_decoding_key_path).map_err(|e| {
             AuthError::Init(format!(
                 "Failed to read JWT decoding key PEM file at {jwt_decoding_key_path}: {e}"
@@ -92,7 +145,16 @@ impl ServerParams {
             .session_jwt_params
             .as_ref()
             .map(|auth_params| auth_params.jwt_ec_private_key.clone())
-            .unwrap_or(self.tls_params.server_private_key.clone());
+            .or_else(|| {
+                self.tls_params
+                    .as_ref()
+                    .map(|t| t.server_private_key.clone())
+            })
+            .ok_or_else(|| {
+                AuthError::Init(
+                    "No JWT encoding key: set session_jwt_params or tls_params".to_owned(),
+                )
+            })?;
         let jwt_encoding_key = std::fs::read_to_string(&jwt_encoding_key_path).map_err(|e| {
             AuthError::Init(format!(
                 "Failed to read JWT encoding key PEM file at {jwt_encoding_key_path}: {e}"

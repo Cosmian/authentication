@@ -309,7 +309,10 @@ async fn test_stale_session_collector_removes_expired_sessions() -> AuthResult<(
     info!("Short-lived session created: {session_id}");
 
     // Step 4: The session should still exist in the store immediately after login.
-    let session_value = short_lived_client.get_session(&session_id).await?;
+    // Use admin_client (long-lived session) rather than short_lived_client: the
+    // short-lived cookie has Max-Age=1, so it may expire before the request
+    // completes (Argon2 + test overhead).  admin_client's session is 3600 s.
+    let session_value = admin_client.get_session(&session_id).await?;
     assert!(
         session_value.is_some(),
         "Session must exist in the store right after login"
@@ -322,7 +325,9 @@ async fn test_stale_session_collector_removes_expired_sessions() -> AuthResult<(
     sleep(Duration::from_secs(5)).await;
 
     // Step 6: The collector must have physically removed the record.
-    let session_value_after = short_lived_client.get_session(&session_id).await?;
+    // Use admin_client (long-lived session) since the short-lived cookie
+    // expired after 1 s and can no longer authenticate.
+    let session_value_after = admin_client.get_session(&session_id).await?;
     assert!(
         session_value_after.is_none(),
         "Session must have been physically removed from the store by the collector"

@@ -1,5 +1,13 @@
 // Re-export all public types from the authentication client
 pub use auth_client::*;
+
+// Prevent the `no_jwt_validation` feature from being compiled outside of test builds.
+// Enabling this feature in production would bypass JWT signature verification entirely.
+#[cfg(all(feature = "no_jwt_validation", not(test)))]
+compile_error!(
+    "`no_jwt_validation` feature must not be enabled outside of test builds — \
+     it bypasses JWT signature verification and is a critical security risk."
+);
 // Macros must be re-exported explicitly
 pub use auth_client::{auth_bail, auth_ensure, auth_error};
 
@@ -12,7 +20,7 @@ mod middleware;
 pub use middleware::*;
 
 mod server;
-pub use server::parameters::{DatabaseBackend, DatabaseParams, ServerParams};
+pub use server::parameters::{DatabaseBackend, DatabaseParams, LogConfig, ServerParams};
 pub use server::start_auth_verifier;
 
 mod session;

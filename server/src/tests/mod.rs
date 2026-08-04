@@ -1,5 +1,7 @@
 mod auth_client_tests;
 
+mod app_auth_tests;
+
 mod context;
 pub use context::TestsContext;
 

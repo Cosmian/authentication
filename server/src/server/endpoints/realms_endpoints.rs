@@ -1,7 +1,7 @@
 use crate::{
     AuthError,
     database::{Database, hash_password_with_argon2},
-    models::UserPass,
+    models::{ADMIN_REALM, UserPass},
     server::endpoints::admin_from_request,
 };
 use actix_web::{
@@ -37,13 +37,23 @@ pub async fn create_userpass(
     // Hash the plaintext password bytes before storing.
     // Clients always send plaintext UTF-8 bytes; the server is responsible for hashing.
     userpass.password = hash_password_with_argon2(
-        &userpass.username,
         &String::from_utf8(userpass.password)
             .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
     )
     .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
 
     database.create_userpass(&userpass).await?;
+
+    // Auto-link: when creating a credential in the admin realm, if an admin
+    // exists with a matching id, set its `userpass` field to enable login.
+    if realm_id == ADMIN_REALM
+        && let Some(mut admin) = database.get_admin(&userpass.username).await?
+        && admin.userpass.as_deref() != Some(&userpass.username)
+    {
+        admin.userpass = Some(userpass.username.clone());
+        database.update_admin(&admin).await?;
+    }
+
     info!(
         "create_userpass: '{}' created credentials for '{}' in realm '{}'",
         requester.id, userpass.username, realm_id
@@ -116,11 +126,10 @@ pub async fn update_userpass(
             .update_userpass_metadata(&realm, &username, userpass.change_password, &userpass.roles)
             .await?;
     } else {
-        userpass.password = hash_password_with_argon2(
-            &userpass.username,
-            &String::from_utf8(userpass.password)
-                .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
-        )?;
+        userpass.password =
+            hash_password_with_argon2(&String::from_utf8(userpass.password).map_err(|e| {
+                AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
+            })?)?;
         database.update_userpass(&userpass).await?;
     }
     info!(
@@ -151,6 +160,17 @@ pub async fn delete_userpass(
     }
 
     database.delete_userpass(&realm, &username).await?;
+
+    // Auto-unlink: when deleting a credential in the admin realm, clear the
+    // admin's `userpass` field if it referenced this username.
+    if realm == ADMIN_REALM
+        && let Some(mut admin) = database.get_admin(&username).await?
+        && admin.userpass.as_deref() == Some(&username)
+    {
+        admin.userpass = None;
+        database.update_admin(&admin).await?;
+    }
+
     info!(
         "delete_userpass: '{}' deleted credentials for '{}' in realm '{}'",
         requester.id, username, realm

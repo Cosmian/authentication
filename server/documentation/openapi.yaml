@@ -2,7 +2,7 @@
 openapi: 3.1.0
 
 info:
-  title: Cosmian Authentication Server
+  title: Cosmian Authentication Verifier
   version: 1.0.0
   description: |
     High-performance authentication and session management server.
@@ -36,6 +36,20 @@ tags:
     description: Username/password credential management per realm
   - name: TOTP
     description: Two-factor authentication management
+  - name: App Token
+    description: |
+      App token self-service endpoints (`/auth/token/...`).
+      Require a valid `X-Vault-Token` header.
+  - name: AppRole
+    description: |
+      AppRole authentication (`/auth/approle/...`).
+      The `login` endpoint is unauthenticated.
+      Role management (create, delete, list, secret-id) requires admin session cookie.
+  - name: Kubernetes Auth
+    description: |
+      Kubernetes service-account JWT authentication (`/auth/kubernetes/...`).
+      The `login` endpoint validates the JWT against the role's JWKS URL.
+      Role management requires admin session cookie.
 
 components:
   securitySchemes:
@@ -52,6 +66,13 @@ components:
       bearerFormat: JWT
     mtls:
       type: mutualTLS
+    appToken:
+      type: apiKey
+      in: header
+      name: X-Vault-Token
+      description: |
+        AppRole-compatible bearer token issued by this server's AppRole or
+        Kubernetes login endpoints.  Required on `/auth/token/*` endpoints.
 
   schemas:
 
@@ -474,6 +495,360 @@ components:
           type: string
           example: Realm 'unknown' not found
 
+    # ── AppRole Auth API ─────────────────────────────────────────────────────────────
+
+    AppRoleLoginRequest:
+      type: object
+      required: [role_id]
+      properties:
+        role_id:
+          type: string
+          description: Stable role identifier (UUID).
+          example: 550e8400-e29b-41d4-a716-446655440000
+        secret_id:
+          type: string
+          description: |
+            One-time (or reusable) secret token. Required when the role's
+            `bind_secret_id` is `true` (the default). Omit when
+            `bind_secret_id` is `false`.
+          example: 882dc0f5-a7b9-4e65-a9db-03f4f2c84a12
+
+    AppRoleRoleRequest:
+      type: object
+      properties:
+        secret_id_ttl:
+          type: integer
+          default: 0
+          description: Secret ID TTL in seconds (0 = no expiry).
+        token_ttl:
+          type: integer
+          default: 3600
+          description: Issued token TTL in seconds.
+        token_policies:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Policy names to attach to issued tokens.
+        bind_secret_id:
+          type: boolean
+          default: true
+          description: Whether `secret_id` is required for login.
+
+    AppRoleRoleIdData:
+      type: object
+      required: [role_id]
+      properties:
+        role_id:
+          type: string
+          description: Stable role identifier (UUID).
+          example: 550e8400-e29b-41d4-a716-446655440000
+
+    AppRoleRoleIdResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AppRoleRoleIdData'
+
+    AppRoleRoleConfigData:
+      type: object
+      required: [role_id, token_ttl, secret_id_ttl, bind_secret_id, token_policies]
+      properties:
+        role_id:
+          type: string
+          description: Stable role identifier (UUID).
+          example: 550e8400-e29b-41d4-a716-446655440000
+        token_ttl:
+          type: integer
+          description: Issued token TTL in seconds (0 = non-expiring).
+          example: 3600
+        secret_id_ttl:
+          type: integer
+          description: Secret ID TTL in seconds (0 = non-expiring).
+          example: 0
+        bind_secret_id:
+          type: boolean
+          description: Whether a secret ID is required for login.
+          example: true
+        token_policies:
+          type: array
+          items:
+            type: string
+          description: Policies attached to tokens issued by this role.
+          example: [default]
+
+    AppRoleRoleConfigResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AppRoleRoleConfigData'
+
+    AppRoleSecretIdRequest:
+      type: object
+      properties:
+        ttl:
+          type: integer
+          default: 0
+          description: TTL override for this secret ID in seconds (0 = use role default).
+        num_uses:
+          type: integer
+          default: 0
+          description: Maximum number of uses (0 = unlimited).
+
+    AppRoleSecretIdData:
+      type: object
+      required: [secret_id, secret_id_accessor]
+      properties:
+        secret_id:
+          type: string
+          description: Generated secret ID. Present only in this response — not stored in plain text.
+          example: 882dc0f5-a7b9-4e65-a9db-03f4f2c84a12
+        secret_id_accessor:
+          type: string
+          description: Opaque handle used to revoke this secret ID later.
+          example: e6fca3d3-c4d8-47b4-8d4f-bdc0e51e5fe6
+
+    AppRoleSecretIdResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AppRoleSecretIdData'
+
+    AppRoleDestroySecretIdRequest:
+      type: object
+      required: [secret_id_accessor]
+      properties:
+        secret_id_accessor:
+          type: string
+          description: Accessor of the secret ID to revoke.
+          example: e6fca3d3-c4d8-47b4-8d4f-bdc0e51e5fe6
+
+    AppRoleListData:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: string
+          description: List of AppRole role names.
+          example: [spire-server, mistral-agents]
+
+    AppRoleListRolesResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AppRoleListData'
+
+    K8sLoginRequest:
+      type: object
+      required: [role, jwt]
+      properties:
+        role:
+          type: string
+          description: Name of the Kubernetes auth role to authenticate against.
+          example: spire-agent
+        jwt:
+          type: string
+          description: Kubernetes service-account JWT from the pod's projected volume.
+          example: eyJhbGciOiJSUzI1NiI...
+
+    K8sRoleRequest:
+      type: object
+      required: [jwks_url]
+      properties:
+        jwks_url:
+          type: string
+          format: uri
+          description: >-
+            URL of the Kubernetes API server JWKS endpoint. Must be a direct JWKS document
+            URL (containing a `keys` array), not the OIDC discovery endpoint
+            (`.well-known/openid-configuration`). Redirects are not followed.
+          example: https://k8s.example.com/openid/v1/jwks
+        bound_service_account_names:
+          type: array
+          items:
+            type: string
+          default: ['*']
+          description: >-
+            Allowed service account names. Each entry is an exact match. Use `["*"]` to
+            allow any service account name. Omitting this field defaults to `["*"]`
+            (allow all).
+          example: [spire-agent]
+        bound_service_account_namespaces:
+          type: array
+          items:
+            type: string
+          default: ['*']
+          description: >-
+            Allowed namespaces. Each entry is an exact match. Use `["*"]` to allow any
+            namespace. Omitting this field defaults to `["*"]` (allow all).
+          example: [spire]
+        token_ttl:
+          type: integer
+          default: 3600
+          description: Issued app token TTL in seconds.
+        expected_issuer:
+          type: string
+          description: |
+            Expected `iss` (issuer) claim in the Kubernetes service-account JWT
+            (RFC 7519 §4.1.1). When set, JWTs whose `iss` does not match are
+            rejected. Modern Kubernetes clusters emit the API server URL
+            (e.g. `https://kubernetes.default.svc.cluster.local`). Strongly
+            recommended for production to prevent cross-cluster token acceptance.
+        bound_audiences:
+          type: array
+          items:
+            type: string
+          description: |
+            Expected `aud` (audience) claim values in the service-account JWT
+            (RFC 7519 §4.1.3). When non-empty, the JWT must carry at least one
+            matching value. Required for Kubernetes ≥1.21 projected tokens,
+            which always include an `aud` claim. Set to the audience configured
+            in the pod's projected service-account volume.
+
+    K8sListData:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: string
+          description: List of Kubernetes auth role names.
+          example: [spire-agent, mistral-agents]
+
+    K8sListRolesResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/K8sListData'
+
+    K8sRoleConfigData:
+      type: object
+      required:
+        - jwks_url
+        - bound_service_account_names
+        - bound_service_account_namespaces
+        - token_ttl
+        - bound_audiences
+      properties:
+        jwks_url:
+          type: string
+          format: uri
+          description: URL of the Kubernetes API server JWKS endpoint.
+          example: https://k8s.example.com/openid/v1/jwks
+        bound_service_account_names:
+          type: array
+          items:
+            type: string
+          description: Allowed service account names (`["*"]` for any).
+          example: [spire-agent]
+        bound_service_account_namespaces:
+          type: array
+          items:
+            type: string
+          description: Allowed namespaces (`["*"]` for any).
+          example: [spire]
+        token_ttl:
+          type: integer
+          description: Issued app token TTL in seconds (0 = non-expiring).
+          example: 3600
+        expected_issuer:
+          type: string
+          nullable: true
+          description: Expected `iss` (issuer) claim, when configured.
+          example: https://kubernetes.default.svc.cluster.local
+        bound_audiences:
+          type: array
+          items:
+            type: string
+          description: Expected `aud` (audience) claim values, when configured.
+          example: [spire-server]
+
+    K8sRoleConfigResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/K8sRoleConfigData'
+
+    AppAuth:
+      type: object
+      required: [client_token, renewable, lease_duration, policies, metadata]
+      properties:
+        client_token:
+          type: string
+          description: Issued app token. Format `hvs.<base64url>`.
+          example: hvs.AAAAAQKlNmEz...
+        renewable:
+          type: boolean
+          description: Whether the token can be renewed.
+        lease_duration:
+          type: integer
+          description: Token TTL in seconds.
+          example: 3600
+        policies:
+          type: array
+          items:
+            type: string
+          description: Policies attached to the token.
+          example: [default]
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Role or entity metadata.
+          example:
+            role_name: spire-server
+
+    AppAuthResponse:
+      type: object
+      required: [auth]
+      properties:
+        auth:
+          $ref: '#/components/schemas/AppAuth'
+
+    AppTokenData:
+      type: object
+      required: [id, entity_id, policies, renewable, ttl, creation_time]
+      properties:
+        id:
+          type: string
+          description: Token ID — always empty string (never echoed for security).
+        entity_id:
+          type: string
+          description: Entity (role name or user identity) the token was issued for.
+          example: spire-server
+        policies:
+          type: array
+          items:
+            type: string
+          example: [default]
+        renewable:
+          type: boolean
+        ttl:
+          type: integer
+          description: Remaining token lifetime in seconds.
+          example: 3540
+        creation_time:
+          type: integer
+          format: int64
+          description: Unix timestamp (seconds) when the token was created.
+          example: 1722070800
+
+    AppTokenLookupResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AppTokenData'
+
   responses:
     NoContent:
       description: Success — empty body.
@@ -532,6 +907,14 @@ components:
       schema:
         type: string
       example: alice
+    roleName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: AppRole or Kubernetes auth role name.
+      example: spire-server
 
 paths:
 
@@ -1465,3 +1848,459 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  # ── App Token ────────────────────────────────────────────────────────────
+
+  /auth/token/lookup-self:
+    get:
+      tags: [App Token]
+      summary: Look up current token
+      description: |
+        Return metadata for the `X-Vault-Token` presented in the request.
+        Called by the Cosmian KMS token-validation middleware to validate tokens
+        before processing `/v1/transit/*` and `/v1/pki/*` requests.
+      operationId: authTokenLookupSelf
+      security:
+        - appToken: []
+      responses:
+        '200':
+          description: Token metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppTokenLookupResponse'
+              example:
+                data:
+                  id: ''
+                  entity_id: spire-server
+                  policies: [default]
+                  renewable: true
+                  ttl: 3540
+                  creation_time: 1722070800
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/token/renew-self:
+    post:
+      tags: [App Token]
+      summary: Renew current token
+      description: |
+        Extend the TTL of a renewable token. Returns the updated auth object.
+        The `auth.client_token` field in the response echoes back the token that was
+        presented in the `X-Vault-Token` header — the token itself does not change.
+      operationId: authTokenRenewSelf
+      security:
+        - appToken: []
+      responses:
+        '200':
+          description: Renewed token auth object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppAuthResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/token/revoke-self:
+    post:
+      tags: [App Token]
+      summary: Revoke current token
+      description: Immediately invalidate the current token. Returns `204 No Content`.
+      operationId: authTokenRevokeSelf
+      security:
+        - appToken: []
+      responses:
+        '204':
+          description: Token revoked.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ── AppRole ──────────────────────────────────────────────────────────
+
+  /auth/approle/login:
+    post:
+      tags: [AppRole]
+      summary: Login with AppRole credentials
+      description: |
+        Exchange a `role_id` + `secret_id` pair for a AppRole-compatible token.
+        Called by SPIRE's `KeyManager` and `UpstreamAuthority` plugins on startup,
+        and by Mistral AI agent workloads authenticating to the Cosmian platform.
+        No authentication required.
+      operationId: appRoleLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRoleLoginRequest'
+            example:
+              role_id: 550e8400-e29b-41d4-a716-446655440000
+              secret_id: 882dc0f5-a7b9-4e65-a9db-03f4f2c84a12
+      responses:
+        '200':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppAuthResponse'
+              example:
+                auth:
+                  client_token: hvs.AAAAAQKlNmEz...
+                  renewable: true
+                  lease_duration: 3600
+                  policies: [default]
+                  metadata:
+                    role_name: spire-server
+        '403':
+          description: Invalid role_id or secret_id.
+
+  /auth/approle/role/{name}:
+    post:
+      tags: [AppRole]
+      summary: Create or update an AppRole role
+      description: |
+        Idempotent create/update. When a role with the same name already exists its
+        `role_id` is preserved; only policy and TTL settings are updated.
+        Requires admin session cookie.
+      operationId: appRoleCreateRole
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRoleRoleRequest'
+            example:
+              token_ttl: 3600
+              token_policies: [default]
+              bind_secret_id: true
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Role created or updated.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      tags: [AppRole]
+      summary: Delete an AppRole role
+      description: Permanently delete a role and all its associated secret IDs.
+      operationId: appRoleDeleteRole
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Role deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    get:
+      tags: [AppRole]
+      summary: Get an AppRole role configuration
+      description: Return the full configuration of a named AppRole role.
+      operationId: appRoleGetRole
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Role configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppRoleRoleConfigResponse'
+              example:
+                data:
+                  role_id: 550e8400-e29b-41d4-a716-446655440000
+                  token_ttl: 3600
+                  secret_id_ttl: 0
+                  bind_secret_id: true
+                  token_policies: [default]
+        '400':
+          description: Role not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/approle/role/{name}/role-id:
+    get:
+      tags: [AppRole]
+      summary: Get role ID
+      description: Return the stable `role_id` for a named AppRole role.
+      operationId: appRoleGetRoleId
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Role ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppRoleRoleIdResponse'
+              example:
+                data:
+                  role_id: 550e8400-e29b-41d4-a716-446655440000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/approle/role/{name}/secret-id:
+    post:
+      tags: [AppRole]
+      summary: Generate a new secret ID
+      description: |
+        Generate a fresh secret ID for the named role.
+        The raw `secret_id` is returned only in this response — only its SHA-256
+        hash is persisted in the database.
+      operationId: appRoleGenerateSecretId
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRoleSecretIdRequest'
+            example:
+              ttl: 0
+              num_uses: 0
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Generated secret ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppRoleSecretIdResponse'
+              example:
+                data:
+                  secret_id: 882dc0f5-a7b9-4e65-a9db-03f4f2c84a12
+                  secret_id_accessor: e6fca3d3-c4d8-47b4-8d4f-bdc0e51e5fe6
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/approle/role/{name}/secret-id/destroy:
+    post:
+      tags: [AppRole]
+      summary: Destroy a secret ID
+      description: Immediately invalidate a secret ID by its accessor.
+      operationId: appRoleDestroySecretId
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppRoleDestroySecretIdRequest'
+            example:
+              secret_id_accessor: e6fca3d3-c4d8-47b4-8d4f-bdc0e51e5fe6
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Secret ID destroyed.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/approle/role:
+    get:
+      tags: [AppRole]
+      summary: List AppRole roles
+      description: Return names of all configured AppRole roles.
+      operationId: appRoleListRoles
+      parameters:
+        - name: list
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true']
+          description: Set to `true` for CLI compatibility with the expected query shape.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Role names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppRoleListRolesResponse'
+              example:
+                data:
+                  keys: [spire-server, mistral-agents]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ── Kubernetes Auth ───────────────────────────────────────────────────────
+
+  /auth/kubernetes/login:
+    post:
+      tags: [Kubernetes Auth]
+      summary: Login with a Kubernetes service-account JWT
+      description: |
+        Validate a Kubernetes service-account JWT against the JWKS endpoint configured
+        for the named role. On success, issue a AppRole-compatible token.
+        No authentication required.
+      operationId: k8sLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/K8sLoginRequest'
+            example:
+              role: spire-agent
+              jwt: eyJhbGciOiJSUzI1NiI...
+      responses:
+        '200':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppAuthResponse'
+        '403':
+          description: JWT invalid, service account not bound to the role, or role not found.
+
+  /auth/kubernetes/role/{name}:
+    post:
+      tags: [Kubernetes Auth]
+      summary: Create or update a Kubernetes auth role
+      description: |
+        Configure which Kubernetes service accounts and namespaces may log in
+        with this role, and which JWKS endpoint to validate their JWTs against.
+        Requires admin session cookie.
+      operationId: k8sCreateRole
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/K8sRoleRequest'
+            example:
+              jwks_url: https://k8s.example.com/openid/v1/jwks
+              bound_service_account_names: [spire-agent]
+              bound_service_account_namespaces: [spire]
+              token_ttl: 3600
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Role created or updated.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    delete:
+      tags: [Kubernetes Auth]
+      summary: Delete a Kubernetes auth role
+      description: Remove a Kubernetes auth role configuration.
+      operationId: k8sDeleteRole
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Role deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    get:
+      tags: [Kubernetes Auth]
+      summary: Get a Kubernetes auth role configuration
+      description: Return the full configuration of a named Kubernetes auth role.
+      operationId: k8sGetRole
+      parameters:
+        - $ref: '#/components/parameters/roleName'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Role configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/K8sRoleConfigResponse'
+              example:
+                data:
+                  jwks_url: https://k8s.example.com/openid/v1/jwks
+                  bound_service_account_names: [spire-agent]
+                  bound_service_account_namespaces: [spire]
+                  token_ttl: 3600
+                  expected_issuer: https://kubernetes.default.svc.cluster.local
+                  bound_audiences: [spire-server]
+        '400':
+          description: Role not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /auth/kubernetes/role:
+    get:
+      tags: [Kubernetes Auth]
+      summary: List Kubernetes auth roles
+      description: Return names of all configured Kubernetes auth roles.
+      operationId: k8sListRoles
+      parameters:
+        - name: list
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['true']
+          description: Set to `true` for CLI compatibility with the expected query shape.
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Role names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/K8sListRolesResponse'
+              example:
+                data:
+                  keys: [spire-agent, mistral-agents]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'

@@ -41,13 +41,13 @@ pub(super) async fn seed_dev_realm_admin(
         .await?
         .is_none()
     {
-        let hashed = hash_password_with_argon2(&seed.admin_username, &seed.admin_password)
-            .map_err(|e| {
-                crate::AuthError::Init(format!(
-                    "dev_seed: failed to hash password for '{}': {e}",
-                    seed.admin_username
-                ))
-            })?;
+        let admin_password = seed.resolve_admin_password()?;
+        let hashed = hash_password_with_argon2(&admin_password).map_err(|e| {
+            crate::AuthError::Init(format!(
+                "dev_seed: failed to hash password for '{}': {e}",
+                seed.admin_username
+            ))
+        })?;
         let userpass = UserPass {
             realm: ADMIN_REALM.to_string(),
             username: seed.admin_username.clone(),
@@ -97,7 +97,7 @@ pub(super) async fn seed_dev_realm_admin(
             .await?
             .is_none()
         {
-            let hashed = hash_password_with_argon2(totp_username, totp_password).map_err(|e| {
+            let hashed = hash_password_with_argon2(totp_password).map_err(|e| {
                 crate::AuthError::Init(format!(
                     "dev_seed: failed to hash password for TOTP user '{}': {e}",
                     totp_username

@@ -1,18 +1,20 @@
 use crate::models::ClientClaims;
 use crate::models::LoginRequest;
+use crate::server::parameters::ServerParams;
 use crate::session::{self, JwksData, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
 use actix_web::HttpMessage;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
-use cosmian_logger::debug;
+use cosmian_logger::{debug, info};
 use std::sync::Arc;
 
 pub async fn login(
     jwt_token_config: Data<Arc<session::JwtTokenConfig>>,
     session_store: Data<Arc<dyn session::SessionStore>>,
     database: Data<Arc<dyn crate::database::Database>>,
+    server_params: Data<Arc<ServerParams>>,
     req: HttpRequest,
     login_request: Json<LoginRequest>,
 ) -> Result<HttpResponse, AuthError> {
@@ -102,7 +104,8 @@ pub async fn login(
         realm.session_max_age_seconds,
     )?;
 
-    let cookie = build_cookie(&token, realm.session_max_age_seconds)?;
+    let is_https = server_params.tls_params.is_some();
+    let cookie = build_cookie(&token, realm.session_max_age_seconds, is_https)?;
     let session_id = session_id_from_cookie_value(cookie.value().as_bytes())?;
     let cookie_string = cookie.to_string();
 
@@ -114,6 +117,15 @@ pub async fn login(
     debug!(
         "successfully authenticated user '{}' and created session with ID '{}'",
         authenticated_client.username, session_id
+    );
+    // Structured audit event — consumed by log shippers and SIEM tooling.
+    info!(
+        event = "auth.login.success",
+        realm = %realm.id,
+        username = %authenticated_client.username,
+        auth_scheme = ?authenticated_client.auth_scheme,
+        session_id = %session_id,
+        "login successful"
     );
 
     // Build the response with the session cookie set in the Set-Cookie header
@@ -184,7 +196,7 @@ pub async fn swagger_ui_endpoint(_req: HttpRequest) -> Result<HttpResponse, Auth
          <head>\n\
            <meta charset=\"UTF-8\" />\n\
            <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n\
-           <title>Cosmian Auth Server {version} \u{2014} API</title>\n\
+           <title>Cosmian Authentication Verifier {version} \u{2014} API</title>\n\
            <link rel=\"stylesheet\" \
                  href=\"https://unpkg.com/swagger-ui-dist@5.18.2/swagger-ui.css\" \
                  integrity=\"sha384-rcbEi6xgdPk0iWkAQzT2F3FeBJXdG+ydrawGlfHAFIZG7wU6aKbQaRewysYpmrlW\" \

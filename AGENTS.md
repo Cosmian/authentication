@@ -306,12 +306,19 @@ GH_PAGER=cat gh run view <run-id> --repo Cosmian/authentication --log-failed
 
 ### Changelog
 
-Every agent-driven change **must** be recorded in a single changelog file per branch under `CHANGELOG/`.
+Every agent-driven change **must** be recorded in the **single per-branch** changelog file.
 
-- **File name**: `CHANGELOG/<branch_name>.md` — use the current git branch name (e.g. `nix_ui_derivation.md`). All changes on the same branch are appended to this single file.
-- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`, `## CI`, `## Docs`, `## Testing`, `## Security`) with bullet points beneath.
-- Each bullet must be a single complete sentence summarising **what** changed and **why**, sufficient for a human to understand without reading the diff.
-- If a `CHANGELOG/<branch_name>.md` already exists, append new entries to the existing file under the appropriate heading(s) rather than creating a new file.
+- **File name**: `CHANGELOG/<branch-name>.md` — one file per branch, named after the current
+  git branch with any `/` replaced by `_` (e.g. branch `spire` → `CHANGELOG/spire.md`,
+  branch `fix/user-to-admin` → `CHANGELOG/fix_user-to-admin.md`). **Never** create a new
+  file per change (no `<short_slug>.md` files).
+- **Append, don't proliferate**: add each new entry as a bullet under the appropriate
+  category heading in the existing branch file. Create the file only if it does not yet exist.
+- **Format**: one or more category headings (`## Features`, `## Bug Fixes`, `## Refactor`,
+  `## CI`, `## Docs`, `## Tests`) with bullet points beneath. Keep the file clear and compact:
+  merge related bullets, avoid duplication, and group all changes of the same category together.
+- Each bullet must be a single complete sentence summarising **what** changed and **why**,
+  sufficient for a human to understand without reading the diff.
 - Do not add a changelog entry for pure formatting/linting-only commits.
 
 ```text

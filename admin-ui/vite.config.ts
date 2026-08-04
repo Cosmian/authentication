@@ -11,6 +11,7 @@ const apiProxy: Record<string, { target: string; secure: boolean; changeOrigin: 
     "/sessions": proxyOpts,
     "/realms": proxyOpts,
     "/admins": proxyOpts,
+    "/auth": proxyOpts,
     "/public": proxyOpts,
 };
 

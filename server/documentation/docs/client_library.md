@@ -1,10 +1,10 @@
 # Client Library Guide
 
-The `auth_client` crate provides an HTTP client and shared types for interacting with the Auth authentication server. It is used by:
+The `auth_client` crate provides an HTTP client and shared types for interacting with the Authentication Verifier. It is used by:
 
 - **API servers** that need to validate incoming session cookies and manage sessions.
 - **Admin tools** that manage realms, users, and credentials.
-- The authentication server itself (internal use).
+- The Authentication Verifier itself (internal use).
 
 ---
 
@@ -20,6 +20,7 @@ The `auth_client` crate provides an HTTP client and shared types for interacting
 - [Admin Management](#admin-management)
 - [Credential Management](#credential-management)
 - [TOTP Management](#totp-management)
+- [Machine Authentication (AppRole / Kubernetes / Token)](#machine-authentication-approle--kubernetes--token)
 - [Public Endpoints](#public-endpoints)
 - [Error Handling](#error-handling)
 - [Types Reference](#types-reference)
@@ -38,7 +39,7 @@ Add to your `Cargo.toml`:
 auth_client = { path = "../authentication_client" }
 ```
 
-No Cargo features are required for session validation. The `_server` feature enables additional `actix-web` integrations and is only needed inside the auth server crate itself.
+No Cargo features are required for session validation. The `_server` feature enables additional `actix-web` integrations and is only needed inside the Authentication Verifier crate itself.
 
 ---
 
@@ -66,7 +67,7 @@ println!("Base URL: {}", client.base_url());
 
 ## Authentication Schemes
 
-`AuthClientScheme` controls how the client authenticates to the auth server itself. For simple session validation no authentication is needed; admin operations require a logged-in session.
+`AuthClientScheme` controls how the client authenticates to the Authentication Verifier crate itself. For simple session validation no authentication is needed; admin operations require a logged-in session.
 
 ```rust
 use auth_client::AuthClientScheme;
@@ -408,6 +409,116 @@ admin.disable_totp("my-service", "alice").await?;
 
 ---
 
+## Machine Authentication (AppRole / Kubernetes / Token)
+
+These methods are used by **machine clients** (SPIRE, CI pipelines, Kubernetes workloads). They do not use session cookies — they produce opaque app tokens (`X-Vault-Token`).
+
+### AppRole provisioning (admin operations)
+
+```rust
+use auth_client::{AppRoleRequest, AppRoleSecretIdRequest};
+
+// Create or update a role (requires admin session)
+client.approle_create_role("spire-server", &AppRoleRequest {
+    token_ttl: 3600,
+    secret_id_ttl: 86400,
+    token_policies: vec!["default".to_string()],
+    bind_secret_id: true,
+}).await?;
+
+// Read the stable role_id to hand to the service
+let role_id_resp = client.approle_get_role_id("spire-server").await?;
+let role_id = role_id_resp.data.role_id;
+println!("role_id: {role_id}");
+
+// Generate a secret_id (single-use by default)
+let secret_resp = client.approle_generate_secret_id("spire-server", &AppRoleSecretIdRequest {
+    ttl: 0,
+    num_uses: 1,
+}).await?;
+let secret_id = secret_resp.data.secret_id;
+let accessor   = secret_resp.data.secret_id_accessor;
+println!("secret_id: {secret_id}  accessor: {accessor}");
+
+// Destroy a secret_id by accessor (without knowing its value)
+client.approle_destroy_secret_id("spire-server", &accessor).await?;
+
+// List all role names
+let roles = client.approle_list_roles().await?;
+println!("roles: {:?}", roles.data.keys);
+
+// Delete a role (cascades to all its secret IDs)
+client.approle_delete_role("spire-server").await?;
+```
+
+### AppRole login (client operation)
+
+```rust
+use auth_client::AppAuthResponse;
+
+// Exchange role_id + secret_id for an app token
+let auth: AppAuthResponse = client
+    .approle_login(&role_id, Some(&secret_id))
+    .await?;
+
+let token = auth.auth.client_token;
+println!("app token: {token}");
+println!("renewable: {}, ttl: {}s", auth.auth.renewable, auth.auth.lease_duration);
+```
+
+### Kubernetes role provisioning (admin operations)
+
+```rust
+use auth_client::K8sRoleRequest;
+
+// Create or update a Kubernetes role (requires admin session)
+client.k8s_create_role("my-k8s-role", &K8sRoleRequest {
+    jwks_url: "https://kubernetes.default.svc/.well-known/jwks.json".to_string(),
+    bound_service_account_names: vec!["my-app".to_string()],
+    bound_service_account_namespaces: vec!["production".to_string()],
+    token_ttl: 3600,
+    expected_issuer: None,
+    bound_audiences: None,
+}).await?;
+
+// Delete a Kubernetes role
+client.k8s_delete_role("my-k8s-role").await?;
+```
+
+### Kubernetes login (client operation)
+
+```rust
+// Read the projected service-account JWT from the pod filesystem
+let jwt = std::fs::read_to_string(
+    "/var/run/secrets/kubernetes.io/serviceaccount/token"
+)?;
+
+let auth = client.k8s_login("my-k8s-role", &jwt).await?;
+let token = auth.auth.client_token;
+```
+
+### Token self-service
+
+```rust
+use auth_client::APP_TOKEN_HEADER;
+
+// Validate a token and read its metadata
+let lookup = client.token_lookup_self(&token).await?;
+println!("entity: {}, ttl: {}s", lookup.data.entity_id, lookup.data.ttl);
+
+// Renew a token (resets TTL to lease_duration)
+let renewed = client.token_renew_self(&token).await?;
+println!("new lease_duration: {}s", renewed.auth.lease_duration);
+
+// Revoke a token immediately
+client.token_revoke_self(&token).await?;
+
+// The header constant, if you need to set it manually:
+println!("Header name: {APP_TOKEN_HEADER}");  // "X-Vault-Token"
+```
+
+---
+
 ## Public Endpoints
 
 ```rust
@@ -556,7 +667,7 @@ empty-array check.
 
 ## Actix-web Integration Example
 
-A complete pattern for an Actix-web API server that validates sessions via the auth server.
+A complete pattern for an Actix-web API server that validates sessions via the Authentication Verifier.
 
 ```rust
 use std::sync::Arc;

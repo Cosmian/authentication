@@ -1,6 +1,6 @@
 # API Reference
 
-Complete reference for all HTTP endpoints exposed by the Auth authentication server.
+Complete reference for all HTTP endpoints exposed by the Authentication Verifier.
 
 All endpoints are served over **HTTPS only**. The base URL is `https://{host}:{port}`.
 
@@ -11,6 +11,7 @@ All endpoints are served over **HTTPS only**. The base URL is `https://{host}:{p
 - [Public Endpoints](#public-endpoints)
 - [Authentication — Login and Session Claims](#authentication--login-and-session-claims)
 - [Session Management](#session-management)
+- [Machine Authentication (AppRole / Kubernetes / Token)](#machine-authentication-approle--kubernetes--token)
 - [Realm Administration](#realm-administration)
 - [Admin Administration](#admin-administration)
 - [Credential Management](#credential-management)
@@ -29,7 +30,7 @@ No authentication required.
 
 Returns the server version string.
 
-**Response**
+#### Response
 
 ```text
 HTTP/1.1 200 OK
@@ -46,7 +47,7 @@ Returns the JSON Web Key Set containing the server's public key(s) for JWT signa
 
 > **Note:** Only available in test builds. Production deployments expose JWKS through the Identity Provider's own JWKS endpoint.
 
-**Response**
+#### Response
 
 ```json
 {
@@ -78,7 +79,7 @@ Authenticate a client and issue a session cookie. The authentication method is d
 | JWT Bearer         | `Authorization: Bearer <jwt_token>`                |
 | Client Certificate | Client certificate in TLS handshake                |
 
-**Request body** (optional — for public-key FIDO2 challenge or TOTP code)
+#### Request body (optional — for public-key FIDO2 challenge or TOTP code)
 
 ```json
 {
@@ -173,7 +174,7 @@ null
 
 Retrieve session data and optionally apply a bulk logout action in the same request.
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -204,7 +205,7 @@ Retrieve session data and optionally apply a bulk logout action in the same requ
 
 Return all session IDs for a set of authenticated clients in a realm.
 
-**Request body**
+#### Request body
 
 ```json
 [
@@ -230,7 +231,7 @@ Return all session IDs for a set of authenticated clients in a realm.
 
 Delete sessions by ID.
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -260,6 +261,289 @@ Delete all sessions for a given realm (administrative bulk logout).
 
 ---
 
+## Machine Authentication (AppRole / Kubernetes / Token)
+
+Endpoints for machine-to-machine authentication. These sit under the `/auth/` prefix. Login endpoints are **unauthenticated** (the credential is the request body). Role management endpoints require an active admin session cookie. Token self-service endpoints require a valid `X-Vault-Token` header.
+
+For complete request/response examples and field descriptions see [app_auth_api.md](app_auth_api.md).
+
+### `POST /auth/approle/login`
+
+Exchange a `role_id` + `secret_id` pair for an opaque app token. Also accepts `PUT` (SPIRE compatibility).
+
+#### Request body
+
+```json
+{
+  "role_id": "a5d7e2f1-0c3b-4a8d-9e6f-1234567890ab",
+  "secret_id": "b7c4e9d2-1a2b-4c3d-8e5f-fedcba987654"
+}
+```
+
+`secret_id` is optional when the role has `bind_secret_id: false`.
+
+#### Response — `200 OK`
+
+```json
+{
+  "auth": {
+    "client_token": "hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob",
+    "renewable": true,
+    "lease_duration": 3600,
+    "policies": ["default"],
+    "metadata": { "role_name": "spire-server" }
+  }
+}
+```
+
+**Error responses:** `400 Bad Request` (invalid role_id or secret_id), `403 Forbidden` (secret_id exhausted).
+
+---
+
+### `POST /auth/approle/role/{name}`
+
+Create or update an AppRole role. Requires admin session cookie.
+
+#### Path parameter
+
+`name` — role name (unique identifier for this role)
+
+#### Request body
+
+```json
+{
+  "token_ttl": 3600,
+  "secret_id_ttl": 86400,
+  "token_policies": ["default"],
+  "bind_secret_id": true
+}
+```
+
+| Field            | Type    | Default | Description |
+|------------------|---------|---------|-------------|
+| `token_ttl`      | integer | 3600    | Token lifetime in seconds |
+| `secret_id_ttl`  | integer | 0       | Secret ID lifetime in seconds; `0` = no expiry |
+| `token_policies` | array   | `[]`    | Policies attached to every issued token |
+| `bind_secret_id` | boolean | true    | If `false`, login succeeds with `role_id` alone |
+
+**Response — `204 No Content`**
+
+---
+
+### `GET /auth/approle/role/{name}/role-id`
+
+Read the stable `role_id` for a role. Requires admin session cookie.
+
+#### Response — `200 OK`
+
+```json
+{ "data": { "role_id": "a5d7e2f1-0c3b-4a8d-9e6f-1234567890ab" } }
+```
+
+---
+
+### `POST /auth/approle/role/{name}/secret-id`
+
+Generate a new `secret_id` for a role. Requires admin session cookie.
+
+#### Request body
+
+```json
+{ "ttl": 0, "num_uses": 1 }
+```
+
+| Field      | Type    | Default | Description |
+|------------|---------|---------|-------------|
+| `ttl`      | integer | 0       | Per-secret-ID TTL override in seconds; `0` = use role default |
+| `num_uses` | integer | 0       | Max login uses; `0` = unlimited |
+
+#### Response — `200 OK`
+
+```json
+{
+  "data": {
+    "secret_id": "b7c4e9d2-1a2b-4c3d-8e5f-fedcba987654",
+    "secret_id_accessor": "9f8e7d6c-5b4a-3c2d-1e0f-abcdef012345"
+  }
+}
+```
+
+Save the `secret_id` — it cannot be retrieved again. Use the `secret_id_accessor` to destroy it without knowing the value.
+
+---
+
+### `POST /auth/approle/role/{name}/secret-id/destroy`
+
+Invalidate a `secret_id` by its accessor. Requires admin session cookie.
+
+#### Request body
+
+```json
+{ "secret_id_accessor": "9f8e7d6c-5b4a-3c2d-1e0f-abcdef012345" }
+```
+
+**Response — `204 No Content`**
+
+---
+
+### `DELETE /auth/approle/role/{name}`
+
+Delete a role and all its secret IDs (cascade). Requires admin session cookie.
+
+**Response — `204 No Content`**
+
+---
+
+### `GET /auth/approle/role?list=true`
+
+List all AppRole role names. Requires admin session cookie.
+
+#### Response — `200 OK`
+
+```json
+{ "data": { "keys": ["spire-server", "mistral-agents"] } }
+```
+
+---
+
+### `POST /auth/kubernetes/login`
+
+Exchange a Kubernetes service-account JWT for an app token.
+
+#### Request body
+
+```json
+{
+  "role": "my-k8s-role",
+  "jwt": "<service-account JWT from /var/run/secrets/kubernetes.io/serviceaccount/token>"
+}
+```
+
+#### Response — `200 OK`
+
+```json
+{
+  "auth": {
+    "client_token": "hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob",
+    "renewable": true,
+    "lease_duration": 3600,
+    "policies": [],
+    "metadata": {}
+  }
+}
+```
+
+**Error responses:** `400 Bad Request` (invalid JWT or role), `403 Forbidden` (SA name / namespace not in allow-list).
+
+---
+
+### `POST /auth/kubernetes/role/{name}`
+
+Create or update a Kubernetes auth role. Requires admin session cookie.
+
+#### Request body
+
+```json
+{
+  "jwks_url": "https://kubernetes.default.svc/.well-known/jwks.json",
+  "bound_service_account_names": ["my-app"],
+  "bound_service_account_namespaces": ["production"],
+  "token_ttl": 3600
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `jwks_url` | string | URL of the Kubernetes JWKS endpoint |
+| `bound_service_account_names` | array | Allowed SA names; `["*"]` = any |
+| `bound_service_account_namespaces` | array | Allowed namespaces; `["*"]` = any |
+| `token_ttl` | integer | Token lifetime in seconds |
+| `expected_issuer` | string (optional) | If set, validates JWT `iss` claim |
+| `bound_audiences` | array (optional) | If set, validates JWT `aud` claim |
+
+**Response — `204 No Content`**
+
+---
+
+### `DELETE /auth/kubernetes/role/{name}`
+
+Delete a Kubernetes role. Requires admin session cookie.
+
+**Response — `204 No Content`**
+
+---
+
+### `GET /auth/token/lookup-self`
+
+Validate an app token and return its metadata.
+
+#### Request header
+
+```http
+X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
+```
+
+#### Response — `200 OK`
+
+```json
+{
+  "data": {
+    "id": "hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob",
+    "entity_id": "spire-server",
+    "policies": ["default"],
+    "renewable": true,
+    "ttl": 3541,
+    "creation_time": 1753670400
+  }
+}
+```
+
+**Error response:** `403 Forbidden` — token missing, invalid, expired, or revoked.
+
+---
+
+### `POST /auth/token/renew-self`
+
+Extend a renewable token's TTL back to its configured `lease_duration`.
+
+#### Request header
+
+```http
+X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
+```
+
+#### Response — `200 OK`
+
+```json
+{
+  "auth": {
+    "client_token": "hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob",
+    "renewable": true,
+    "lease_duration": 3600,
+    "policies": ["default"],
+    "metadata": {}
+  }
+}
+```
+
+**Error response:** `403 Forbidden` — token not found, expired, or not renewable.
+
+---
+
+### `POST /auth/token/revoke-self`
+
+Immediately invalidate the current token.
+
+#### Request header
+
+```http
+X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
+```
+
+**Response — `204 No Content`**
+
+---
+
 ## Realm Administration
 
 Realm CRUD endpoints live under `/admins/realms`. Creating, updating, and deleting realms requires **super admin** privileges. Listing and getting a single realm is accessible to any authenticated admin (filtered to their administered realms).
@@ -268,7 +552,7 @@ Realm CRUD endpoints live under `/admins/realms`. Creating, updating, and deleti
 
 Create a new realm. Super admin only.
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -312,7 +596,7 @@ Retrieve a realm by ID. Realm admins may only retrieve realms they administer.
 
 Replace a realm's configuration. Super admin only. Returns the updated realm.
 
-**Request body** — same shape as `POST /admins/realms`.
+#### Request body — same shape as `POST /admins/realms`
 
 **Response — `200 OK`** — updated `Realm` object.
 
@@ -363,7 +647,7 @@ List all username/password credentials across every realm. Super admin only.
 
 Create a new `Admin` record. Super admins may create any admin. Realm admins may create an admin only if every realm in the new admin's `realms` list is one they administer.
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -411,7 +695,7 @@ Retrieve an admin by ID.
 
 Replace an admin record. Returns the updated admin.
 
-**Request body** — same shape as `POST /admins`.
+#### Request body — same shape as `POST /admins`
 
 **Response — `200 OK`** — updated `Admin` object.
 
@@ -457,7 +741,7 @@ All `/realms/{realm}` endpoints require a valid session from a user who administ
 
 Create a username/password credential in a realm.
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -501,7 +785,7 @@ Retrieve a single credential.
 
 Update a credential (typically to change the password or set `change_password`).
 
-**Request body** — same shape as `POST /realms/{realm}/userpass`.
+#### Request body — same shape as `POST /realms/{realm}/userpass`
 
 **Response — `200 OK`** — updated `UserPass` object.
 
@@ -525,7 +809,7 @@ Generate a TOTP secret for a user. The secret is **not stored** at this point �
 
 **Query parameters:** `realm={realm_id}`
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -551,7 +835,7 @@ Verify a TOTP code and enable TOTP for the user. Call this after `generate` to c
 
 **Query parameters:** `realm={realm_id}`
 
-**Request body**
+#### Request body
 
 ```json
 {

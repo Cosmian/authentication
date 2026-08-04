@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Form, Input, message, Popconfirm, Result, Space, Table, Tag, Typography } from "antd";
-import { DeleteOutlined, EditOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, KeyOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { Admin } from "../types/api";
 import { SUPER_ADMIN_REALM_ID } from "../constants/apiPaths";
@@ -10,6 +10,7 @@ import { PageHeader } from "../components/common/PageHeader";
 import { LoadingState } from "../components/common/LoadingState";
 import { EmptyState } from "../components/common/EmptyState";
 import { AdminFormDrawer } from "../components/admins/AdminFormDrawer";
+import { AdminCredentialModal } from "../components/admins/AdminCredentialModal";
 import { TotpManagementModal } from "../components/admins/TotpManagementModal";
 
 const AdminsPage: React.FC = () => {
@@ -27,6 +28,9 @@ const AdminsPage: React.FC = () => {
 
     // TOTP modal state
     const [totpTarget, setTotpTarget] = useState<Admin | null>(null);
+
+    // Credential modal state
+    const [credentialTarget, setCredentialTarget] = useState<Admin | null>(null);
 
     // Check realm-admin ownership for non-super-admin mode
     const userRealmIds = realms.map((r) => r.id).filter((id) => id !== SUPER_ADMIN_REALM_ID);
@@ -84,6 +88,11 @@ const AdminsPage: React.FC = () => {
     const handleTotpSuccess = () => {
         message.success("TOTP updated");
         setTotpTarget(null);
+        fetchAdmins();
+    };
+
+    const handleCredentialSuccess = () => {
+        setCredentialTarget(null);
         fetchAdmins();
     };
 
@@ -150,6 +159,9 @@ const AdminsPage: React.FC = () => {
                     <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => setTotpTarget(record)}>
                         TOTP
                     </Button>
+                    <Button size="small" icon={<KeyOutlined />} onClick={() => setCredentialTarget(record)}>
+                        Credential
+                    </Button>
                     {!record.realms.includes(SUPER_ADMIN_REALM_ID) && (
                         <Popconfirm
                             title={`Delete admin "${record.id}"?`}
@@ -182,7 +194,26 @@ const AdminsPage: React.FC = () => {
                 <Table dataSource={admins} columns={columns} rowKey="id" pagination={false} />
             )}
 
-            <AdminFormDrawer open={drawerOpen} admin={editingAdmin} onClose={handleDrawerClose} onSuccess={handleDrawerSuccess} />
+            <AdminFormDrawer
+                open={drawerOpen}
+                admin={editingAdmin}
+                onClose={handleDrawerClose}
+                onSuccess={handleDrawerSuccess}
+                onTotpSetup={(adminId) =>
+                    setTotpTarget({
+                        id: adminId,
+                        realms: [],
+                        userpass: null,
+                        jwt: null,
+                        fido2: null,
+                        digital_credentials: null,
+                        client_certificate: null,
+                        totp_enabled: false,
+                        totp_secret: null,
+                        totp_auth_url: null,
+                    })
+                }
+            />
 
             {totpTarget && (
                 <TotpManagementModal
@@ -192,6 +223,16 @@ const AdminsPage: React.FC = () => {
                     totpEnabled={totpTarget.totp_enabled ?? false}
                     onClose={() => setTotpTarget(null)}
                     onSuccess={handleTotpSuccess}
+                />
+            )}
+
+            {credentialTarget && (
+                <AdminCredentialModal
+                    open={credentialTarget !== null}
+                    adminId={credentialTarget.id}
+                    hasCredential={credentialTarget.userpass !== null}
+                    onClose={() => setCredentialTarget(null)}
+                    onSuccess={handleCredentialSuccess}
                 />
             )}
         </div>
@@ -218,7 +259,7 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
             const admin: Admin = {
                 id: values.id,
                 realms: [selectedRealm],
-                userpass: values.userpass || null,
+                userpass: null,
                 jwt: values.jwt || null,
                 fido2: null,
                 digital_credentials: null,
@@ -255,9 +296,6 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
                 <Form form={form} layout="vertical" autoComplete="off" onFinish={handleSubmit} onValuesChange={() => setSubmitError(null)}>
                     <Form.Item name="id" label="Admin ID" rules={[{ required: true, message: "Admin ID is required" }]}>
                         <Input placeholder="e.g. alice" />
-                    </Form.Item>
-                    <Form.Item name="userpass" label="Userpass">
-                        <Input placeholder="Username/password reference" />
                     </Form.Item>
                     <Form.Item name="jwt" label="JWT">
                         <Input placeholder="JWT identifier" />

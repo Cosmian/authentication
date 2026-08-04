@@ -1,4 +1,4 @@
-import { AppstoreOutlined, ClockCircleOutlined, CrownOutlined, DashboardOutlined, KeyOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ClockCircleOutlined, CrownOutlined, DashboardOutlined, KeyOutlined, RobotOutlined } from "@ant-design/icons";
 
 export interface MenuItem {
     key: string;
@@ -32,6 +32,12 @@ export const menuItems: MenuItem[] = [
         key: "/credentials",
         label: "Credentials",
         icon: <KeyOutlined />,
+    },
+    {
+        key: "/machine-credentials",
+        label: "Machine Creds",
+        icon: <RobotOutlined />,
+        superAdminOnly: true,
     },
     {
         key: "/sessions",

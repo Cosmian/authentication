@@ -67,7 +67,7 @@ test.describe("Navigation", () => {
         };
 
         for (const label of ["Admins", "Credentials", "Sessions"]) {
-            await page.getByRole("menuitem", { name: label }).click();
+            await page.getByRole("menuitem", { name: new RegExp(`(?<!Machine )${label}$`) }).click();
             await expect(page.getByRole("heading", { name: sectionHeadings[label], level: 2 })).toBeVisible();
         }
     });

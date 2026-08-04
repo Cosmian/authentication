@@ -25,6 +25,7 @@ admin-ui = ["dep:actix-files"]
 [dependencies]
 actix-cors = { workspace = true }
 actix-files = { workspace = true, optional = true }
+governor = { workspace = true }
 actix-tls = { workspace = true }
 actix-web = { workspace = true, features = ["macros", "cookies"] }
 argon2 = { workspace = true }
@@ -37,6 +38,7 @@ hex = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs", "use_pem"] }
 openssl = { workspace = true, features = ["vendored"], optional = true }
 redis = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true, features = [
     "json",
     "native-tls",
@@ -56,6 +58,7 @@ auth_client = { path = "../client", version = "0.2.1", features = ["_server"] }
 toml = { workspace = true }
 totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
 url = { workspace = true }
+uuid = { workspace = true }
 x509-cert = { workspace = true }
 
 [lib]
@@ -90,7 +93,7 @@ assets = [
     "644",
   ],
   [
-    "../server/auth_verifier.toml",
+    "../pkg/auth_verifier.toml",
     "etc/cosmian/auth_verifier.toml",
     "400",
   ],
@@ -106,14 +109,14 @@ assets = [
   ],
 ]
 systemd-units = [
-  { unit-name = "auth_verifier", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
+  { unit-name = "cosmian_auth_verifier", unit-scripts = "../pkg", enable = true, start = false, restart-after-upgrade = false },
 ]
 
 [package.metadata.generate-rpm]
 assets = [
   { source = "target/release/auth_verifier", dest = "/usr/bin/auth_verifier", mode = "0500" },
   { source = "../README.md", dest = "/usr/share/doc/cosmian-auth-verifier/README.md", mode = "0644" },
-  { source = "../server/auth_verifier.toml", dest = "/etc/cosmian/auth_verifier.toml", mode = "0400" },
+  { source = "../pkg/auth_verifier.toml", dest = "/etc/cosmian/auth_verifier.toml", mode = "0400" },
   { source = "target/admin-ui/*", dest = "/usr/share/auth_verifier/admin-ui/", mode = "0644" },
   { source = "target/admin-ui/assets/*", dest = "/usr/share/auth_verifier/admin-ui/assets/", mode = "0644" },
 ]

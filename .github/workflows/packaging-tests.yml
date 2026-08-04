@@ -80,6 +80,28 @@ jobs:
           ldd "$BIN" || true
           "$BIN" --version || "$BIN" --help || true
 
+      - name: Validate packaged config
+        shell: bash
+        run: |
+          set -ex
+          CONFIG="/etc/cosmian/auth_verifier.toml"
+          [ -f "$CONFIG" ] || { echo "ERROR: $CONFIG not found in package"; exit 1; }
+          # The packaged config must not contain development/test paths.
+          if grep -qE 'server/src/tests|target/|\.git/' "$CONFIG"; then
+            echo "ERROR: packaged config contains dev/test paths:"
+            grep -nE 'server/src/tests|target/|\.git/' "$CONFIG"
+            exit 1
+          fi
+          # Active (non-commented) TLS paths must be absolute.
+          grep -E '^\s*(server_private_key|server_certificate|server_ca_chain)\s*=' "$CONFIG" \
+            | while IFS= read -r line; do
+                if ! echo "$line" | grep -qE '"/'; then
+                  echo "ERROR: TLS path is not absolute: $line"
+                  exit 1
+                fi
+              done
+          echo "Packaged config validation PASSED"
+
       - name: Verify GLIBC compatibility
         shell: bash
         run: |
@@ -240,11 +262,11 @@ jobs:
           echo "$output" | grep -qiE 'failed to read|auth_verifier\.toml|configuration' \
             || { echo "ERROR: unexpected output from auth_verifier"; exit 1; }
 
-      - name: systemd-analyze security auth_verifier.service
+      - name: systemd-analyze security cosmian_auth_verifier.service
         shell: bash
         run: |
           set -ex
-          systemd-analyze security auth_verifier.service
+          systemd-analyze security cosmian_auth_verifier.service
 
       - name: Start auth_verifier service and verify admin UI
         shell: bash
@@ -278,7 +300,7 @@ jobs:
           sudo chown root:root /etc/cosmian/auth_verifier.toml /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
           sudo chmod 440 /etc/cosmian/auth_verifier.toml
           sudo chmod 644 /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
-          sudo systemctl start auth_verifier
+          sudo systemctl start cosmian_auth_verifier
           # Wait up to 30 s for the HTTPS server to be ready (Type=simple means
           # systemd marks the service "active" as soon as the process spawns,
           # before Actix-web has actually bound the port).
@@ -287,19 +309,19 @@ jobs:
               echo "HTTPS server is up (attempt $i)"
               break
             fi
-            if ! systemctl is-active --quiet auth_verifier; then
-              echo "ERROR: auth_verifier service stopped unexpectedly" >&2
-              sudo systemctl status auth_verifier --no-pager || true
-              sudo journalctl -u auth_verifier --no-pager -n 100 || true
+            if ! systemctl is-active --quiet cosmian_auth_verifier; then
+              echo "ERROR: cosmian_auth_verifier service stopped unexpectedly" >&2
+              sudo systemctl status cosmian_auth_verifier --no-pager || true
+              sudo journalctl -u cosmian_auth_verifier --no-pager -n 100 || true
               exit 1
             fi
             sleep 0.5
           done
           if ! curl -kfsSo /dev/null https://127.0.0.1:8080/public/version 2>/dev/null; then
             echo "ERROR: auth_verifier did not start serving within 30 s" >&2
-            sudo systemctl status auth_verifier --no-pager || true
-            sudo journalctl -u auth_verifier --no-pager -n 100 || true
+            sudo systemctl status cosmian_auth_verifier --no-pager || true
+            sudo journalctl -u cosmian_auth_verifier --no-pager -n 100 || true
             exit 1
           fi
           bash .github/scripts/test/verify_running_ui.sh https://127.0.0.1:8080
-          sudo systemctl stop auth_verifier
+          sudo systemctl stop cosmian_auth_verifier
