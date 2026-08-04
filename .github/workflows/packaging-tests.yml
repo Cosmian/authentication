@@ -80,6 +80,28 @@ jobs:
           ldd "$BIN" || true
           "$BIN" --version || "$BIN" --help || true
 
+      - name: Validate packaged config
+        shell: bash
+        run: |
+          set -ex
+          CONFIG="/etc/cosmian/auth_verifier.toml"
+          [ -f "$CONFIG" ] || { echo "ERROR: $CONFIG not found in package"; exit 1; }
+          # The packaged config must not contain development/test paths.
+          if grep -qE 'server/src/tests|target/|\.git/' "$CONFIG"; then
+            echo "ERROR: packaged config contains dev/test paths:"
+            grep -nE 'server/src/tests|target/|\.git/' "$CONFIG"
+            exit 1
+          fi
+          # Active (non-commented) TLS paths must be absolute.
+          grep -E '^\s*(server_private_key|server_certificate|server_ca_chain)\s*=' "$CONFIG" \
+            | while IFS= read -r line; do
+                if ! echo "$line" | grep -qE '"/'; then
+                  echo "ERROR: TLS path is not absolute: $line"
+                  exit 1
+                fi
+              done
+          echo "Packaged config validation PASSED"
+
       - name: Verify GLIBC compatibility
         shell: bash
         run: |
