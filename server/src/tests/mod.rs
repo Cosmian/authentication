@@ -21,6 +21,8 @@ mod jwt_tests;
 mod logging;
 pub use logging::init_test_logging;
 
+mod oidc_tests;
+
 mod params;
 pub use params::get_default_server_params;
 

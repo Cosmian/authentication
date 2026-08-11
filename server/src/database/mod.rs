@@ -13,7 +13,9 @@ pub use passwords::{hash_password_with_argon2, verify_password_argon2};
 mod r#trait;
 #[cfg(test)]
 pub use r#trait::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME};
-pub use r#trait::{AppRole, AppSecretId, AppToken, Database, K8sRole};
+pub use r#trait::{
+    AppRole, AppSecretId, AppToken, AuthorizationCode, Database, K8sRole, OAuthClient, RefreshToken,
+};
 
 #[cfg(test)]
 mod tests;

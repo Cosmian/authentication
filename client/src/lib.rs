@@ -39,6 +39,8 @@ pub use dto::{
     K8sRoleConfigData,
     K8sRoleConfigResponse,
     K8sRoleRequest,
+    OAuthClientRequest,
+    OAuthClientResponse,
     SessionsAction,
     TotpGenerateRequest,
     TotpGenerateResponse,

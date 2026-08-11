@@ -77,6 +77,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
         dev_seed: None,
         admin_ui_path: None,
         log: None,
+        oidc_params: None,
         roles: Vec::new(),
         allowed_origins: Vec::new(),
     };

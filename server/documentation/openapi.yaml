@@ -50,6 +50,18 @@ tags:
       Kubernetes service-account JWT authentication (`/auth/kubernetes/...`).
       The `login` endpoint validates the JWT against the role's JWKS URL.
       Role management requires admin session cookie.
+  - name: OIDC
+    description: |
+      OpenID Connect Provider endpoints. Front-channel authorization
+      (`/oidc/authorize` with an embedded login + consent flow) and back-channel
+      token, userinfo, introspection and revocation endpoints, plus discovery
+      metadata at `/.well-known/openid-configuration`. Authorization Code + PKCE
+      (S256) is the only interactive flow; implicit and hybrid flows are not
+      supported.
+  - name: OIDC Clients
+    description: |
+      OAuth 2.0 / OIDC client (relying party) provisioning per realm. Requires a
+      realm-admin session cookie.
 
 components:
   securitySchemes:
@@ -849,9 +861,129 @@ components:
         data:
           $ref: '#/components/schemas/AppTokenData'
 
+    OAuthClientRequest:
+      type: object
+      required: [client_name, redirect_uris]
+      properties:
+        client_name:
+          type: string
+          description: Human-readable client name.
+          example: My Web App
+        redirect_uris:
+          type: array
+          items:
+            type: string
+          description: |
+            Allowed redirect URIs. Must be `https` (or `http` on localhost).
+            Matched exactly at the authorization endpoint.
+          example:
+            - https://app.example.com/callback
+        grant_types:
+          type: array
+          items:
+            type: string
+          description: Allowed grant types.
+          default: [authorization_code, refresh_token]
+          example: [authorization_code, refresh_token]
+        response_types:
+          type: array
+          items:
+            type: string
+            enum: [code]
+          default: [code]
+        scopes:
+          type: array
+          items:
+            type: string
+          example: [openid, profile, email, offline_access, roles]
+        token_endpoint_auth_method:
+          type: string
+          enum: [client_secret_basic, client_secret_post, none]
+          default: client_secret_basic
+          description: |
+            `none` designates a public (PKCE-only) client with no secret.
+
+    OAuthClientResponse:
+      type: object
+      required: [client_id, client_name, redirect_uris, grant_types, response_types, scopes, token_endpoint_auth_method, realm, created_at]
+      properties:
+        client_id:
+          type: string
+          example: client-Ab3...
+        client_secret:
+          type: string
+          description: |
+            The generated client secret. Present **only** in the response to a
+            client-creation request (or when a new secret is issued on update);
+            never returned on reads.
+        client_name:
+          type: string
+        redirect_uris:
+          type: array
+          items:
+            type: string
+        grant_types:
+          type: array
+          items:
+            type: string
+        response_types:
+          type: array
+          items:
+            type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        token_endpoint_auth_method:
+          type: string
+        realm:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: RFC 9068 `at+jwt` access token.
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_in:
+          type: integer
+          description: Access-token lifetime in seconds.
+        scope:
+          type: string
+          description: Space-delimited granted scope.
+        id_token:
+          type: string
+          description: OIDC ID token (present when the `openid` scope was granted).
+        refresh_token:
+          type: string
+          description: Opaque refresh token (present when offline access is granted).
+
+    OAuthError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: invalid_grant
+        error_description:
+          type: string
+
   responses:
     NoContent:
       description: Success — empty body.
+    BadRequest:
+      description: Invalid request parameters.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Missing or invalid credentials.
       content:
@@ -915,6 +1047,14 @@ components:
         type: string
       description: AppRole or Kubernetes auth role name.
       example: spire-server
+    clientId:
+      name: client_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: OAuth 2.0 / OIDC client identifier.
+      example: client-Ab3xY...
 
 paths:
 
@@ -2304,3 +2444,388 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /.well-known/openid-configuration:
+    get:
+      tags: [OIDC]
+      summary: OpenID Provider metadata (discovery)
+      operationId: openidConfiguration
+      description: |
+        OpenID Connect Discovery 1.0 / RFC 8414 provider metadata describing the
+        issuer, endpoints, supported scopes, response types, signing algorithms
+        and PKCE methods.
+      responses:
+        '200':
+          description: Provider metadata document.
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /oidc/jwks:
+    get:
+      tags: [OIDC]
+      summary: JSON Web Key Set (OIDC signing + session keys)
+      operationId: oidcJwks
+      responses:
+        '200':
+          description: JWKS document.
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /oidc/authorize:
+    get:
+      tags: [OIDC]
+      summary: Authorization endpoint (front-channel)
+      operationId: oidcAuthorize
+      description: |
+        Validates the authorization request and renders an HTML login form.
+        PKCE (`code_challenge` with `code_challenge_method=S256`) is mandatory.
+        Invalid `client_id`/`redirect_uri` render a `400` error page; other
+        errors redirect back to the client with `error`/`error_description`.
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema: {type: string, enum: [code]}
+        - name: client_id
+          in: query
+          required: true
+          schema: {type: string}
+        - name: redirect_uri
+          in: query
+          required: true
+          schema: {type: string}
+        - name: scope
+          in: query
+          required: true
+          schema: {type: string}
+          description: Space-delimited; must include `openid`.
+        - name: state
+          in: query
+          required: false
+          schema: {type: string}
+        - name: nonce
+          in: query
+          required: false
+          schema: {type: string}
+        - name: code_challenge
+          in: query
+          required: true
+          schema: {type: string}
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema: {type: string, enum: [S256]}
+      responses:
+        '200':
+          description: HTML login form.
+          content:
+            text/html:
+              schema: {type: string}
+        '302':
+          description: Redirect back to the client with an error (validated redirect_uri).
+        '400':
+          description: HTML error page (invalid client_id or redirect_uri).
+          content:
+            text/html:
+              schema: {type: string}
+
+  /oidc/authorize/login:
+    post:
+      tags: [OIDC]
+      summary: Submit login credentials (front-channel)
+      operationId: oidcAuthorizeLogin
+      description: |
+        Authenticates the end-user against the client's realm userpass store
+        (with TOTP when enabled) and renders the consent screen. CSRF-protected
+        by the server-signed `flow_token`.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [flow_token, username, password]
+              properties:
+                flow_token: {type: string}
+                username: {type: string}
+                password: {type: string}
+                totp_code: {type: string}
+      responses:
+        '200':
+          description: HTML consent screen (or login form re-rendered on error).
+          content:
+            text/html:
+              schema: {type: string}
+
+  /oidc/authorize/consent:
+    post:
+      tags: [OIDC]
+      summary: Submit the consent decision (front-channel)
+      operationId: oidcAuthorizeConsent
+      description: |
+        On approval, issues a single-use authorization code bound to the PKCE
+        challenge and redirects back to the client's `redirect_uri` with
+        `code`/`state`. On denial, redirects with `error=access_denied`.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [flow_token, decision]
+              properties:
+                flow_token: {type: string}
+                decision: {type: string, enum: [approve, deny]}
+      responses:
+        '302':
+          description: Redirect back to the client with the code or an error.
+
+  /oidc/token:
+    post:
+      tags: [OIDC]
+      summary: Token endpoint
+      operationId: oidcToken
+      description: |
+        Issues tokens for the `authorization_code` (with mandatory PKCE),
+        `refresh_token` (rotating, with reuse detection), and
+        `client_credentials` grants. Client authentication via
+        `client_secret_basic` or `client_secret_post` (public clients use PKCE).
+      security:
+        - basicAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [authorization_code, refresh_token, client_credentials]
+                code: {type: string}
+                redirect_uri: {type: string}
+                code_verifier: {type: string}
+                refresh_token: {type: string}
+                scope: {type: string}
+                client_id: {type: string}
+                client_secret: {type: string}
+      responses:
+        '200':
+          description: Token response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: OAuth error (invalid_request, invalid_grant, ...).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthError'
+        '401':
+          description: Invalid client authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthError'
+
+  /oidc/userinfo:
+    get:
+      tags: [OIDC]
+      summary: UserInfo endpoint
+      operationId: oidcUserinfoGet
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Scope-gated claims for the token subject.
+          content:
+            application/json:
+              schema: {type: object}
+        '401':
+          description: Missing or invalid access token.
+    post:
+      tags: [OIDC]
+      summary: UserInfo endpoint (POST)
+      operationId: oidcUserinfoPost
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Scope-gated claims for the token subject.
+          content:
+            application/json:
+              schema: {type: object}
+        '401':
+          description: Missing or invalid access token.
+
+  /oidc/introspect:
+    post:
+      tags: [OIDC]
+      summary: Token introspection (RFC 7662)
+      operationId: oidcIntrospect
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+                token_type_hint: {type: string}
+      responses:
+        '200':
+          description: Introspection response (`active` plus metadata when active).
+          content:
+            application/json:
+              schema: {type: object}
+
+  /oidc/revoke:
+    post:
+      tags: [OIDC]
+      summary: Token revocation (RFC 7009)
+      operationId: oidcRevoke
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: {type: string}
+                token_type_hint: {type: string}
+      responses:
+        '200':
+          description: Always 200 OK, regardless of whether the token existed.
+
+  /realms/{realm_id}/clients:
+    post:
+      tags: [OIDC Clients]
+      summary: Register an OAuth client
+      operationId: createOAuthClient
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthClientRequest'
+      responses:
+        '201':
+          description: Created client (secret returned once for confidential clients).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    get:
+      tags: [OIDC Clients]
+      summary: List OAuth clients in a realm
+      operationId: listOAuthClients
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Array of clients (secrets omitted).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OAuthClientResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /realms/{realm_id}/clients/{client_id}:
+    get:
+      tags: [OIDC Clients]
+      summary: Get an OAuth client
+      operationId: getOAuthClient
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - $ref: '#/components/parameters/clientId'
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The client (secret omitted).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [OIDC Clients]
+      summary: Update an OAuth client
+      operationId: updateOAuthClient
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - $ref: '#/components/parameters/clientId'
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthClientRequest'
+      responses:
+        '200':
+          description: Updated client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthClientResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [OIDC Clients]
+      summary: Delete an OAuth client
+      operationId: deleteOAuthClient
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - $ref: '#/components/parameters/clientId'
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'

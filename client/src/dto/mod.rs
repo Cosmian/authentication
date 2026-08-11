@@ -24,3 +24,6 @@ pub use app_auth::{
     AppTokenLookupResponse, K8sListData, K8sListRolesResponse, K8sLoginRequest, K8sRoleConfigData,
     K8sRoleConfigResponse, K8sRoleRequest,
 };
+
+mod oauth;
+pub use oauth::{OAuthClientRequest, OAuthClientResponse};

@@ -42,6 +42,13 @@ pub use approle::{
 mod kubernetes;
 pub use kubernetes::{k8s_create_role, k8s_delete_role, k8s_get_role, k8s_list_roles, k8s_login};
 
+pub mod oidc;
+pub use oidc::{
+    authorize, authorize_consent, authorize_login, create_oauth_client, delete_oauth_client,
+    get_oauth_client, introspect, list_oauth_clients, oidc_jwks, openid_configuration, revoke,
+    token as oidc_token, update_oauth_client, userinfo,
+};
+
 use crate::{AuthError, models::Admin};
 use actix_web::HttpMessage;
 use actix_web::HttpRequest;

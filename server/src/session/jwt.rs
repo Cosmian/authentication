@@ -21,6 +21,16 @@ pub struct JwksData(pub serde_json::Value);
 ///
 /// Supported PEM types: `BEGIN CERTIFICATE`, `BEGIN PUBLIC KEY`.
 pub fn build_jwks_from_pem(pem: &str) -> crate::AuthResult<JwksData> {
+    let (jwk, _kid) = build_jwk_from_pem(pem)?;
+    Ok(JwksData(serde_json::json!({ "keys": [jwk] })))
+}
+
+/// Build a single EC P-256 JWK (and its `kid`) from a PEM string (either an
+/// X.509 certificate or a `BEGIN PUBLIC KEY` SubjectPublicKeyInfo).
+///
+/// The `kid` is the hex SHA-256 digest of the raw `x‖y` coordinate bytes, so it
+/// is deterministic and stable across restarts.
+pub fn build_jwk_from_pem(pem: &str) -> crate::AuthResult<(serde_json::Value, String)> {
     use base64::Engine as _;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use sha2::{Digest, Sha256};
@@ -42,7 +52,7 @@ pub fn build_jwks_from_pem(pem: &str) -> crate::AuthResult<JwksData> {
         "x": URL_SAFE_NO_PAD.encode(x),
         "y": URL_SAFE_NO_PAD.encode(y),
     });
-    Ok(JwksData(serde_json::json!({ "keys": [jwk] })))
+    Ok((jwk, kid))
 }
 
 /// Extract the `SubjectPublicKeyInfo` from either an X.509 certificate PEM or a

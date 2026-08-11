@@ -16,8 +16,8 @@ use crate::{
         AppRoleSecretIdRequest, AppRoleSecretIdResponse, AppTokenLookupResponse,
         DeleteSessionsRequest, GetSessionRequest, GetSessionsForClientsRequest,
         GetSessionsForClientsResponse, K8sListRolesResponse, K8sLoginRequest,
-        K8sRoleConfigResponse, K8sRoleRequest, SessionsAction, TotpGenerateRequest,
-        TotpGenerateResponse, TotpVerifyRequest, Version,
+        K8sRoleConfigResponse, K8sRoleRequest, OAuthClientRequest, OAuthClientResponse,
+        SessionsAction, TotpGenerateRequest, TotpGenerateResponse, TotpVerifyRequest, Version,
     },
     models::{Admin, ClientClaims, LoginRequest, Realm, SessionData, UserPass},
 };
@@ -699,6 +699,70 @@ impl AuthClient {
     /// List all userpass credentials across all realms. Super admins only.
     pub async fn list_all_userpass_as_super_admin(&self) -> AuthResult<Vec<UserPass>> {
         self.get("/admins/userpass").await
+    }
+}
+
+// OIDC / OAuth 2.0 client management API
+impl AuthClient {
+    /// Register a new OAuth 2.0 / OIDC client in a realm. Requires realm-admin
+    /// authority. The response contains the generated `client_id` and (for
+    /// confidential clients) the `client_secret` — returned only once.
+    pub async fn create_oauth_client(
+        &self,
+        realm_id: &str,
+        request: &OAuthClientRequest,
+    ) -> AuthResult<OAuthClientResponse> {
+        let path = format!("/realms/{realm_id}/clients");
+        self.post(&path, request).await
+    }
+
+    /// List all OAuth clients registered in a realm.
+    pub async fn list_oauth_clients(&self, realm_id: &str) -> AuthResult<Vec<OAuthClientResponse>> {
+        let path = format!("/realms/{realm_id}/clients");
+        self.get(&path).await
+    }
+
+    /// Get a single OAuth client by id.
+    pub async fn get_oauth_client(
+        &self,
+        realm_id: &str,
+        client_id: &str,
+    ) -> AuthResult<OAuthClientResponse> {
+        let path = format!("/realms/{realm_id}/clients/{client_id}");
+        self.get(&path).await
+    }
+
+    /// Update an OAuth client.
+    pub async fn update_oauth_client(
+        &self,
+        realm_id: &str,
+        client_id: &str,
+        request: &OAuthClientRequest,
+    ) -> AuthResult<OAuthClientResponse> {
+        let path = format!("/realms/{realm_id}/clients/{client_id}");
+        self.put(&path, request).await
+    }
+
+    /// Delete an OAuth client.
+    pub async fn delete_oauth_client(&self, realm_id: &str, client_id: &str) -> AuthResult<()> {
+        let url = format!("{}/realms/{realm_id}/clients/{client_id}", self.base_url);
+        let response = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("DELETE request failed: {e}")))?;
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(AuthError::FailedHttpStatus(format!(
+                "Request failed with status {status}: {error_text}"
+            )));
+        }
+        Ok(())
     }
 }
 

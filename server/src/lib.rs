@@ -30,6 +30,8 @@ pub use session::{
 };
 pub use session::{build_cookie, delete_cookie};
 
+pub mod oidc;
+
 pub mod tls;
 
 pub mod totp;

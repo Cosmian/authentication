@@ -1,0 +1,36 @@
+{
+  "alias": "cosmian-auth",
+  "description": "Cosmian auth-verifier OpenID Provider",
+  "server": {
+    "discoveryUrl": "https://127.0.0.1:18444/.well-known/openid-configuration"
+  },
+  "client": {
+    "client_id": "<GENERATED_CLIENT_ID>",
+    "client_secret": "<GENERATED_CLIENT_SECRET>"
+  },
+  "consent": {},
+  "browser": [
+    {
+      "match": "https://127.0.0.1:18444/oidc/authorize*",
+      "tasks": [
+        {
+          "task": "Login",
+          "match": "https://127.0.0.1:18444/oidc/authorize*",
+          "commands": [
+            ["text", "name", "username", "alice"],
+            ["text", "name", "password", "<USER_PASSWORD>"],
+            ["click", "xpath", "//button[@type='submit']"]
+          ]
+        },
+        {
+          "task": "Consent",
+          "match": "https://127.0.0.1:18444/oidc/authorize/*",
+          "optional": true,
+          "commands": [
+            ["click", "xpath", "//button[@value='approve']"]
+          ]
+        }
+      ]
+    }
+  ]
+}

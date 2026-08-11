@@ -72,7 +72,85 @@ pub struct K8sRole {
 pub const APP_REALM_ADMIN_USERNAME: &str = "admin";
 pub const APP_REALM_ADMIN_INITIAL_PASSWORD: &str = "change_me";
 
-/// Database trait for authentication data storage
+// ── OIDC / OAuth 2.0 DB types ─────────────────────────────────────────────────
+
+/// A registered OAuth 2.0 / OpenID Connect client (relying party).
+#[derive(Debug, Clone)]
+pub struct OAuthClient {
+    /// Public client identifier.
+    pub client_id: String,
+    /// SHA-256 hash of the client secret. `None` for public (PKCE-only) clients
+    /// whose `token_endpoint_auth_method` is `none`.
+    pub client_secret_hash: Option<Vec<u8>>,
+    /// Human-readable client name.
+    pub client_name: String,
+    /// Allowed redirect URIs (exact match at the authorization endpoint).
+    pub redirect_uris: Vec<String>,
+    /// Allowed grant types (e.g. `authorization_code`, `refresh_token`,
+    /// `client_credentials`).
+    pub grant_types: Vec<String>,
+    /// Allowed response types (only `code` is supported — no implicit/hybrid).
+    pub response_types: Vec<String>,
+    /// Scopes this client may request.
+    pub scopes: Vec<String>,
+    /// Token-endpoint client authentication method:
+    /// `client_secret_basic`, `client_secret_post`, or `none`.
+    pub token_endpoint_auth_method: String,
+    /// Realm this client belongs to (users authenticate against this realm).
+    pub realm: String,
+    /// Unix timestamp of creation.
+    pub created_at: i64,
+}
+
+impl OAuthClient {
+    /// Whether this is a public client (no secret, PKCE-only).
+    pub fn is_public(&self) -> bool {
+        self.token_endpoint_auth_method == "none" || self.client_secret_hash.is_none()
+    }
+}
+
+/// A single-use OAuth 2.0 authorization code with its PKCE binding.
+#[derive(Debug, Clone)]
+pub struct AuthorizationCode {
+    /// SHA-256 hash of the raw authorization code string.
+    pub code_hash: Vec<u8>,
+    pub client_id: String,
+    pub redirect_uri: String,
+    /// Space-delimited granted scope.
+    pub scope: String,
+    /// OIDC `nonce` echoed into the issued ID token.
+    pub nonce: Option<String>,
+    /// PKCE code challenge (RFC 7636).
+    pub code_challenge: String,
+    /// PKCE code challenge method (only `S256` is accepted).
+    pub code_challenge_method: String,
+    /// Authenticated end-user (the ID-token `sub`).
+    pub subject: String,
+    pub realm: String,
+    /// Unix timestamp when the end-user authenticated (ID-token `auth_time`).
+    pub auth_time: i64,
+    /// Unix timestamp when this code expires.
+    pub expiry: i64,
+}
+
+/// A refresh token record. Opaque to the client; stored hashed at rest.
+#[derive(Debug, Clone)]
+pub struct RefreshToken {
+    /// SHA-256 hash of the raw refresh-token string.
+    pub token_hash: Vec<u8>,
+    pub client_id: String,
+    pub subject: String,
+    pub realm: String,
+    /// Space-delimited scope associated with this refresh token.
+    pub scope: String,
+    /// Unix timestamp when this token expires.
+    pub expiry: i64,
+    /// Unix timestamp of creation.
+    pub created_at: i64,
+    /// Whether this token has been revoked (rotation or explicit revocation).
+    pub revoked: bool,
+}
+
 #[async_trait]
 pub trait Database: Send + Sync {
     /// Initialize database schema (create tables if they don't exist)
@@ -310,4 +388,60 @@ pub trait Database: Send + Sync {
 
     /// List all Kubernetes auth role names.
     async fn list_k8s_role_names(&self) -> AuthDbResult<Vec<String>>;
+
+    // ── OIDC / OAuth 2.0 client operations ──────────────────────────────────
+
+    /// Create a new OAuth client.
+    async fn create_oauth_client(&self, client: &OAuthClient) -> AuthDbResult<()>;
+
+    /// Look up an OAuth client by `client_id`.
+    async fn get_oauth_client(&self, client_id: &str) -> AuthDbResult<Option<OAuthClient>>;
+
+    /// Update an existing OAuth client (identified by `client_id`).
+    async fn update_oauth_client(&self, client: &OAuthClient) -> AuthDbResult<()>;
+
+    /// Delete an OAuth client by `client_id`.
+    async fn delete_oauth_client(&self, client_id: &str) -> AuthDbResult<()>;
+
+    /// List all OAuth clients belonging to a realm.
+    async fn list_oauth_clients_by_realm(&self, realm: &str) -> AuthDbResult<Vec<OAuthClient>>;
+
+    // ── OIDC authorization-code operations ──────────────────────────────────
+
+    /// Persist a freshly issued authorization code.
+    async fn create_authorization_code(&self, code: &AuthorizationCode) -> AuthDbResult<()>;
+
+    /// Atomically consume a single-use authorization code by its hash.
+    ///
+    /// Deletes the record and returns it if present and not expired; returns
+    /// `None` if the code is unknown, already consumed, or expired.
+    async fn consume_authorization_code(
+        &self,
+        code_hash: &[u8],
+    ) -> AuthDbResult<Option<AuthorizationCode>>;
+
+    // ── OIDC refresh-token operations ───────────────────────────────────────
+
+    /// Persist a freshly issued refresh token.
+    async fn create_refresh_token(&self, token: &RefreshToken) -> AuthDbResult<()>;
+
+    /// Look up a refresh token by its hash.
+    ///
+    /// Returns the record regardless of `revoked`/expiry state so callers can
+    /// implement rotation reuse-detection; callers MUST validate `revoked` and
+    /// `expiry` themselves.
+    async fn get_refresh_token(&self, token_hash: &[u8]) -> AuthDbResult<Option<RefreshToken>>;
+
+    /// Mark a refresh token as revoked (rotation or explicit RFC 7009 revocation).
+    async fn revoke_refresh_token(&self, token_hash: &[u8]) -> AuthDbResult<()>;
+
+    /// Revoke every refresh token issued to `subject` within `realm`.
+    ///
+    /// Used for reuse-detection: when a revoked refresh token is replayed, the
+    /// entire token family for that subject is invalidated.
+    async fn revoke_refresh_tokens_for_subject(
+        &self,
+        realm: &str,
+        subject: &str,
+    ) -> AuthDbResult<()>;
 }

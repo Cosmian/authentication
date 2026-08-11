@@ -7,6 +7,9 @@ pub use database_params::{DatabaseBackend, DatabaseParams};
 mod log_params;
 pub use log_params::LogConfig;
 
+mod oidc_params;
+pub use oidc_params::OidcParams;
+
 mod proxy_params;
 pub use proxy_params::ProxyParams;
 

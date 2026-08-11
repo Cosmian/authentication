@@ -3,12 +3,25 @@ use std::collections::HashMap;
 use crate::{
     database::{
         AuthDbError, AuthDbResult,
-        r#trait::{AppRole, AppSecretId, AppToken, Database, K8sRole},
+        r#trait::{
+            AppRole, AppSecretId, AppToken, AuthorizationCode, Database, K8sRole, OAuthClient,
+            RefreshToken,
+        },
     },
     models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
 use sqlx::{MySqlPool, Row};
+
+/// Serialize a `Vec<String>` to a JSON string for storage.
+fn vec_to_json(v: &[String]) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| "[]".to_string())
+}
+
+/// Deserialize a JSON string column to a `Vec<String>`.
+fn json_to_vec(s: &str) -> Vec<String> {
+    serde_json::from_str(s).unwrap_or_default()
+}
 
 /// MySQL database implementation
 pub struct MySqlDatabase {
@@ -194,6 +207,63 @@ impl Database for MySqlDatabase {
         )
         .execute(&self.pool)
         .await;
+
+        // ── OIDC / OAuth 2.0 tables ──────────────────────────────────────────
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS oauth_clients (
+                client_id                   VARCHAR(255) NOT NULL PRIMARY KEY,
+                client_secret_hash          VARBINARY(64),
+                client_name                 TEXT         NOT NULL,
+                redirect_uris               TEXT         NOT NULL,
+                grant_types                 TEXT         NOT NULL,
+                response_types              TEXT         NOT NULL,
+                scopes                      TEXT         NOT NULL,
+                token_endpoint_auth_method  VARCHAR(64)  NOT NULL DEFAULT 'client_secret_basic',
+                realm                       VARCHAR(255) NOT NULL,
+                created_at                  BIGINT       NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS oauth_authorization_codes (
+                code_hash               VARBINARY(64) NOT NULL PRIMARY KEY,
+                client_id               VARCHAR(255)  NOT NULL,
+                redirect_uri            TEXT          NOT NULL,
+                scope                   TEXT          NOT NULL,
+                nonce                   TEXT,
+                code_challenge          TEXT          NOT NULL,
+                code_challenge_method   VARCHAR(16)   NOT NULL DEFAULT 'S256',
+                subject                 VARCHAR(255)  NOT NULL,
+                realm                   VARCHAR(255)  NOT NULL,
+                auth_time               BIGINT        NOT NULL,
+                expiry                  BIGINT        NOT NULL
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS oauth_refresh_tokens (
+                token_hash  VARBINARY(64) NOT NULL PRIMARY KEY,
+                client_id   VARCHAR(255)  NOT NULL,
+                subject     VARCHAR(255)  NOT NULL,
+                realm       VARCHAR(255)  NOT NULL,
+                scope       TEXT          NOT NULL,
+                expiry      BIGINT        NOT NULL,
+                created_at  BIGINT        NOT NULL,
+                revoked     TINYINT(1)    NOT NULL DEFAULT 0
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -1293,5 +1363,224 @@ impl Database for MySqlDatabase {
             .into_iter()
             .map(|r| r.try_get("name").unwrap_or_default())
             .collect())
+    }
+
+    // ── OIDC / OAuth 2.0 client operations ──────────────────────────────────
+
+    async fn create_oauth_client(&self, client: &OAuthClient) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO oauth_clients
+                (client_id, client_secret_hash, client_name, redirect_uris, grant_types,
+                 response_types, scopes, token_endpoint_auth_method, realm, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&client.client_id)
+        .bind(client.client_secret_hash.as_deref())
+        .bind(&client.client_name)
+        .bind(vec_to_json(&client.redirect_uris))
+        .bind(vec_to_json(&client.grant_types))
+        .bind(vec_to_json(&client.response_types))
+        .bind(vec_to_json(&client.scopes))
+        .bind(&client.token_endpoint_auth_method)
+        .bind(&client.realm)
+        .bind(client.created_at)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_oauth_client(&self, client_id: &str) -> AuthDbResult<Option<OAuthClient>> {
+        let row = sqlx::query("SELECT * FROM oauth_clients WHERE client_id = ?")
+            .bind(client_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(mysql_row_to_oauth_client))
+    }
+
+    async fn update_oauth_client(&self, client: &OAuthClient) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE oauth_clients SET
+                client_secret_hash = ?, client_name = ?, redirect_uris = ?, grant_types = ?,
+                response_types = ?, scopes = ?, token_endpoint_auth_method = ?, realm = ?
+            WHERE client_id = ?
+            "#,
+        )
+        .bind(client.client_secret_hash.as_deref())
+        .bind(&client.client_name)
+        .bind(vec_to_json(&client.redirect_uris))
+        .bind(vec_to_json(&client.grant_types))
+        .bind(vec_to_json(&client.response_types))
+        .bind(vec_to_json(&client.scopes))
+        .bind(&client.token_endpoint_auth_method)
+        .bind(&client.realm)
+        .bind(&client.client_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn delete_oauth_client(&self, client_id: &str) -> AuthDbResult<()> {
+        sqlx::query("DELETE FROM oauth_clients WHERE client_id = ?")
+            .bind(client_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn list_oauth_clients_by_realm(&self, realm: &str) -> AuthDbResult<Vec<OAuthClient>> {
+        let rows = sqlx::query("SELECT * FROM oauth_clients WHERE realm = ? ORDER BY client_id")
+            .bind(realm)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.into_iter().map(mysql_row_to_oauth_client).collect())
+    }
+
+    // ── OIDC authorization-code operations ──────────────────────────────────
+
+    async fn create_authorization_code(&self, code: &AuthorizationCode) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO oauth_authorization_codes
+                (code_hash, client_id, redirect_uri, scope, nonce, code_challenge,
+                 code_challenge_method, subject, realm, auth_time, expiry)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&code.code_hash)
+        .bind(&code.client_id)
+        .bind(&code.redirect_uri)
+        .bind(&code.scope)
+        .bind(code.nonce.as_deref())
+        .bind(&code.code_challenge)
+        .bind(&code.code_challenge_method)
+        .bind(&code.subject)
+        .bind(&code.realm)
+        .bind(code.auth_time)
+        .bind(code.expiry)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn consume_authorization_code(
+        &self,
+        code_hash: &[u8],
+    ) -> AuthDbResult<Option<AuthorizationCode>> {
+        // MySQL lacks DELETE ... RETURNING; use a transaction: SELECT then DELETE.
+        let mut tx = self.pool.begin().await?;
+        let row = sqlx::query("SELECT * FROM oauth_authorization_codes WHERE code_hash = ?")
+            .bind(code_hash)
+            .fetch_optional(&mut *tx)
+            .await?;
+        let Some(r) = row else {
+            tx.commit().await?;
+            return Ok(None);
+        };
+        sqlx::query("DELETE FROM oauth_authorization_codes WHERE code_hash = ?")
+            .bind(code_hash)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+
+        let expiry: i64 = r.try_get("expiry").unwrap_or_default();
+        if expiry < chrono::Utc::now().timestamp() {
+            return Ok(None);
+        }
+        Ok(Some(AuthorizationCode {
+            code_hash: r.try_get("code_hash").unwrap_or_default(),
+            client_id: r.try_get("client_id").unwrap_or_default(),
+            redirect_uri: r.try_get("redirect_uri").unwrap_or_default(),
+            scope: r.try_get("scope").unwrap_or_default(),
+            nonce: r.try_get("nonce").ok().flatten(),
+            code_challenge: r.try_get("code_challenge").unwrap_or_default(),
+            code_challenge_method: r.try_get("code_challenge_method").unwrap_or_default(),
+            subject: r.try_get("subject").unwrap_or_default(),
+            realm: r.try_get("realm").unwrap_or_default(),
+            auth_time: r.try_get("auth_time").unwrap_or_default(),
+            expiry,
+        }))
+    }
+
+    // ── OIDC refresh-token operations ───────────────────────────────────────
+
+    async fn create_refresh_token(&self, token: &RefreshToken) -> AuthDbResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO oauth_refresh_tokens
+                (token_hash, client_id, subject, realm, scope, expiry, created_at, revoked)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(&token.token_hash)
+        .bind(&token.client_id)
+        .bind(&token.subject)
+        .bind(&token.realm)
+        .bind(&token.scope)
+        .bind(token.expiry)
+        .bind(token.created_at)
+        .bind(i8::from(token.revoked))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn get_refresh_token(&self, token_hash: &[u8]) -> AuthDbResult<Option<RefreshToken>> {
+        let row = sqlx::query("SELECT * FROM oauth_refresh_tokens WHERE token_hash = ?")
+            .bind(token_hash)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.map(|r| RefreshToken {
+            token_hash: r.try_get("token_hash").unwrap_or_default(),
+            client_id: r.try_get("client_id").unwrap_or_default(),
+            subject: r.try_get("subject").unwrap_or_default(),
+            realm: r.try_get("realm").unwrap_or_default(),
+            scope: r.try_get("scope").unwrap_or_default(),
+            expiry: r.try_get("expiry").unwrap_or_default(),
+            created_at: r.try_get("created_at").unwrap_or_default(),
+            revoked: r.try_get::<i8, _>("revoked").unwrap_or_default() != 0,
+        }))
+    }
+
+    async fn revoke_refresh_token(&self, token_hash: &[u8]) -> AuthDbResult<()> {
+        sqlx::query("UPDATE oauth_refresh_tokens SET revoked = 1 WHERE token_hash = ?")
+            .bind(token_hash)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn revoke_refresh_tokens_for_subject(
+        &self,
+        realm: &str,
+        subject: &str,
+    ) -> AuthDbResult<()> {
+        sqlx::query("UPDATE oauth_refresh_tokens SET revoked = 1 WHERE realm = ? AND subject = ?")
+            .bind(realm)
+            .bind(subject)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+/// Map a MySQL row to an [`OAuthClient`].
+fn mysql_row_to_oauth_client(r: sqlx::mysql::MySqlRow) -> OAuthClient {
+    OAuthClient {
+        client_id: r.try_get("client_id").unwrap_or_default(),
+        client_secret_hash: r
+            .try_get::<Option<Vec<u8>>, _>("client_secret_hash")
+            .ok()
+            .flatten(),
+        client_name: r.try_get("client_name").unwrap_or_default(),
+        redirect_uris: json_to_vec(&r.try_get::<String, _>("redirect_uris").unwrap_or_default()),
+        grant_types: json_to_vec(&r.try_get::<String, _>("grant_types").unwrap_or_default()),
+        response_types: json_to_vec(&r.try_get::<String, _>("response_types").unwrap_or_default()),
+        scopes: json_to_vec(&r.try_get::<String, _>("scopes").unwrap_or_default()),
+        token_endpoint_auth_method: r.try_get("token_endpoint_auth_method").unwrap_or_default(),
+        realm: r.try_get("realm").unwrap_or_default(),
+        created_at: r.try_get("created_at").unwrap_or_default(),
     }
 }

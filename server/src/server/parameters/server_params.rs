@@ -2,7 +2,7 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 
 use crate::{
     AuthError,
-    server::parameters::{DatabaseParams, ProxyParams, SessionJwtParams, TlsParams},
+    server::parameters::{DatabaseParams, OidcParams, ProxyParams, SessionJwtParams, TlsParams},
     session::StaleSessionCollectorConfig,
 };
 
@@ -42,6 +42,13 @@ pub struct ServerParams {
 
     /// Console logging configuration. When omitted, defaults to info level.
     pub log: Option<crate::server::parameters::LogConfig>,
+
+    /// OpenID Provider (OP) configuration. When present, the server exposes the
+    /// full OIDC front-channel and back-channel endpoints plus discovery
+    /// metadata. When omitted, the OIDC endpoints are still mounted using
+    /// default parameters and the session/TLS signing key (dev fallback).
+    #[serde(default)]
+    pub oidc_params: Option<OidcParams>,
 
     /// Path to the pre-built admin UI `dist/` directory.
     /// When set and the `admin-ui` feature is enabled, the server serves those

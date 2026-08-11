@@ -27,6 +27,10 @@ usage() {
       dmg              Build macOS DMG package
       (no type)        Build all supported packages for this platform
     update-hashes      Update expected binary hashes (release build)
+    oidc [mode]        Run OIDC compliance validators
+      harness          curl/bash end-to-end harness only
+      conformance      OpenID Foundation Conformance Suite (needs Docker)
+      all              both (default)
 
   Global options:
     -l, --link <static|dynamic>   OpenSSL linkage (default: static)
@@ -119,7 +123,7 @@ parse_global_options() {
       LINK="${2:-}"
       shift 2 || true
       ;;
-    docker | test | package | update-hashes)
+    docker | test | package | update-hashes | oidc)
       COMMAND="$1"
       shift
       break
@@ -198,11 +202,39 @@ dispatch_command() {
   update-hashes)
     update_hashes_command ${COMMAND_ARGS[@]+"${COMMAND_ARGS[@]}"}
     ;;
+  oidc)
+    oidc_command ${COMMAND_ARGS[@]+"${COMMAND_ARGS[@]}"}
+    ;;
   *)
     echo "Error: Unknown command '$COMMAND'" >&2
     usage
     ;;
   esac
+}
+
+# ── OIDC command ─────────────────────────────────────────────────────────────
+
+# Run the OIDC compliance validators: the curl/bash harness (always) and the
+# OpenID Foundation Conformance Suite (when Docker is available).
+oidc_command() {
+  local mode="${1:-all}"
+  case "$mode" in
+  harness)
+    bash "$REPO_ROOT/.github/scripts/test/oidc_curl_suite.sh"
+    ;;
+  conformance)
+    bash "$REPO_ROOT/.github/scripts/test/oidc_conformance.sh"
+    ;;
+  all | "")
+    bash "$REPO_ROOT/.github/scripts/test/oidc_curl_suite.sh"
+    bash "$REPO_ROOT/.github/scripts/test/oidc_conformance.sh" || true
+    ;;
+  *)
+    echo "Error: Unknown oidc mode '$mode' (valid: harness, conformance, all)" >&2
+    usage
+    ;;
+  esac
+  exit 0
 }
 
 # ── Docker command ────────────────────────────────────────────────────────────

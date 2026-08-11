@@ -230,6 +230,26 @@ async fn prepare_auth_verifier(
             .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?,
     );
 
+    // Build the OpenID Provider runtime state (issuer, dedicated signing key,
+    // combined JWKS, TTLs). Warn when no dedicated OIDC key is configured and it
+    // falls back to the session/TLS key.
+    if params
+        .oidc_params
+        .as_ref()
+        .and_then(|o| o.oidc_signing_private_key.as_ref())
+        .is_none()
+    {
+        warn!(
+            "OIDC: no dedicated oidc_params.oidc_signing_private_key configured — \
+             falling back to the session/TLS signing key. Configure a dedicated key in production."
+        );
+    }
+    let oidc_state = Arc::new(
+        crate::oidc::build_oidc_state(&params)
+            .map_err(|e| crate::AuthError::Init(format!("Failed to build OIDC state: {e}")))?,
+    );
+    info!("OIDC issuer: {}", oidc_state.issuer);
+
     // Clone test server params for HttpServer closure
     let server_params = params.clone();
 
@@ -245,6 +265,7 @@ async fn prepare_auth_verifier(
             default_username.clone(),
             jwt_token_config.clone(),
             jwks_data.clone(),
+            oidc_state.clone(),
         )
     });
     let http_server = http_server
@@ -296,6 +317,7 @@ async fn prepare_auth_verifier(
 ///
 /// This function is generic over the session store type to support both
 /// `CookieSessionStore` and `RedisSessionStore`.
+#[allow(clippy::too_many_arguments)]
 fn build_app(
     server_params: Arc<ServerParams>,
     database: Arc<dyn crate::database::Database>,
@@ -304,6 +326,7 @@ fn build_app(
     default_username: Option<String>,
     jwt_token_config: Arc<JwtTokenConfig>,
     jwks_data: Arc<JwksData>,
+    oidc_state: Arc<crate::oidc::OidcState>,
 ) -> App<
     impl ServiceFactory<
         ServiceRequest,
@@ -328,6 +351,7 @@ fn build_app(
         .app_data(Data::new(session_store.clone()))
         .app_data(Data::new(jwt_token_config.clone()))
         .app_data(Data::new(jwks_data.clone()))
+        .app_data(Data::new(oidc_state.clone()))
         .app_data(PayloadConfig::new(1_000_000))
         .app_data(JsonConfig::default().limit(1_000_000));
 
@@ -370,7 +394,11 @@ fn build_app(
     // the other unauthenticated endpoints so browser-based clients can fetch it.
     let well_known_scope = web::scope("/.well-known")
         .wrap(Cors::permissive())
-        .route("/jwks.json", web::get().to(jwks_well_known));
+        .route("/jwks.json", web::get().to(jwks_well_known))
+        .route(
+            "/openid-configuration",
+            web::get().to(crate::server::endpoints::openid_configuration),
+        );
 
     #[cfg(feature = "swagger-ui")]
     let public_scope = {
@@ -414,7 +442,13 @@ fn build_app(
         .service(list_userpass_by_realm)
         .service(totp_generate)
         .service(totp_verify)
-        .service(totp_disable);
+        .service(totp_disable)
+        // OIDC client provisioning (realm-admin scoped)
+        .service(crate::server::endpoints::create_oauth_client)
+        .service(crate::server::endpoints::list_oauth_clients)
+        .service(crate::server::endpoints::get_oauth_client)
+        .service(crate::server::endpoints::update_oauth_client)
+        .service(crate::server::endpoints::delete_oauth_client);
 
     let sessions_scope = web::scope("/sessions")
         .wrap(CookieAuthSameServer::new(
@@ -509,6 +543,28 @@ fn build_app(
         .service(auth_token_renew_self)
         .service(auth_token_revoke_self);
 
+    // ── OIDC OpenID Provider scope (isolated front-channel + back-channel) ──────
+    //
+    // Browser-facing `/authorize` (login + consent) and the API back-channel
+    // (`/token`, `/userinfo`, `/introspect`, `/revoke`, `/jwks`). Permissive CORS
+    // so SPA and CLI relying parties can reach the token/userinfo endpoints; the
+    // strict per-page CSP is set by the authorize handler itself.
+    use crate::server::endpoints::{
+        authorize, authorize_consent, authorize_login, introspect as oidc_introspect, oidc_jwks,
+        oidc_token, revoke as oidc_revoke, userinfo,
+    };
+    let oidc_scope = web::scope("/oidc")
+        .wrap(Cors::permissive())
+        .route("/authorize", web::get().to(authorize))
+        .route("/authorize/login", web::post().to(authorize_login))
+        .route("/authorize/consent", web::post().to(authorize_consent))
+        .route("/token", web::post().to(oidc_token))
+        .route("/userinfo", web::get().to(userinfo))
+        .route("/userinfo", web::post().to(userinfo))
+        .route("/introspect", web::post().to(oidc_introspect))
+        .route("/revoke", web::post().to(oidc_revoke))
+        .route("/jwks", web::get().to(oidc_jwks));
+
     let app = app
         .service(public_scope)
         .service(well_known_scope)
@@ -525,6 +581,7 @@ fn build_app(
         .service(approle_admin_scope) // /auth/approle        (admin CRUD)
         .service(k8s_admin_scope) // /auth/kubernetes     (admin CRUD)
         .service(auth_token_scope) // /auth/token          (self-service)
+        .service(oidc_scope) // /oidc                 (OpenID Provider)
         // Structured fallback for any unmatched route (e.g. a SPIRE server
         // misconfigured with an unsupported auth method such as `cert_auth`,
         // which has no `/auth/cert/*` handler). Without this, Actix returns a
