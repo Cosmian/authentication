@@ -2,7 +2,9 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 
 use crate::{
     AuthError,
-    server::parameters::{DatabaseParams, ProxyParams, SessionJwtParams, TlsParams},
+    server::parameters::{
+        CertificateJwtParams, DatabaseParams, ProxyParams, SessionJwtParams, TlsParams,
+    },
     session::StaleSessionCollectorConfig,
 };
 
@@ -16,6 +18,11 @@ pub struct ServerParams {
     pub default_username: Option<String>,
 
     pub session_jwt_params: Option<SessionJwtParams>,
+
+    /// Optional certificate signing key for `POST /certify`. Deliberately separate from
+    /// `session_jwt_params`. When unset, `/certify` and `/.well-known/certificate-jwks.json`
+    /// are unavailable (500 / 404 respectively) but the rest of the server is unaffected.
+    pub certificate_jwt_params: Option<CertificateJwtParams>,
 
     /// Optional database parameters for all objects but the sessions -
     /// if not provided an in-memory SQLite database will be used
@@ -185,5 +192,47 @@ impl ServerParams {
                 "Failed to create encoding key from PEM at {jwt_encoding_key_path}: {e}"
             ))
         })
+    }
+
+    /// Returns `Ok(None)` when `certificate_jwt_params` is unset (the certificate feature is
+    /// disabled). Returns `Err` only when it's set but the PEM file is unreadable/malformed.
+    pub fn get_certificate_decoding_key(&self) -> Result<Option<DecodingKey>, AuthError> {
+        let Some(cert_params) = self.certificate_jwt_params.as_ref() else {
+            return Ok(None);
+        };
+        let path = &cert_params.cert_ec_public_key;
+        let pem = std::fs::read_to_string(path).map_err(|e| {
+            AuthError::Init(format!(
+                "Failed to read certificate decoding key PEM file at {path}: {e}"
+            ))
+        })?;
+        DecodingKey::from_ec_pem(pem.as_bytes())
+            .map(Some)
+            .map_err(|e| {
+                AuthError::Init(format!(
+                    "Failed to create certificate decoding key from PEM at {path}: {e}"
+                ))
+            })
+    }
+
+    /// Returns `Ok(None)` when `certificate_jwt_params` is unset (the certificate feature is
+    /// disabled). Returns `Err` only when it's set but the PEM file is unreadable/malformed.
+    pub fn get_certificate_encoding_key(&self) -> Result<Option<EncodingKey>, AuthError> {
+        let Some(cert_params) = self.certificate_jwt_params.as_ref() else {
+            return Ok(None);
+        };
+        let path = &cert_params.cert_ec_private_key;
+        let pem = std::fs::read_to_string(path).map_err(|e| {
+            AuthError::Init(format!(
+                "Failed to read certificate encoding key PEM file at {path}: {e}"
+            ))
+        })?;
+        EncodingKey::from_ec_pem(pem.as_bytes())
+            .map(Some)
+            .map_err(|e| {
+                AuthError::Init(format!(
+                    "Failed to create certificate encoding key from PEM at {path}: {e}"
+                ))
+            })
     }
 }

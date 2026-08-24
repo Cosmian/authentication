@@ -95,6 +95,21 @@ server_ca_chain = "/etc/cosmian/ca.pem" # <REQUIRED>
 # jwt_ec_public_key  = "/etc/cosmian/jwt.pub.pem"
 
 # -----------------------------------------------------------------------------
+# Certificate signing key for POST /certify (optional)
+# -----------------------------------------------------------------------------
+# Unlike session JWTs, there is NO fallback to tls_params here: certificates
+# must always be signed with a key of their own, so they can never be
+# presented back as a session cookie/token. Without this section, /certify
+# returns 500 and /.well-known/certificate-jwks.json returns 404 — the rest
+# of the server is unaffected.
+
+# [certificate_jwt_params]
+# # Path to the EC private key PEM file used to sign certificates.
+# cert_ec_private_key = "/etc/cosmian/certify.key.pem"
+# # Path to the EC public key PEM file used to verify certificates.
+# cert_ec_public_key  = "/etc/cosmian/certify.pub.pem"
+
+# -----------------------------------------------------------------------------
 # Primary database (users, realms, credentials, …)
 # -----------------------------------------------------------------------------
 # When omitted, an SQLite file named auth_verifier.db is created in the

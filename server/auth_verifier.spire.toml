@@ -101,6 +101,15 @@ server_ca_chain = "/etc/cosmian/auth-verifier/certs/auth.ca.pem"
 # jwt_ec_private_key = "certificates/jwt.key.pem"   # must be EC P-256
 # jwt_ec_public_key  = "certificates/jwt.pub.pem"
 
+# ── Certificate signing key for POST /certify (optional) ──────────────────────
+# No fallback to [tls_params] here: certificates are always signed with a key
+# of their own, so they can never be presented back as a session cookie/token.
+# Without this section, /certify returns 500 and /.well-known/certificate-jwks.json
+# returns 404 — the rest of the server is unaffected.
+# [certificate_jwt_params]
+# cert_ec_private_key = "certificates/certify.key.pem"   # must be EC P-256
+# cert_ec_public_key  = "certificates/certify.pub.pem"
+
 # ── Primary database (required to persist AppRoles) ──────────────────────────
 # Use a PERSISTENT database: AppRole role_ids and secret_ids are stored here and
 # MUST survive restarts, otherwise every SPIRE server would need re-provisioning

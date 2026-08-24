@@ -77,6 +77,7 @@ async fn setup_jwt_realm(ctx: &crate::tests::TestsContext) -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await
 }

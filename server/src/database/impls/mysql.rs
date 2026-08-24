@@ -32,12 +32,22 @@ impl Database for MySqlDatabase {
                 auth_params JSON NOT NULL,
                 cookie_max_age_seconds BIGINT UNSIGNED NOT NULL,
                 max_stale_age_seconds BIGINT UNSIGNED NOT NULL,
+                certificate_max_age_seconds BIGINT UNSIGNED NOT NULL DEFAULT 31536000,
                 CHECK (id REGEXP '^[a-zA-Z0-9_-]+$')
             )
             "#,
         )
         .execute(&self.pool)
         .await?;
+
+        // Migration: add the column to a realm table created before this field existed.
+        // MySQL only supports `ADD COLUMN IF NOT EXISTS` since 8.0.29, so ignore the error on
+        // older servers/already-migrated tables instead of relying on that syntax.
+        let _ = sqlx::query(
+            "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds BIGINT UNSIGNED NOT NULL DEFAULT 31536000",
+        )
+        .execute(&self.pool)
+        .await;
 
         // Create userpass table with composite primary key and foreign key
         sqlx::query(
@@ -209,14 +219,15 @@ impl Database for MySqlDatabase {
 
         sqlx::query(
             r#"
-            INSERT INTO realm (id, auth_params, cookie_max_age_seconds, max_stale_age_seconds)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO realm (id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&realm.id)
         .bind(auth_params_json)
         .bind(realm.session_max_age_seconds)
         .bind(realm.session_max_stale_age_seconds)
+        .bind(realm.certificate_max_age_seconds)
         .execute(&self.pool)
         .await?;
 
@@ -226,7 +237,7 @@ impl Database for MySqlDatabase {
     async fn get_realm(&self, id: &str) -> AuthDbResult<Option<Realm>> {
         let row = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds
+            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
             FROM realm
             WHERE id = ?
             "#,
@@ -250,6 +261,8 @@ impl Database for MySqlDatabase {
                     session_max_age_seconds: row.try_get::<i64, _>("cookie_max_age_seconds")?,
                     session_max_stale_age_seconds: row
                         .try_get::<i64, _>("max_stale_age_seconds")?,
+                    certificate_max_age_seconds: row
+                        .try_get::<i64, _>("certificate_max_age_seconds")?,
                 }))
             }
             None => Ok(None),
@@ -266,13 +279,14 @@ impl Database for MySqlDatabase {
         sqlx::query(
             r#"
             UPDATE realm
-            SET auth_params = ?, cookie_max_age_seconds = ?, max_stale_age_seconds = ?
+            SET auth_params = ?, cookie_max_age_seconds = ?, max_stale_age_seconds = ?, certificate_max_age_seconds = ?
             WHERE id = ?
             "#,
         )
         .bind(auth_params_json)
         .bind(realm.session_max_age_seconds)
         .bind(realm.session_max_stale_age_seconds)
+        .bind(realm.certificate_max_age_seconds)
         .bind(&realm.id)
         .execute(&self.pool)
         .await?;
@@ -296,7 +310,7 @@ impl Database for MySqlDatabase {
     async fn list_realms(&self) -> AuthDbResult<Vec<Realm>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds
+            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
             FROM realm
             ORDER BY id
             "#,
@@ -318,6 +332,8 @@ impl Database for MySqlDatabase {
                 auth_params,
                 session_max_age_seconds: row.try_get::<i64, _>("cookie_max_age_seconds")?,
                 session_max_stale_age_seconds: row.try_get::<i64, _>("max_stale_age_seconds")?,
+                certificate_max_age_seconds: row
+                    .try_get::<i64, _>("certificate_max_age_seconds")?,
             });
         }
 

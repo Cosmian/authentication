@@ -31,9 +31,17 @@ impl Database for PostgresDatabase {
                 id TEXT PRIMARY KEY CHECK (id ~ '^[a-zA-Z0-9_-]+$'),
                 auth_params JSONB NOT NULL,
                 cookie_max_age_seconds BIGINT NOT NULL,
-                max_stale_age_seconds BIGINT NOT NULL
+                max_stale_age_seconds BIGINT NOT NULL,
+                certificate_max_age_seconds BIGINT NOT NULL DEFAULT 31536000
             )
             "#,
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Migration: add the column to a realm table created before this field existed.
+        sqlx::query(
+            "ALTER TABLE realm ADD COLUMN IF NOT EXISTS certificate_max_age_seconds BIGINT NOT NULL DEFAULT 31536000",
         )
         .execute(&self.pool)
         .await?;
@@ -200,14 +208,15 @@ impl Database for PostgresDatabase {
 
         sqlx::query(
             r#"
-            INSERT INTO realm (id, auth_params, cookie_max_age_seconds, max_stale_age_seconds)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO realm (id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
         )
         .bind(&realm.id)
         .bind(auth_params_json)
         .bind(realm.session_max_age_seconds)
         .bind(realm.session_max_stale_age_seconds)
+        .bind(realm.certificate_max_age_seconds)
         .execute(&self.pool)
         .await?;
 
@@ -217,7 +226,7 @@ impl Database for PostgresDatabase {
     async fn get_realm(&self, id: &str) -> AuthDbResult<Option<Realm>> {
         let row = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds
+            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
             FROM realm
             WHERE id = $1
             "#,
@@ -241,6 +250,8 @@ impl Database for PostgresDatabase {
                     session_max_age_seconds: row.try_get::<i64, _>("cookie_max_age_seconds")?,
                     session_max_stale_age_seconds: row
                         .try_get::<i64, _>("max_stale_age_seconds")?,
+                    certificate_max_age_seconds: row
+                        .try_get::<i64, _>("certificate_max_age_seconds")?,
                 }))
             }
             None => Ok(None),
@@ -257,7 +268,7 @@ impl Database for PostgresDatabase {
         sqlx::query(
             r#"
             UPDATE realm
-            SET auth_params = $2, cookie_max_age_seconds = $3, max_stale_age_seconds = $4
+            SET auth_params = $2, cookie_max_age_seconds = $3, max_stale_age_seconds = $4, certificate_max_age_seconds = $5
             WHERE id = $1
             "#,
         )
@@ -265,6 +276,7 @@ impl Database for PostgresDatabase {
         .bind(auth_params_json)
         .bind(realm.session_max_age_seconds)
         .bind(realm.session_max_stale_age_seconds)
+        .bind(realm.certificate_max_age_seconds)
         .execute(&self.pool)
         .await?;
 
@@ -287,7 +299,7 @@ impl Database for PostgresDatabase {
     async fn list_realms(&self) -> AuthDbResult<Vec<Realm>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds
+            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
             FROM realm
             ORDER BY id
             "#,
@@ -309,6 +321,8 @@ impl Database for PostgresDatabase {
                 auth_params,
                 session_max_age_seconds: row.try_get::<i64, _>("cookie_max_age_seconds")?,
                 session_max_stale_age_seconds: row.try_get::<i64, _>("max_stale_age_seconds")?,
+                certificate_max_age_seconds: row
+                    .try_get::<i64, _>("certificate_max_age_seconds")?,
             });
         }
 

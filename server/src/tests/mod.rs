@@ -5,6 +5,8 @@ mod app_auth_tests;
 mod context;
 pub use context::TestsContext;
 
+mod certify_tests;
+
 mod cookie_auth_tests;
 
 mod dummy_idp;
@@ -22,7 +24,7 @@ mod logging;
 pub use logging::init_test_logging;
 
 mod params;
-pub use params::get_default_server_params;
+pub use params::{get_default_server_params, get_default_server_params_with_certify};
 
 mod sessions_api;
 

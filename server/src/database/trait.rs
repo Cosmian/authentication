@@ -95,6 +95,7 @@ pub trait Database: Send + Sync {
                 },
                 session_max_age_seconds: 3600,
                 session_max_stale_age_seconds: 3600,
+                certificate_max_age_seconds: 365 * 24 * 3600,
             };
             self.create_realm(&app_realm).await?;
         }

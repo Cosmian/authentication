@@ -17,6 +17,8 @@ use crate::{
             auth_token_lookup_self,
             auth_token_renew_self,
             auth_token_revoke_self,
+            certificate_jwks_well_known,
+            certify,
             create_admin,
             create_realm,
             create_userpass,
@@ -230,6 +232,38 @@ async fn prepare_auth_verifier(
             .map_err(|e| crate::AuthError::Init(format!("Failed to build JWKS: {e}")))?,
     );
 
+    // Certificate signing key for `POST /certify` — optional, and deliberately always ES256
+    // regardless of the (generic) algorithm used for session JWTs. `None` when
+    // `certificate_jwt_params` is unset: /certify and the certificate JWKS become unavailable
+    // but the rest of the server is unaffected.
+    let cert_jwt_config = match (
+        params.get_certificate_encoding_key()?,
+        params.get_certificate_decoding_key()?,
+    ) {
+        (Some(encoding_key), Some(decoding_key)) => Some(Arc::new(JwtTokenConfig {
+            algorithm: Algorithm::ES256,
+            encoding_key,
+            decoding_key,
+        })),
+        _ => None,
+    };
+    let cert_jwks_data = params
+        .certificate_jwt_params
+        .as_ref()
+        .map(|cert_params| {
+            let pem = std::fs::read_to_string(&cert_params.cert_ec_public_key).map_err(|e| {
+                crate::AuthError::Init(format!(
+                    "Failed to read certificate public key PEM for JWKS ({}): {e}",
+                    cert_params.cert_ec_public_key
+                ))
+            })?;
+            crate::session::build_jwks_from_pem(&pem).map_err(|e| {
+                crate::AuthError::Init(format!("Failed to build certificate JWKS: {e}"))
+            })
+        })
+        .transpose()?
+        .map(Arc::new);
+
     // Clone test server params for HttpServer closure
     let server_params = params.clone();
 
@@ -245,6 +279,8 @@ async fn prepare_auth_verifier(
             default_username.clone(),
             jwt_token_config.clone(),
             jwks_data.clone(),
+            cert_jwt_config.clone(),
+            cert_jwks_data.clone(),
         )
     });
     let http_server = http_server
@@ -296,6 +332,7 @@ async fn prepare_auth_verifier(
 ///
 /// This function is generic over the session store type to support both
 /// `CookieSessionStore` and `RedisSessionStore`.
+#[allow(clippy::too_many_arguments)]
 fn build_app(
     server_params: Arc<ServerParams>,
     database: Arc<dyn crate::database::Database>,
@@ -304,6 +341,8 @@ fn build_app(
     default_username: Option<String>,
     jwt_token_config: Arc<JwtTokenConfig>,
     jwks_data: Arc<JwksData>,
+    cert_jwt_config: Option<Arc<JwtTokenConfig>>,
+    cert_jwks_data: Option<Arc<JwksData>>,
 ) -> App<
     impl ServiceFactory<
         ServiceRequest,
@@ -332,6 +371,8 @@ fn build_app(
         .app_data(Data::new(session_store.clone()))
         .app_data(Data::new(jwt_token_config.clone()))
         .app_data(Data::new(jwks_data.clone()))
+        .app_data(Data::new(cert_jwt_config.clone()))
+        .app_data(Data::new(cert_jwks_data.clone()))
         .app_data(PayloadConfig::new(1_000_000))
         .app_data(JsonConfig::default().limit(1_000_000));
 
@@ -363,6 +404,15 @@ fn build_app(
         .wrap(build_admin_cors(&allowed_origins))
         .route("", web::get().to(whoami));
 
+    let certify_scope = web::scope("/certify")
+        .wrap(CookieAuthSameServer::new(
+            session_store.clone(),
+            jwt_token_config.clone(),
+        ))
+        .wrap(ExtractRealm::new(database.clone()))
+        .wrap(build_admin_cors(&allowed_origins))
+        .route("", web::post().to(certify));
+
     // The public scope
     let public_scope = web::scope("/public")
         .wrap(Cors::permissive())
@@ -374,7 +424,11 @@ fn build_app(
     // the other unauthenticated endpoints so browser-based clients can fetch it.
     let well_known_scope = web::scope("/.well-known")
         .wrap(Cors::permissive())
-        .route("/jwks.json", web::get().to(jwks_well_known));
+        .route("/jwks.json", web::get().to(jwks_well_known))
+        .route(
+            "/certificate-jwks.json",
+            web::get().to(certificate_jwks_well_known),
+        );
 
     #[cfg(feature = "swagger-ui")]
     let public_scope = {
@@ -518,6 +572,7 @@ fn build_app(
         .service(well_known_scope)
         .service(client_scope)
         .service(whoami_scope)
+        .service(certify_scope)
         .service(sessions_scope)
         .service(realms_crud_scope)
         .service(app_scope)

@@ -240,6 +240,7 @@ async fn test_login_with_expired_password_blocked() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
@@ -293,6 +294,7 @@ async fn test_login_with_expired_password_allowed() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
@@ -476,6 +478,7 @@ async fn test_create_userpass_then_authenticate() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
@@ -530,6 +533,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
