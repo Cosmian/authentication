@@ -62,7 +62,7 @@ pub fn create_userpass(
 /// Authenticate as the seeded super admin and return a ready-to-use client.
 pub async fn authenticate_as_admin(ctx: &TestsContext) -> AuthResult<AuthClient> {
     let client = ctx.get_test_client(admin_scheme());
-    let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
+    let (result, cookie) = client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated next step after super admin login"
@@ -105,7 +105,7 @@ pub async fn create_and_authenticate_realm_admin(
         password: password.to_string(),
     };
     let client = ctx.get_test_client(scheme);
-    let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
+    let (result, cookie) = client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated after realm admin login"

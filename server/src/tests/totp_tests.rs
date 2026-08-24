@@ -20,7 +20,7 @@ async fn test_login_without_totp_succeeds_normally() -> AuthResult<()> {
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
 
-    let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
+    let (result, cookie) = client.login(ADMIN_REALM, None).await?;
 
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
@@ -47,7 +47,7 @@ async fn test_login_totp_required_when_no_code() -> AuthResult<()> {
     });
 
     // Login first so admin client has a valid session cookie
-    admin.login(ADMIN_REALM, None, None).await?;
+    admin.login(ADMIN_REALM, None).await?;
 
     // Generate and immediately enroll TOTP for the admin user
     let generated = admin
@@ -75,7 +75,7 @@ async fn test_login_totp_required_when_no_code() -> AuthResult<()> {
         username: APP_REALM_ADMIN_USERNAME.to_string(),
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
-    let (result, cookie) = fresh_client.login(ADMIN_REALM, None, None).await?;
+    let (result, cookie) = fresh_client.login(ADMIN_REALM, None).await?;
 
     assert!(
         matches!(result.next_step, AuthenticationNextStep::TotpRequired),
@@ -113,7 +113,7 @@ async fn test_login_with_valid_totp_succeeds() -> AuthResult<()> {
     });
 
     // Establish admin session
-    admin.login(ADMIN_REALM, None, None).await?;
+    admin.login(ADMIN_REALM, None).await?;
 
     // Set up TOTP for the admin user
     let generated = admin
@@ -142,9 +142,7 @@ async fn test_login_with_valid_totp_succeeds() -> AuthResult<()> {
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
     let login_token = totps.generate_current_token()?;
-    let (result, cookie) = fresh_client
-        .login(ADMIN_REALM, None, Some(login_token))
-        .await?;
+    let (result, cookie) = fresh_client.login(ADMIN_REALM, Some(login_token)).await?;
 
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
@@ -176,7 +174,7 @@ async fn test_login_with_invalid_totp_returns_error() -> AuthResult<()> {
     });
 
     // Establish admin session and enable TOTP
-    admin.login(ADMIN_REALM, None, None).await?;
+    admin.login(ADMIN_REALM, None).await?;
     let generated = admin
         .generate_totp(ADMIN_REALM, APP_REALM_ADMIN_USERNAME, None)
         .await?;
@@ -203,7 +201,7 @@ async fn test_login_with_invalid_totp_returns_error() -> AuthResult<()> {
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
     let login_result = fresh_client
-        .login(ADMIN_REALM, None, Some("000000".to_string()))
+        .login(ADMIN_REALM, Some("000000".to_string()))
         .await;
 
     assert!(
@@ -238,7 +236,7 @@ async fn test_login_after_totp_disabled_succeeds() -> AuthResult<()> {
     });
 
     // Establish admin session and enable TOTP
-    admin.login(ADMIN_REALM, None, None).await?;
+    admin.login(ADMIN_REALM, None).await?;
     let generated = admin
         .generate_totp(ADMIN_REALM, APP_REALM_ADMIN_USERNAME, None)
         .await?;
@@ -264,7 +262,7 @@ async fn test_login_after_totp_disabled_succeeds() -> AuthResult<()> {
         username: APP_REALM_ADMIN_USERNAME.to_string(),
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
-    let (step_check, _) = fresh_client.login(ADMIN_REALM, None, None).await?;
+    let (step_check, _) = fresh_client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(step_check.next_step, AuthenticationNextStep::TotpRequired),
         "Expected TotpRequired before disabling, got {:?}",
@@ -277,7 +275,7 @@ async fn test_login_after_totp_disabled_succeeds() -> AuthResult<()> {
         .await?;
 
     // Now login without TOTP should succeed
-    let (result, cookie) = fresh_client.login(ADMIN_REALM, None, None).await?;
+    let (result, cookie) = fresh_client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated after disabling TOTP, got {:?}",

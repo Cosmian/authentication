@@ -79,19 +79,17 @@ Authenticate a client and issue a session cookie. The authentication method is d
 | JWT Bearer         | `Authorization: Bearer <jwt_token>`                |
 | Client Certificate | Client certificate in TLS handshake                |
 
-#### Request body (optional — for public-key FIDO2 challenge or TOTP code)
+#### Request body (optional — for the TOTP code)
 
 ```json
 {
-  "public_key_pem": null,
   "totp_code": "482913"
 }
 ```
 
-| Field            | Type               | Description                                           |
-| ---------------- | ------------------ | ----------------------------------------------------- |
-| `public_key_pem` | `String` \| `null` | Client public key (FIDO2 / digital credentials flows) |
-| `totp_code`      | `String` \| `null` | TOTP verification code for 2FA step                   |
+| Field       | Type               | Description                          |
+| ----------- | ------------------ | ------------------------------------ |
+| `totp_code` | `String` \| `null` | TOTP verification code for 2FA step  |
 
 **Response — `200 OK`**
 
@@ -994,5 +992,4 @@ The JWT payload returned by `GET /whoami`:
 | `iat`    | `i64`      | Issued-at (Unix seconds)                     |
 | `jti`    | `String`   | JWT ID                                       |
 | `as_as`  | `String`   | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`) |
-| `as_pk`  | `String`   | Client public key PEM (when applicable)      |
 | `as_rid` | `String`   | Realm ID                                     |

@@ -334,10 +334,6 @@ components:
     LoginRequest:
       type: object
       properties:
-        public_key_pem:
-          type: string
-          nullable: true
-          example:
         totp_code:
           type: string
           nullable: true
@@ -391,10 +387,6 @@ components:
           example: 7f000101-0001-0001-0001-000000000001
         as_as:
           $ref: '#/components/schemas/AuthScheme'
-        as_pk:
-          type: string
-          nullable: true
-          example:
         as_rid:
           type: string
           example: my-service
@@ -1006,12 +998,10 @@ paths:
               standard:
                 summary: Normal login
                 value:
-                  public_key_pem:
                   totp_code:
               withTotp:
                 summary: Second step with TOTP code
                 value:
-                  public_key_pem:
                   totp_code: '482913'
       responses:
         '200':

@@ -144,10 +144,6 @@ pub struct AuthPrivateClaims {
     #[serde(rename = "as_as", skip_serializing_if = "Option::is_none")]
     pub auth_scheme: Option<AuthScheme>,
 
-    /// Client Public Key PKCS#8 PEM string.
-    #[serde(rename = "as_pk", skip_serializing_if = "Option::is_none")]
-    pub public_key: Option<String>,
-
     /// Realm ID that the client authenticated to.
     /// Also used as the OPA domain scope: consumers should read `as_rid` for
     /// domain-scoped RBAC rather than a separate `as_domain` claim.

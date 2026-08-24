@@ -97,8 +97,6 @@ pub async fn login(
         &authenticated_client.username,
         authenticated_client.auth_scheme,
         &realm.id,
-        // TODO : Only useful for VELO ?
-        login_request.public_key_pem.clone(),
         roles,
         &jwt_token_config,
         realm.session_max_age_seconds,

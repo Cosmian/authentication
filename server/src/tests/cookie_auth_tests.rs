@@ -32,7 +32,7 @@ async fn test_login_and_whoami_success() -> AuthResult<()> {
     let client = ctx.get_test_client(admin_scheme());
 
     // --- login ---
-    let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
+    let (result, cookie) = client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated next step, got {:?}",
@@ -141,7 +141,7 @@ async fn test_whoami_after_session_deleted_fails() -> AuthResult<()> {
     let client = ctx.get_test_client(admin_scheme());
 
     // Authenticate and capture the session ID.
-    let (result, _cookie) = client.login(ADMIN_REALM, None, None).await?;
+    let (result, _cookie) = client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Login should succeed"
@@ -200,7 +200,7 @@ async fn test_whoami_after_session_expired_fails() -> AuthResult<()> {
 
     // Step 1: Authenticate as admin (session_max_age = 3600 – the default).
     let admin_client = ctx.get_test_client(admin_scheme());
-    let (result, _) = admin_client.login(ADMIN_REALM, None, None).await?;
+    let (result, _) = admin_client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Admin login must succeed"
@@ -218,7 +218,7 @@ async fn test_whoami_after_session_expired_fails() -> AuthResult<()> {
     // Step 3: Login again with a brand-new client so the new session is created
     //         with the updated (1-second) TTL stored in the session table.
     let short_lived_client = ctx.get_test_client(admin_scheme());
-    let (result2, _) = short_lived_client.login(ADMIN_REALM, None, None).await?;
+    let (result2, _) = short_lived_client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result2.next_step, AuthenticationNextStep::Authenticated),
         "Second login must succeed"
@@ -283,7 +283,7 @@ async fn test_stale_session_collector_removes_expired_sessions() -> AuthResult<(
 
     // Step 1: Authenticate as admin (default long-lived session).
     let admin_client = ctx.get_test_client(admin_scheme());
-    let (result, _) = admin_client.login(ADMIN_REALM, None, None).await?;
+    let (result, _) = admin_client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Admin login must succeed"
@@ -300,7 +300,7 @@ async fn test_stale_session_collector_removes_expired_sessions() -> AuthResult<(
 
     // Step 3: Login with a fresh client so the new session uses the 1-second TTL.
     let short_lived_client = ctx.get_test_client(admin_scheme());
-    let (result2, _) = short_lived_client.login(ADMIN_REALM, None, None).await?;
+    let (result2, _) = short_lived_client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result2.next_step, AuthenticationNextStep::Authenticated),
         "Second login must succeed"
@@ -352,7 +352,7 @@ async fn test_login_wrong_password_returns_401() -> AuthResult<()> {
     };
     let client = ctx.get_test_client(bad_scheme);
 
-    let result = client.login(ADMIN_REALM, None, None).await;
+    let result = client.login(ADMIN_REALM, None).await;
 
     assert!(
         result.is_err(),
@@ -381,7 +381,7 @@ async fn test_login_unknown_username_returns_401() -> AuthResult<()> {
     };
     let client = ctx.get_test_client(unknown_scheme);
 
-    let result = client.login(ADMIN_REALM, None, None).await;
+    let result = client.login(ADMIN_REALM, None).await;
 
     assert!(
         result.is_err(),

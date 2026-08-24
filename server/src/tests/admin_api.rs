@@ -531,7 +531,7 @@ async fn test_get_admin_by_realm_admin() -> AuthResult<()> {
             password: "realm_admin_pass".to_string(),
         };
         let client = ctx.get_test_client(scheme);
-        let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
+        let (result, cookie) = client.login(ADMIN_REALM, None).await?;
         assert!(matches!(
             result.next_step,
             crate::AuthenticationNextStep::Authenticated
@@ -610,7 +610,7 @@ async fn test_delete_admin_by_realm_admin() -> AuthResult<()> {
             password: "realm_admin_pass".to_string(),
         };
         let client = ctx.get_test_client(scheme);
-        let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
+        let (result, cookie) = client.login(ADMIN_REALM, None).await?;
         assert!(matches!(
             result.next_step,
             crate::AuthenticationNextStep::Authenticated
@@ -1034,7 +1034,7 @@ async fn test_session_invalidated_after_admin_deletion() -> AuthResult<()> {
         password: "temp_pass".to_string(),
     };
     let transient_client = ctx.get_test_client(scheme);
-    let (res, cookie) = transient_client.login(ADMIN_REALM, None, None).await?;
+    let (res, cookie) = transient_client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(res.next_step, AuthenticationNextStep::Authenticated),
         "Transient user login must succeed"
@@ -1146,7 +1146,7 @@ async fn test_session_replay_after_logout() -> AuthResult<()> {
         password: "replay_pass".to_string(),
     };
     let victim_client = ctx.get_test_client(scheme);
-    let (res, _cookie) = victim_client.login(ADMIN_REALM, None, None).await?;
+    let (res, _cookie) = victim_client.login(ADMIN_REALM, None).await?;
     assert!(matches!(
         res.next_step,
         AuthenticationNextStep::Authenticated
