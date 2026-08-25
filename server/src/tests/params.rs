@@ -79,6 +79,8 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
         log: None,
         roles: Vec::new(),
         allowed_origins: Vec::new(),
+        login_rate_limit_per_second: 5,
+        login_rate_limit_burst: 10,
     };
 
     Ok(server_params)

@@ -67,6 +67,26 @@ pub struct ServerParams {
     /// Example: `["https://admin.example.com", "https://localhost:3000"]`
     #[serde(default)]
     pub allowed_origins: Vec<String>,
+
+    /// Sustained per-IP requests/second allowed on `POST /login` (default: 5). Limits
+    /// brute-force credential-stuffing without impacting normal usage. See
+    /// `login_rate_limit_burst`.
+    #[serde(default = "default_login_rate_limit_per_second")]
+    pub login_rate_limit_per_second: u32,
+
+    /// Burst capacity above the sustained rate for `POST /login` (default: 10) — how many
+    /// requests a single IP may send back-to-back before being throttled to the sustained
+    /// rate above.
+    #[serde(default = "default_login_rate_limit_burst")]
+    pub login_rate_limit_burst: u32,
+}
+
+fn default_login_rate_limit_per_second() -> u32 {
+    5
+}
+
+fn default_login_rate_limit_burst() -> u32 {
+    10
 }
 
 /// Parameters for seeding a realm-admin on first start in development mode.
