@@ -172,8 +172,14 @@ pub struct CertifyResponse {
 /// claims, never from the request body — to the caller-supplied key, and is signed with a
 /// certificate signing key entirely separate from the session JWT key so it can never be
 /// presented back as a session cookie/token.
+/// Maximum accepted length (bytes) for `verification_key`. Generous enough for any real
+/// public key or certificate chain PEM (even RSA-4096), while bounding the cost of embedding
+/// caller-supplied input into a signed certificate.
+const MAX_VERIFICATION_KEY_LEN: usize = 8192;
+
 pub async fn certify(
     cert_jwt_config: Data<Option<Arc<JwtTokenConfig>>>,
+    database: Data<Arc<dyn crate::database::Database>>,
     req: HttpRequest,
     body: Json<CertifyRequest>,
 ) -> Result<HttpResponse, AuthError> {
@@ -181,6 +187,16 @@ pub async fn certify(
     if verification_key.is_empty() {
         return Err(AuthError::BadRequest(
             "verification_key must not be empty".to_string(),
+        ));
+    }
+    if verification_key.len() > MAX_VERIFICATION_KEY_LEN {
+        return Err(AuthError::BadRequest(format!(
+            "verification_key must not exceed {MAX_VERIFICATION_KEY_LEN} bytes"
+        )));
+    }
+    if !verification_key.starts_with("-----BEGIN ") || !verification_key.contains("-----END ") {
+        return Err(AuthError::BadRequest(
+            "verification_key must be a PEM-encoded key or certificate".to_string(),
         ));
     }
 
@@ -192,11 +208,6 @@ pub async fn certify(
         .extensions()
         .get::<ClientClaims>()
         .ok_or_else(|| AuthError::Session("no user claims found in request".to_string()))?
-        .clone();
-    let realm = req
-        .extensions()
-        .get::<Realm>()
-        .ok_or_else(|| AuthError::Session("no realm found in request".to_string()))?
         .clone();
 
     let sub = claims
@@ -211,6 +222,13 @@ pub async fn certify(
         .private
         .realm_id
         .ok_or_else(|| AuthError::Session("no realm ID in session claims".to_string()))?;
+
+    // Look up the certificate TTL policy for the realm the session actually authenticated to.
+    // `/certify` has no `?realm=` query parameter, realm_id always comes from the session's own claims.
+    let realm = database
+        .get_realm(&realm_id)
+        .await?
+        .ok_or_else(|| AuthError::Session(format!("realm '{realm_id}' no longer exists")))?;
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

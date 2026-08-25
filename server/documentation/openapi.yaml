@@ -1141,7 +1141,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/CertifyResponse'
         '400':
-          description: verification_key missing or empty.
+          description: >
+            verification_key missing, empty, not PEM-shaped (-----BEGIN .../-----END ...),
+            or longer than 8192 bytes.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':

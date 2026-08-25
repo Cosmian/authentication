@@ -409,7 +409,6 @@ fn build_app(
             session_store.clone(),
             jwt_token_config.clone(),
         ))
-        .wrap(ExtractRealm::new(database.clone()))
         .wrap(build_admin_cors(&allowed_origins))
         .route("", web::post().to(certify));
 

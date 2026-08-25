@@ -63,11 +63,23 @@ impl Database for SqliteDatabase {
         .await?;
 
         // Migration: add the column to a realm table created before this field existed.
-        let _ = sqlx::query(
-            "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds INTEGER NOT NULL DEFAULT 31536000",
+        // Check first (rather than attempting the ALTER and swallowing any error) so a real
+        // failure — permissions, a locked DB, corruption — surfaces instead of silently
+        // leaving the schema without this column.
+        let has_certificate_max_age_seconds: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('realm') WHERE name='certificate_max_age_seconds'",
         )
-        .execute(&self.pool)
-        .await;
+        .fetch_one(&self.pool)
+        .await
+        .map(|c: i32| c > 0)
+        .unwrap_or(false);
+        if !has_certificate_max_age_seconds {
+            sqlx::query(
+                "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds INTEGER NOT NULL DEFAULT 31536000",
+            )
+            .execute(&self.pool)
+            .await?;
+        }
 
         // Create userpass table with composite primary key and foreign key
         sqlx::query(

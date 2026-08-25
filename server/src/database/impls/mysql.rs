@@ -41,13 +41,24 @@ impl Database for MySqlDatabase {
         .await?;
 
         // Migration: add the column to a realm table created before this field existed.
-        // MySQL only supports `ADD COLUMN IF NOT EXISTS` since 8.0.29, so ignore the error on
-        // older servers/already-migrated tables instead of relying on that syntax.
-        let _ = sqlx::query(
-            "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds BIGINT UNSIGNED NOT NULL DEFAULT 31536000",
+        // MySQL only supports `ADD COLUMN IF NOT EXISTS` since 8.0.29, so check first (rather
+        // than attempting the ALTER and swallowing any error) — this way a real failure
+        // (permissions, a locked table, corruption) surfaces instead of silently leaving the
+        // schema without this column on older servers.
+        let has_certificate_max_age_seconds: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='realm' AND column_name='certificate_max_age_seconds'",
         )
-        .execute(&self.pool)
-        .await;
+        .fetch_one(&self.pool)
+        .await
+        .map(|c: i64| c > 0)
+        .unwrap_or(false);
+        if !has_certificate_max_age_seconds {
+            sqlx::query(
+                "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds BIGINT UNSIGNED NOT NULL DEFAULT 31536000",
+            )
+            .execute(&self.pool)
+            .await?;
+        }
 
         // Create userpass table with composite primary key and foreign key
         sqlx::query(

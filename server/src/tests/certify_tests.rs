@@ -4,11 +4,14 @@
 //! `admin` user (realm `_`), and exercises the certificate issuance flow.
 
 use crate::{
-    AuthError, AuthResult, AuthenticationNextStep,
+    AuthError, AuthResult, AuthenticationNextStep, Realm,
     client::AuthClientScheme,
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
     models::ADMIN_REALM,
-    tests::{get_default_server_params, get_default_server_params_with_certify, start_test_server},
+    tests::{
+        get_default_server_params, get_default_server_params_with_certify, helpers::test_realm,
+        start_test_server,
+    },
 };
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 
@@ -143,6 +146,110 @@ async fn test_certify_without_configured_key_fails() -> AuthResult<()> {
     assert!(
         matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("500")),
         "Expected 500, got: {err:?}"
+    );
+
+    ctx.stop_server().await
+}
+
+/// A `verification_key` longer than the accepted maximum must be rejected with 400.
+#[actix_web::test]
+async fn test_certify_rejects_oversized_verification_key() -> AuthResult<()> {
+    let ctx = start_test_server(get_default_server_params_with_certify()?).await?;
+    let client = ctx.get_test_client(admin_scheme());
+    client.login(ADMIN_REALM, None).await?;
+
+    let oversized = format!(
+        "-----BEGIN PUBLIC KEY-----\n{}\n-----END PUBLIC KEY-----",
+        "A".repeat(9000)
+    );
+    let body = serde_json::json!({ "verification_key": oversized });
+    let err = client
+        .post::<_, serde_json::Value>(&format!("/certify?realm={ADMIN_REALM}"), &body)
+        .await
+        .expect_err("certify should reject an oversized verification_key");
+
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400")),
+        "Expected 400, got: {err:?}"
+    );
+
+    ctx.stop_server().await
+}
+
+/// A `verification_key` that isn't PEM-shaped must be rejected with 400, rather than being
+/// blindly trusted and embedded verbatim into a signed certificate.
+#[actix_web::test]
+async fn test_certify_rejects_non_pem_verification_key() -> AuthResult<()> {
+    let ctx = start_test_server(get_default_server_params_with_certify()?).await?;
+    let client = ctx.get_test_client(admin_scheme());
+    client.login(ADMIN_REALM, None).await?;
+
+    let body = serde_json::json!({ "verification_key": "not-a-pem-key-at-all" });
+    let err = client
+        .post::<_, serde_json::Value>(&format!("/certify?realm={ADMIN_REALM}"), &body)
+        .await
+        .expect_err("certify should reject a non-PEM verification_key");
+
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400")),
+        "Expected 400, got: {err:?}"
+    );
+
+    ctx.stop_server().await
+}
+
+/// The certificate's `exp` must be computed from the session's own realm — never from the
+/// `?realm=` query parameter, which a caller could set to a different, more permissive realm
+/// while the certificate still (correctly) claims their real realm_id.
+#[actix_web::test]
+async fn test_certify_uses_session_realm_not_query_realm() -> AuthResult<()> {
+    let ctx = start_test_server(get_default_server_params_with_certify()?).await?;
+    let client = ctx.get_test_client(admin_scheme());
+    client.login(ADMIN_REALM, None).await?;
+
+    // A realm with a deliberately short certificate TTL, distinct from ADMIN_REALM's.
+    let other_realm_id = "certify-mismatch-realm";
+    client
+        .create_realm_as_super_admin(&Realm {
+            certificate_max_age_seconds: 60,
+            ..test_realm(other_realm_id)
+        })
+        .await?;
+
+    // Still authenticated to ADMIN_REALM (`_`), but pass the other realm in the query string.
+    let body = serde_json::json!({ "verification_key": SAMPLE_VERIFICATION_KEY });
+    let response: serde_json::Value = client
+        .post(&format!("/certify?realm={other_realm_id}"), &body)
+        .await?;
+    let certificate = response
+        .get("certificate")
+        .and_then(|v| v.as_str())
+        .expect("certify response should contain a string 'certificate' field");
+
+    let mut validation = Validation::new(Algorithm::ES256);
+    validation.validate_exp = false;
+    let cert_decoding_key = DecodingKey::from_ec_pem(
+        std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/tests/certificates/ec/auth.user1.cert.pem"
+        ))
+        .unwrap()
+        .as_slice(),
+    )
+    .unwrap();
+    let claims: serde_json::Value = decode(certificate, &cert_decoding_key, &validation)
+        .expect("certificate should validate against the certificate signing key")
+        .claims;
+
+    // realm_id claimed is the session's real realm, not the query-param realm.
+    assert_eq!(claims["realm_id"], ADMIN_REALM);
+    // The TTL used is ADMIN_REALM's (365 days), not other_realm's 60 seconds.
+    let iat = claims["iat"].as_i64().expect("iat should be present");
+    let exp = claims["exp"].as_i64().expect("exp should be present");
+    assert_eq!(
+        exp - iat,
+        365 * 24 * 3600,
+        "expected ADMIN_REALM's certificate TTL, not the query-param realm's"
     );
 
     ctx.stop_server().await

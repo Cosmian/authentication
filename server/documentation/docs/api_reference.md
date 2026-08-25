@@ -183,7 +183,8 @@ back as a session cookie/token.
 `certificate` is a compact JWS (`alg: ES256`) whose payload is a
 [`CertificateClaims`](#certificateclaims) object.
 
-**Response — `400 Bad Request`** — `verification_key` missing or empty.
+**Response — `400 Bad Request`** — `verification_key` missing, empty, not PEM-shaped
+(`-----BEGIN ...`/`-----END ...`), or longer than 8192 bytes.
 
 **Response — `401 Unauthorized`** — no valid session cookie.
 
