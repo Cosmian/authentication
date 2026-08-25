@@ -317,9 +317,13 @@ fn build_app(
 
     let allowed_origins = server_params.allowed_origins.clone();
 
-    // Per-IP rate limiter for the /login endpoint: max 5 req/s, burst of 10.
-    // This limits brute-force credential-stuffing without impacting normal usage.
-    let login_rate_limit = LoginRateLimit::new(5, 10);
+    // Per-IP rate limiter for the /login endpoint (see ServerParams::login_rate_limit_per_second
+    // / login_rate_limit_burst). This limits brute-force credential-stuffing without impacting
+    // normal usage.
+    let login_rate_limit = LoginRateLimit::new(
+        server_params.login_rate_limit_per_second,
+        server_params.login_rate_limit_burst,
+    );
 
     // Create an `App` instance and configure the passed data and the various scopes
     let app = App::new()
