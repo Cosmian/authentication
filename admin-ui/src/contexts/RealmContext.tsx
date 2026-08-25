@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { message } from "antd";
 import { SUPER_ADMIN_REALM_ID, SUPER_ADMIN_REALM_LABEL, API_REALMS } from "../constants/apiPaths";
 import type { Realm } from "../types/api";
@@ -36,6 +36,16 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const isSuperAdmin = selectedRealm === SUPER_ADMIN_REALM_ID;
 
+    // Guards against setState-after-unmount: fetchRealms is also exposed as refreshRealms
+    // for manual re-fetch, so a request can still be in flight when the provider unmounts.
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
+
     const setSelectedRealm = useCallback((realmId: string) => {
         setSelectedRealmState(realmId);
         localStorage.setItem(LS_SELECTED_REALM_KEY, realmId);
@@ -51,7 +61,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const fetchRealms = useCallback(async () => {
         if (!isAuthenticated) {
-            setLoading(false);
+            if (mountedRef.current) setLoading(false);
             return;
         }
 
@@ -59,6 +69,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const res = await fetch(`${serverUrl}${API_REALMS}`, { credentials: "include" });
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data: Realm[] = await res.json();
+            if (!mountedRef.current) return;
 
             const hasAdmin = data.some((r) => r.id === SUPER_ADMIN_REALM_ID);
             // Trust the server response — only show realms the admin can actually access.
@@ -73,11 +84,12 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             });
             setError(null);
         } catch {
+            if (!mountedRef.current) return;
             message.error("Failed to load realms");
             setRealms([]);
             setError("Failed to load realms");
         } finally {
-            setLoading(false);
+            if (mountedRef.current) setLoading(false);
         }
     }, [isAuthenticated, serverUrl]);
 
