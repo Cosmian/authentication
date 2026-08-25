@@ -48,11 +48,15 @@ pub struct LoginRateLimit {
 impl LoginRateLimit {
     /// Creates a new rate limiter.
     ///
-    /// * `requests_per_second` — sustained throughput per IP (must be ≥ 1).
-    /// * `burst_size` — maximum burst above the sustained rate (must be ≥ 1).
+    /// * `requests_per_second` — sustained throughput per IP; clamped to `[1, 1_000_000_000]`.
+    /// * `burst_size` — maximum burst above the sustained rate; clamped to `[1, u32::MAX]`.
     #[must_use]
     pub fn new(requests_per_second: u32, burst_size: u32) -> Self {
-        let period = Duration::from_secs(1) / requests_per_second.max(1);
+        // requests_per_second must stay in [1, 1_000_000_000] — above that bound,
+        // Duration::from_secs(1) / requests_per_second truncates to zero, which
+        // Quota::with_period rejects (panics via .expect below). 1e9 req/s/IP is
+        // already far beyond any meaningful limit, so clamping here is safe.
+        let period = Duration::from_secs(1) / requests_per_second.clamp(1, 1_000_000_000);
         let quota = Quota::with_period(period)
             .expect("valid non-zero period")
             .allow_burst(NonZeroU32::new(burst_size.max(1)).expect("nonzero burst"));
@@ -122,5 +126,22 @@ where
 
             service.call(req).await.map(|res| res.map_into_left_body())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LoginRateLimit;
+
+    /// `requests_per_second` is admin-configurable (`ServerParams`); an out-of-range value
+    /// must not panic the server at startup. Above 1_000_000_000, `Duration::from_secs(1) /
+    /// requests_per_second` used to truncate to zero, which `Quota::with_period` rejects.
+    #[test]
+    fn new_does_not_panic_on_extreme_requests_per_second() {
+        let _ = LoginRateLimit::new(0, 10);
+        let _ = LoginRateLimit::new(1_000_000_000, 10);
+        let _ = LoginRateLimit::new(u32::MAX, 10);
+        let _ = LoginRateLimit::new(5, 0);
+        let _ = LoginRateLimit::new(5, u32::MAX);
     }
 }
