@@ -223,7 +223,7 @@ let admin = AuthClient::new(
     },
 )?;
 
-let (result, _cookie) = admin.login("_", None, None).await?;
+let (result, _cookie) = admin.login("_", None).await?;
 
 match result.next_step {
     AuthenticationNextStep::Authenticated => {
@@ -232,7 +232,7 @@ match result.next_step {
     AuthenticationNextStep::TotpRequired => {
         // Prompt for TOTP code then re-login:
         let code = prompt_for_totp_code();
-        let (result2, _) = admin.login("_", None, Some(code)).await?;
+        let (result2, _) = admin.login("_", Some(code)).await?;
         assert!(matches!(result2.next_step, AuthenticationNextStep::Authenticated));
     }
     AuthenticationNextStep::ChangePassword => {
@@ -626,8 +626,6 @@ pub struct AuthorizationClaims {
 pub struct AuthPrivateClaims {
     // "as_as" — auth scheme: "up" | "jwt" | "cc" | "f2" | "dc"
     pub auth_scheme: Option<AuthScheme>,
-    // "as_pk" — client public key PEM (when using mTLS)
-    pub public_key: Option<String>,
     // "as_rid" — realm ID (also used as the OPA domain scope)
     pub realm_id: Option<String>,
 }

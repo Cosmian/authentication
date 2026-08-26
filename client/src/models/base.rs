@@ -24,6 +24,13 @@ pub struct Realm {
     pub auth_params: RealmAuthParams,
     pub session_max_age_seconds: i64,
     pub session_max_stale_age_seconds: i64,
+    #[serde(default = "default_certificate_max_age_seconds")]
+    pub certificate_max_age_seconds: i64,
+}
+
+/// Default `Realm::certificate_max_age_seconds`: one year.
+fn default_certificate_max_age_seconds() -> i64 {
+    365 * 24 * 3600
 }
 
 /// Username password entry

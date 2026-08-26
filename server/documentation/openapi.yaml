@@ -334,10 +334,6 @@ components:
     LoginRequest:
       type: object
       properties:
-        public_key_pem:
-          type: string
-          nullable: true
-          example:
         totp_code:
           type: string
           nullable: true
@@ -391,14 +387,53 @@ components:
           example: 7f000101-0001-0001-0001-000000000001
         as_as:
           $ref: '#/components/schemas/AuthScheme'
-        as_pk:
-          type: string
-          nullable: true
-          example:
         as_rid:
           type: string
           example: my-service
       additionalProperties: true
+
+    CertifyRequest:
+      type: object
+      required: [verification_key]
+      properties:
+        verification_key:
+          type: string
+          description: PEM-encoded public key to certify.
+          example: "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+
+    CertifyResponse:
+      type: object
+      required: [certificate]
+      properties:
+        certificate:
+          type: string
+          description: >
+            Compact JWS (alg ES256) whose payload is a CertificateClaims object, signed with
+            a key distinct from the session JWT key.
+          example: eyJhbGciOiJFUzI1NiJ9...
+
+    CertificateClaims:
+      type: object
+      description: Payload of the JWS returned by POST /certify. Distinct shape from ClientClaims.
+      properties:
+        realm_id:
+          type: string
+          example: my-service
+        sub:
+          type: string
+          example: alice
+        auth_scheme:
+          $ref: '#/components/schemas/AuthScheme'
+        verification_key:
+          type: string
+        iat:
+          type: integer
+          format: int64
+          example: 1744996400
+        exp:
+          type: integer
+          format: int64
+          example: 1776532400
 
     GetSessionRequest:
       type: object
@@ -1006,12 +1041,10 @@ paths:
               standard:
                 summary: Normal login
                 value:
-                  public_key_pem:
                   totp_code:
               withTotp:
                 summary: Second step with TOTP code
                 value:
-                  public_key_pem:
                   totp_code: '482913'
       responses:
         '200':
@@ -1074,6 +1107,78 @@ paths:
                 as_rid: my-service
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /certify:
+    post:
+      tags: [Auth]
+      summary: Certify a verification key under the current session's identity
+      operationId: certify
+      description: |
+        Issues a long-lived, ES256-signed certificate binding the caller's realm_id, sub and
+        auth_scheme to a caller-supplied verification key. Signed with a dedicated
+        certificate signing key, distinct from the session JWT key, so the result cannot be
+        presented back as a session cookie/token.
+      parameters:
+        - name: realm
+          in: query
+          required: true
+          schema:
+            type: string
+          example: my-service
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertifyRequest'
+      responses:
+        '200':
+          description: Certificate issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertifyResponse'
+        '400':
+          description: >
+            verification_key missing, empty, not PEM-shaped (-----BEGIN .../-----END ...),
+            or longer than 8192 bytes.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Certificate signing is not configured on this server.
+
+  /.well-known/certificate-jwks.json:
+    get:
+      tags: [Public]
+      summary: JSON Web Key Set for the certificate signing key
+      operationId: getCertificateJwks
+      description: >
+        Separate JWKS document from /.well-known/jwks.json, for the key used to sign
+        certificates issued by POST /certify.
+      responses:
+        '200':
+          description: JWKS document containing the certificate signing public key.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kty: {type: string}
+                        crv: {type: string}
+                        use: {type: string}
+                        alg: {type: string}
+                        kid: {type: string}
+                        x: {type: string}
+                        y: {type: string}
+        '404':
+          description: Certificate signing is not configured on this server.
 
   /sessions:
     post:

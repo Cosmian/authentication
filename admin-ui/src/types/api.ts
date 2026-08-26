@@ -83,7 +83,6 @@ export type AuthenticationNextStep = "Authenticated" | "TotpRequired" | "ChangeP
 
 /** Login request body */
 export interface LoginRequest {
-    public_key_pem?: string | null;
     totp_code?: string | null;
 }
 

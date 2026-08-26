@@ -10,6 +10,7 @@ All endpoints are served over **HTTPS only**. The base URL is `https://{host}:{p
 
 - [Public Endpoints](#public-endpoints)
 - [Authentication — Login and Session Claims](#authentication--login-and-session-claims)
+  - [`POST /certify`](#post-certifyrealmrealm_id)
 - [Session Management](#session-management)
 - [Machine Authentication (AppRole / Kubernetes / Token)](#machine-authentication-approle--kubernetes--token)
 - [Realm Administration](#realm-administration)
@@ -65,6 +66,16 @@ Returns the JSON Web Key Set containing the server's public key(s) for JWT signa
 
 ---
 
+### `GET /.well-known/certificate-jwks.json`
+
+Returns the JSON Web Key Set for the **certificate** signing key used by `POST /certify` —
+deliberately a separate document from `/.well-known/jwks.json`, since certificates are
+signed with a key distinct from the session JWT key. Same response shape as above.
+
+**Response — `404 Not Found`** — certificate signing is not configured on this server.
+
+---
+
 ## Authentication — Login and Session Claims
 
 ### `POST /login?realm={realm_id}`
@@ -79,19 +90,17 @@ Authenticate a client and issue a session cookie. The authentication method is d
 | JWT Bearer         | `Authorization: Bearer <jwt_token>`                |
 | Client Certificate | Client certificate in TLS handshake                |
 
-#### Request body (optional — for public-key FIDO2 challenge or TOTP code)
+#### Request body (optional — for the TOTP code)
 
 ```json
 {
-  "public_key_pem": null,
   "totp_code": "482913"
 }
 ```
 
-| Field            | Type               | Description                                           |
-| ---------------- | ------------------ | ----------------------------------------------------- |
-| `public_key_pem` | `String` \| `null` | Client public key (FIDO2 / digital credentials flows) |
-| `totp_code`      | `String` \| `null` | TOTP verification code for 2FA step                   |
+| Field       | Type               | Description                          |
+| ----------- | ------------------ | ------------------------------------ |
+| `totp_code` | `String` \| `null` | TOTP verification code for 2FA step  |
 
 **Response — `200 OK`**
 
@@ -138,6 +147,49 @@ Returns the JWT claims for the currently authenticated session.
 See [Data Types — ClientClaims](#clientclaims) for the full field reference.
 
 **Response — `401 Unauthorized`** — no valid session cookie.
+
+---
+
+### `POST /certify?realm={realm_id}`
+
+Certify a verification (public) key under the identity of the currently authenticated
+session. Returns a long-lived, ES256-signed certificate binding the caller's `realm_id`,
+`sub` and `auth_scheme` to the supplied key — signed with a dedicated certificate signing
+key, entirely separate from the session JWT key, so the certificate can never be presented
+back as a session cookie/token.
+
+**Authentication:** Session cookie (`_ea_` cookie).
+
+**Request body**
+
+```json
+{
+  "verification_key": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+}
+```
+
+| Field               | Type     | Description                              |
+| ------------------- | -------- | ----------------------------------------- |
+| `verification_key`  | `String` | PEM-encoded public key to certify         |
+
+**Response — `200 OK`**
+
+```json
+{
+  "certificate": "eyJhbGciOiJFUzI1NiJ9..."
+}
+```
+
+`certificate` is a compact JWS (`alg: ES256`) whose payload is a
+[`CertificateClaims`](#certificateclaims) object.
+
+**Response — `400 Bad Request`** — `verification_key` missing, empty, not PEM-shaped
+(`-----BEGIN ...`/`-----END ...`), or longer than 8192 bytes.
+
+**Response — `401 Unauthorized`** — no valid session cookie.
+
+**Response — `500 Internal Server Error`** — certificate signing is not configured on this
+server (no `certificate_jwt_params`).
 
 ---
 
@@ -994,5 +1046,20 @@ The JWT payload returned by `GET /whoami`:
 | `iat`    | `i64`      | Issued-at (Unix seconds)                     |
 | `jti`    | `String`   | JWT ID                                       |
 | `as_as`  | `String`   | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`) |
-| `as_pk`  | `String`   | Client public key PEM (when applicable)      |
 | `as_rid` | `String`   | Realm ID                                     |
+
+### `CertificateClaims`
+
+The JWT payload returned (base64url-encoded, inside the `certificate` field) by
+`POST /certify`. Deliberately a different shape from `ClientClaims` — no `roles`, no
+`as_*`-prefixed names — and signed with a different key, so it cannot be confused with, or
+substituted for, a session token.
+
+| Claim               | Type     | Description                             |
+| -------------------- | -------- | ---------------------------------------- |
+| `realm_id`           | `String` | Realm the caller authenticated to        |
+| `sub`                | `String` | Subject (authenticated username)         |
+| `auth_scheme`        | `String` | Auth scheme used to establish the session (`up`/`jwt`/`cc`/`f2`/`dc`) |
+| `verification_key`   | `String` | The certified PEM public key             |
+| `iat`                | `i64`    | Issued-at (Unix seconds)                 |
+| `exp`                | `i64`    | Expiration (Unix seconds) — realm's `certificate_max_age_seconds` |

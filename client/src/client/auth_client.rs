@@ -339,16 +339,12 @@ impl AuthClient {
     pub async fn login(
         &self,
         realm: &str,
-        public_key_pem: Option<String>,
         totp_code: Option<String>,
     ) -> AuthResult<(AuthenticationResult, Option<Cookie<'_>>)> {
         let user = self
             .post::<LoginRequest, AuthenticationResult>(
                 &format!("/login?realm={}", realm),
-                &LoginRequest {
-                    public_key_pem,
-                    totp_code,
-                },
+                &LoginRequest { totp_code },
             )
             .await?;
         let cookie = self.get_cookie(&self.base_url)?;

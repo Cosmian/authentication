@@ -29,7 +29,7 @@ async fn test_valid_basic_auth() -> AuthResult<()> {
     });
 
     info!("Making authenticated request to protected endpoint...");
-    let (result, cookie) = client.login(&realm, None, None).await?;
+    let (result, cookie) = client.login(&realm, None).await?;
     // let username_check: AuthenticatedUser = client.get(&format!("/authenticate/{realm}")).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
@@ -93,7 +93,7 @@ async fn test_invalid_username_returns_401() -> AuthResult<()> {
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
 
-    let result = client.login(ADMIN_REALM, None, None).await;
+    let result = client.login(ADMIN_REALM, None).await;
 
     assert!(
         result.is_err(),
@@ -120,7 +120,7 @@ async fn test_invalid_password_returns_401() -> AuthResult<()> {
         password: "this_is_the_wrong_password".to_string(),
     });
 
-    let result = client.login(ADMIN_REALM, None, None).await;
+    let result = client.login(ADMIN_REALM, None).await;
 
     assert!(
         result.is_err(),
@@ -147,7 +147,7 @@ async fn test_invalid_realm_returns_error() -> AuthResult<()> {
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
 
-    let result = client.login("realm_that_does_not_exist", None, None).await;
+    let result = client.login("realm_that_does_not_exist", None).await;
 
     assert!(
         result.is_err(),
@@ -169,7 +169,7 @@ async fn test_empty_credentials_returns_401() -> AuthResult<()> {
         password: String::new(),
     });
 
-    let result = client.login(ADMIN_REALM, None, None).await;
+    let result = client.login(ADMIN_REALM, None).await;
 
     assert!(
         result.is_err(),
@@ -207,7 +207,7 @@ async fn authenticate_as_admin_for_up_tests(
         username: APP_REALM_ADMIN_USERNAME.to_string(),
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
-    let (result, cookie) = client.login(ADMIN_REALM, None, None).await?;
+    let (result, cookie) = client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated after admin login"
@@ -240,6 +240,7 @@ async fn test_login_with_expired_password_blocked() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
@@ -256,7 +257,7 @@ async fn test_login_with_expired_password_blocked() -> AuthResult<()> {
         username: username.to_string(),
         password: password.to_string(),
     });
-    let result = client.login(realm_id, None, None).await;
+    let result = client.login(realm_id, None).await;
 
     assert!(
         result.is_err(),
@@ -293,6 +294,7 @@ async fn test_login_with_expired_password_allowed() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
@@ -309,7 +311,7 @@ async fn test_login_with_expired_password_allowed() -> AuthResult<()> {
         username: username.to_string(),
         password: password.to_string(),
     });
-    let (result, cookie) = client.login(realm_id, None, None).await?;
+    let (result, cookie) = client.login(realm_id, None).await?;
 
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
@@ -476,6 +478,7 @@ async fn test_create_userpass_then_authenticate() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
@@ -492,7 +495,7 @@ async fn test_create_userpass_then_authenticate() -> AuthResult<()> {
         username: username.to_string(),
         password: password.to_string(),
     });
-    let (result, cookie) = client.login(realm_id, None, None).await?;
+    let (result, cookie) = client.login(realm_id, None).await?;
 
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
@@ -530,6 +533,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await?;
 
@@ -548,7 +552,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
         username: username.to_string(),
         password: initial_password.to_string(),
     });
-    let (result, _) = client.login(realm_id, None, None).await?;
+    let (result, _) = client.login(realm_id, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated after initial login, got {:?}",
@@ -567,7 +571,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
         username: username.to_string(),
         password: initial_password.to_string(),
     });
-    let result = old_client.login(realm_id, None, None).await;
+    let result = old_client.login(realm_id, None).await;
     assert!(
         result.is_err(),
         "Expected login to fail with old password after password update"
@@ -579,7 +583,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
         username: username.to_string(),
         password: new_password.to_string(),
     });
-    let (result, cookie) = new_client.login(realm_id, None, None).await?;
+    let (result, cookie) = new_client.login(realm_id, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated after login with new password, got {:?}",
@@ -606,7 +610,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
         username: username.to_string(),
         password: new_password.to_string(),
     });
-    let (result, cookie) = new_client2.login(realm_id, None, None).await?;
+    let (result, cookie) = new_client2.login(realm_id, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated after roles-only update, got {:?}",

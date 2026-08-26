@@ -25,6 +25,7 @@ pub(super) async fn seed_dev_realm_admin(
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         };
         db.create_realm(&realm).await.map_err(|e| {
             crate::AuthError::Init(format!(

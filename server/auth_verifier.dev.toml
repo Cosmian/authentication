@@ -42,6 +42,17 @@ jwt_ec_private_key = "server/src/tests/certificates/ec/auth.server.key.pem"
 jwt_ec_public_key = "server/src/tests/certificates/ec/auth.server.cert.pem"
 
 # ---------------------------------------------------------------------------
+# Certificate signing key for POST /certify — deliberately a *different* EC
+# keypair from [session_jwt_params]/[tls_params] above, so certificates can
+# never be presented back as a session cookie/token. Optional: without this
+# section, /certify returns 500 and /.well-known/certificate-jwks.json
+# returns 404, but the rest of the server is unaffected.
+# ---------------------------------------------------------------------------
+[certificate_jwt_params]
+cert_ec_private_key = "server/src/tests/certificates/ec/auth.user1.key.pem"
+cert_ec_public_key = "server/src/tests/certificates/ec/auth.user1.cert.pem"
+
+# ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 [database_params]

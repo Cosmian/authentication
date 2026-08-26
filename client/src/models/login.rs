@@ -3,8 +3,6 @@ use serde::{self, Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub public_key_pem: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub totp_code: Option<String>,
 }
 

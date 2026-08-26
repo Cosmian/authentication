@@ -115,6 +115,7 @@ fn test_realm_creation() {
         auth_params: RealmAuthParams::default(),
         session_max_age_seconds: 3600,
         session_max_stale_age_seconds: 3600,
+        certificate_max_age_seconds: 365 * 24 * 3600,
     };
 
     assert_eq!(realm.id, "test-realm");
@@ -164,6 +165,7 @@ async fn test_realm_crud() {
             auth_params: RealmAuthParams::default(),
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         };
 
         db.create_realm(&realm)
@@ -199,6 +201,7 @@ async fn test_realm_deletion_cascades_userpass() {
             auth_params: RealmAuthParams::default(),
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         };
         db.create_realm(&realm)
             .await
@@ -273,6 +276,7 @@ async fn test_userpass_crud() {
             auth_params: RealmAuthParams::default(),
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         };
         db.create_realm(&realm)
             .await

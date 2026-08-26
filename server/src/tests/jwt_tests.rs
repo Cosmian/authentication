@@ -57,7 +57,7 @@ async fn setup_jwt_realm(ctx: &crate::tests::TestsContext) -> AuthResult<()> {
         username: APP_REALM_ADMIN_USERNAME.to_string(),
         password: APP_REALM_ADMIN_INITIAL_PASSWORD.to_string(),
     });
-    admin_client.login(ADMIN_REALM, None, None).await?;
+    admin_client.login(ADMIN_REALM, None).await?;
 
     admin_client
         .create_realm(&Realm {
@@ -77,6 +77,7 @@ async fn setup_jwt_realm(ctx: &crate::tests::TestsContext) -> AuthResult<()> {
             },
             session_max_age_seconds: 3600,
             session_max_stale_age_seconds: 3600,
+            certificate_max_age_seconds: 365 * 24 * 3600,
         })
         .await
 }
@@ -101,7 +102,7 @@ async fn test_jwt_auth_valid_token() -> Result<(), AuthError> {
     let client = ctx.get_test_client(AuthClientScheme::Jwt { token });
 
     info!("Logging in with a valid JWT token...");
-    let (result, cookie) = client.login(TEST_JWT_REALM, None, None).await?;
+    let (result, cookie) = client.login(TEST_JWT_REALM, None).await?;
 
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
@@ -143,7 +144,7 @@ async fn test_jwt_auth_no_token() -> Result<(), AuthError> {
     let none_client = ctx.get_test_client(AuthClientScheme::None);
 
     info!("Attempting login without a token (should fail)...");
-    let result = none_client.login(TEST_JWT_REALM, None, None).await;
+    let result = none_client.login(TEST_JWT_REALM, None).await;
 
     assert!(
         matches!(result, Err(AuthError::FailedHttpStatus(ref m)) if m.contains("401")),
@@ -167,7 +168,7 @@ async fn test_jwt_auth_malformed_token() -> Result<(), AuthError> {
     });
 
     info!("Attempting login with a malformed JWT token (should fail)...");
-    let result = client.login(TEST_JWT_REALM, None, None).await;
+    let result = client.login(TEST_JWT_REALM, None).await;
 
     assert!(
         matches!(result, Err(AuthError::FailedHttpStatus(ref m)) if m.contains("401")),
@@ -195,7 +196,7 @@ async fn test_jwt_auth_wrong_audience() -> Result<(), AuthError> {
     let client = ctx.get_test_client(AuthClientScheme::Jwt { token });
 
     info!("Attempting login with wrong audience in JWT (should fail)...");
-    let result = client.login(TEST_JWT_REALM, None, None).await;
+    let result = client.login(TEST_JWT_REALM, None).await;
 
     assert!(
         matches!(result, Err(AuthError::FailedHttpStatus(ref m)) if m.contains("401")),
@@ -222,7 +223,7 @@ async fn test_jwt_auth_expired_token() -> Result<(), AuthError> {
     let client = ctx.get_test_client(AuthClientScheme::Jwt { token });
 
     info!("Attempting login with a definitely-expired JWT (should fail)...");
-    let result = client.login(TEST_JWT_REALM, None, None).await;
+    let result = client.login(TEST_JWT_REALM, None).await;
 
     assert!(
         matches!(result, Err(AuthError::FailedHttpStatus(ref m)) if m.contains("401")),
@@ -247,7 +248,7 @@ async fn test_jwt_auth_multiple_requests_same_token() -> Result<(), AuthError> {
 
     info!("Logging in three times with the same JWT token...");
     for i in 1..=3u8 {
-        let (result, _) = client.login(TEST_JWT_REALM, None, None).await?;
+        let (result, _) = client.login(TEST_JWT_REALM, None).await?;
         assert!(
             matches!(result.next_step, AuthenticationNextStep::Authenticated),
             "Login attempt {} must succeed",
@@ -279,7 +280,7 @@ async fn test_jwt_auth_different_users() -> Result<(), AuthError> {
         let token = make_jwt_token(username)?;
         let client = ctx.get_test_client(AuthClientScheme::Jwt { token });
 
-        let (result, _) = client.login(TEST_JWT_REALM, None, None).await?;
+        let (result, _) = client.login(TEST_JWT_REALM, None).await?;
         assert!(
             matches!(result.next_step, AuthenticationNextStep::Authenticated),
             "Login should succeed for {username}"
@@ -310,7 +311,7 @@ async fn test_jwt_auth_session_persistence() -> Result<(), AuthError> {
     let client = ctx.get_test_client(AuthClientScheme::Jwt { token });
 
     info!("First request — login via JWT (creates session cookie)...");
-    let (_, cookie) = client.login(TEST_JWT_REALM, None, None).await?;
+    let (_, cookie) = client.login(TEST_JWT_REALM, None).await?;
     assert!(
         cookie.is_some(),
         "Session cookie should be set after JWT login"
@@ -346,10 +347,7 @@ async fn test_jwt_auth_without_bearer_prefix() -> Result<(), AuthError> {
     let response = base_client
         .post_raw_with_header(
             &format!("/login?realm={TEST_JWT_REALM}"),
-            &LoginRequest {
-                public_key_pem: None,
-                totp_code: None,
-            },
+            &LoginRequest { totp_code: None },
             "Authorization",
             &token, // raw token, no "Bearer " prefix
         )

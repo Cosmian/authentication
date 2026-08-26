@@ -53,6 +53,7 @@ async fn create_test_database_with_realm(realm_id: &str) -> (Arc<dyn Database>, 
         auth_params: RealmAuthParams::default(),
         session_max_age_seconds: 10, // 10 seconds for testing absolute expiration
         session_max_stale_age_seconds: 5, // 5 seconds for testing stale expiration
+        certificate_max_age_seconds: 365 * 24 * 3600,
     };
 
     db.create_realm(&realm)
@@ -534,6 +535,7 @@ async fn test_delete_sessions_for_realm() {
         auth_params: RealmAuthParams::default(),
         session_max_age_seconds: 10,
         session_max_stale_age_seconds: 5,
+        certificate_max_age_seconds: 365 * 24 * 3600,
     };
     cleanup_test_realm(&store, &realm2.id).await;
 
@@ -612,6 +614,7 @@ async fn test_multiple_realms_isolated() {
         auth_params: RealmAuthParams::default(),
         session_max_age_seconds: 20,
         session_max_stale_age_seconds: 15,
+        certificate_max_age_seconds: 365 * 24 * 3600,
     };
     cleanup_test_realm(&store, &realm2.id).await;
 

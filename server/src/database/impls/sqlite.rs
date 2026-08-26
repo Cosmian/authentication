@@ -54,12 +54,32 @@ impl Database for SqliteDatabase {
                 id TEXT PRIMARY KEY CHECK (id GLOB '[a-zA-Z0-9_-]*'),
                 auth_params TEXT NOT NULL,
                 cookie_max_age_seconds INTEGER NOT NULL,
-                max_stale_age_seconds INTEGER NOT NULL
+                max_stale_age_seconds INTEGER NOT NULL,
+                certificate_max_age_seconds INTEGER NOT NULL DEFAULT 31536000
             )
             "#,
         )
         .execute(&self.pool)
         .await?;
+
+        // Migration: add the column to a realm table created before this field existed.
+        // Check first (rather than attempting the ALTER and swallowing any error) so a real
+        // failure — permissions, a locked DB, corruption — surfaces instead of silently
+        // leaving the schema without this column.
+        let has_certificate_max_age_seconds: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM pragma_table_info('realm') WHERE name='certificate_max_age_seconds'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map(|c: i32| c > 0)
+        .unwrap_or(false);
+        if !has_certificate_max_age_seconds {
+            sqlx::query(
+                "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds INTEGER NOT NULL DEFAULT 31536000",
+            )
+            .execute(&self.pool)
+            .await?;
+        }
 
         // Create userpass table with composite primary key and foreign key
         sqlx::query(
@@ -222,14 +242,15 @@ impl Database for SqliteDatabase {
 
         sqlx::query(
             r#"
-            INSERT INTO realm (id, auth_params, cookie_max_age_seconds, max_stale_age_seconds)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO realm (id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds)
+            VALUES (?, ?, ?, ?, ?)
             "#,
         )
         .bind(&realm.id)
         .bind(auth_params_json)
         .bind(realm.session_max_age_seconds)
         .bind(realm.session_max_stale_age_seconds)
+        .bind(realm.certificate_max_age_seconds)
         .execute(&self.pool)
         .await?;
 
@@ -239,7 +260,7 @@ impl Database for SqliteDatabase {
     async fn get_realm(&self, id: &str) -> AuthDbResult<Option<Realm>> {
         let row = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds
+            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
             FROM realm
             WHERE id = ?
             "#,
@@ -263,6 +284,8 @@ impl Database for SqliteDatabase {
                     session_max_age_seconds: row.try_get::<i64, _>("cookie_max_age_seconds")?,
                     session_max_stale_age_seconds: row
                         .try_get::<i64, _>("max_stale_age_seconds")?,
+                    certificate_max_age_seconds: row
+                        .try_get::<i64, _>("certificate_max_age_seconds")?,
                 }))
             }
             None => Ok(None),
@@ -279,13 +302,14 @@ impl Database for SqliteDatabase {
         sqlx::query(
             r#"
             UPDATE realm
-            SET auth_params = ?, cookie_max_age_seconds = ?, max_stale_age_seconds = ?
+            SET auth_params = ?, cookie_max_age_seconds = ?, max_stale_age_seconds = ?, certificate_max_age_seconds = ?
             WHERE id = ?
             "#,
         )
         .bind(auth_params_json)
         .bind(realm.session_max_age_seconds)
         .bind(realm.session_max_stale_age_seconds)
+        .bind(realm.certificate_max_age_seconds)
         .bind(&realm.id)
         .execute(&self.pool)
         .await?;
@@ -309,7 +333,7 @@ impl Database for SqliteDatabase {
     async fn list_realms(&self) -> AuthDbResult<Vec<Realm>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds
+            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
             FROM realm
             ORDER BY id
             "#,
@@ -331,6 +355,8 @@ impl Database for SqliteDatabase {
                 auth_params,
                 session_max_age_seconds: row.try_get::<i64, _>("cookie_max_age_seconds")?,
                 session_max_stale_age_seconds: row.try_get::<i64, _>("max_stale_age_seconds")?,
+                certificate_max_age_seconds: row
+                    .try_get::<i64, _>("certificate_max_age_seconds")?,
             });
         }
 

@@ -1,14 +1,16 @@
-use crate::models::ClientClaims;
-use crate::models::LoginRequest;
+use crate::models::{CertificateClaims, ClientClaims, LoginRequest};
 use crate::server::parameters::ServerParams;
-use crate::session::{self, JwksData, issue_token, session_id_from_cookie_value};
+use crate::session::{self, JwksData, JwtTokenConfig, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
 use actix_web::HttpMessage;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 use cosmian_logger::{debug, info};
+use jsonwebtoken::{Algorithm, Header, encode};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub async fn login(
     jwt_token_config: Data<Arc<session::JwtTokenConfig>>,
@@ -97,8 +99,6 @@ pub async fn login(
         &authenticated_client.username,
         authenticated_client.auth_scheme,
         &realm.id,
-        // TODO : Only useful for VELO ?
-        login_request.public_key_pem.clone(),
         roles,
         &jwt_token_config,
         realm.session_max_age_seconds,
@@ -151,6 +151,108 @@ pub async fn whoami(req: HttpRequest) -> Result<HttpResponse, AuthError> {
     Ok(HttpResponse::Ok().json(user_claims))
 }
 
+/// Request body for `POST /certify`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CertifyRequest {
+    /// PEM-encoded public key to certify.
+    pub verification_key: String,
+}
+
+/// Response body for `POST /certify`.
+#[derive(Debug, Clone, Serialize)]
+pub struct CertifyResponse {
+    /// Compact JWS (`alg: ES256`) whose payload is a [`CertificateClaims`] object, signed
+    /// with the certificate signing key.
+    pub certificate: String,
+}
+
+/// Certifies a verification key under the identity of the currently authenticated session.
+///
+/// The certificate binds `realm_id`/`sub`/`auth_scheme` — taken from the session's own
+/// claims, never from the request body — to the caller-supplied key, and is signed with a
+/// certificate signing key entirely separate from the session JWT key so it can never be
+/// presented back as a session cookie/token.
+/// Maximum accepted length (bytes) for `verification_key`. Generous enough for any real
+/// public key or certificate chain PEM (even RSA-4096), while bounding the cost of embedding
+/// caller-supplied input into a signed certificate.
+const MAX_VERIFICATION_KEY_LEN: usize = 8192;
+
+pub async fn certify(
+    cert_jwt_config: Data<Option<Arc<JwtTokenConfig>>>,
+    database: Data<Arc<dyn crate::database::Database>>,
+    req: HttpRequest,
+    body: Json<CertifyRequest>,
+) -> Result<HttpResponse, AuthError> {
+    let verification_key = body.verification_key.trim();
+    if verification_key.is_empty() {
+        return Err(AuthError::BadRequest(
+            "verification_key must not be empty".to_string(),
+        ));
+    }
+    if verification_key.len() > MAX_VERIFICATION_KEY_LEN {
+        return Err(AuthError::BadRequest(format!(
+            "verification_key must not exceed {MAX_VERIFICATION_KEY_LEN} bytes"
+        )));
+    }
+    if !verification_key.starts_with("-----BEGIN ") || !verification_key.contains("-----END ") {
+        return Err(AuthError::BadRequest(
+            "verification_key must be a PEM-encoded key or certificate".to_string(),
+        ));
+    }
+
+    let cert_jwt_config = cert_jwt_config.get_ref().as_ref().ok_or_else(|| {
+        AuthError::Config("certificate signing is not configured on this server".to_string())
+    })?;
+
+    let claims = req
+        .extensions()
+        .get::<ClientClaims>()
+        .ok_or_else(|| AuthError::Session("no user claims found in request".to_string()))?
+        .clone();
+
+    let sub = claims
+        .registered
+        .sub
+        .ok_or_else(|| AuthError::Session("no subject in session claims".to_string()))?;
+    let auth_scheme = claims
+        .private
+        .auth_scheme
+        .ok_or_else(|| AuthError::Session("no auth scheme in session claims".to_string()))?;
+    let realm_id = claims
+        .private
+        .realm_id
+        .ok_or_else(|| AuthError::Session("no realm ID in session claims".to_string()))?;
+
+    // Look up the certificate TTL policy for the realm the session actually authenticated to.
+    // `/certify` has no `?realm=` query parameter, realm_id always comes from the session's own claims.
+    let realm = database
+        .get_realm(&realm_id)
+        .await?
+        .ok_or_else(|| AuthError::Session(format!("realm '{realm_id}' no longer exists")))?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| {
+            AuthError::Unexpected(format!("System time error when issuing certificate: {e}"))
+        })?
+        .as_secs() as i64;
+
+    let cert_claims = CertificateClaims {
+        realm_id,
+        sub,
+        auth_scheme,
+        verification_key: verification_key.to_string(),
+        iat: now,
+        exp: now + realm.certificate_max_age_seconds,
+    };
+
+    let header = Header::new(Algorithm::ES256);
+    let certificate = encode(&header, &cert_claims, &cert_jwt_config.encoding_key)
+        .map_err(|e| AuthError::Unexpected(format!("Failed to issue certificate: {e}")))?;
+
+    Ok(HttpResponse::Ok().json(CertifyResponse { certificate }))
+}
+
 pub async fn version_endpoint(_req: HttpRequest) -> Result<HttpResponse, AuthError> {
     let version = env!("CARGO_PKG_VERSION");
     let version = Version {
@@ -172,6 +274,22 @@ pub async fn jwks_well_known(jwks: Data<Arc<JwksData>>) -> Result<HttpResponse, 
     Ok(HttpResponse::Ok()
         .insert_header(("Cache-Control", "public, max-age=3600"))
         .json(&jwks.0))
+}
+
+/// Returns the JWKS (JSON Web Key Set) for the certificate signing key used by `POST /certify`.
+/// Deliberately a separate document from `/.well-known/jwks.json` — see [`certify`].
+/// Served at `/.well-known/certificate-jwks.json`.
+pub async fn certificate_jwks_well_known(
+    cert_jwks: Data<Option<Arc<JwksData>>>,
+) -> Result<HttpResponse, AuthError> {
+    match cert_jwks.get_ref() {
+        Some(jwks) => Ok(HttpResponse::Ok()
+            .insert_header(("Cache-Control", "public, max-age=3600"))
+            .json(&jwks.0)),
+        None => Ok(HttpResponse::NotFound().json(serde_json::json!({
+            "errors": ["certificate signing is not configured on this server"]
+        }))),
+    }
 }
 
 /// Serve the raw OpenAPI 3.1 schema (YAML), embedded at compile time.

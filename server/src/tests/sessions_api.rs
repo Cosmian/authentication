@@ -20,7 +20,7 @@ fn admin_scheme() -> AuthClientScheme {
 /// for any subsequent calls to session-protected endpoints.
 async fn authenticate_admin(ctx: &crate::tests::TestsContext) -> AuthResult<(String, AuthClient)> {
     let client = ctx.get_test_client(admin_scheme());
-    let (result, _cookie) = client.login(ADMIN_REALM, None, None).await?;
+    let (result, _cookie) = client.login(ADMIN_REALM, None).await?;
     assert!(
         matches!(result.next_step, AuthenticationNextStep::Authenticated),
         "Expected Authenticated next step"
@@ -466,7 +466,7 @@ async fn test_whoami_fails_after_session_deleted() -> AuthResult<()> {
 
     // Login and keep the client so it retains the _ea_ cookie.
     let logged_in_client = ctx.get_test_client(admin_scheme());
-    let (login_result, _) = logged_in_client.login(ADMIN_REALM, None, None).await?;
+    let (login_result, _) = logged_in_client.login(ADMIN_REALM, None).await?;
     let session_id = login_result
         .session_id
         .expect("login must return a session_id");
@@ -505,13 +505,13 @@ async fn test_revoking_one_session_leaves_other_valid() -> AuthResult<()> {
 
     // Create two independent sessions for the same user.
     let client_a = ctx.get_test_client(admin_scheme());
-    let (result_a, _) = client_a.login(ADMIN_REALM, None, None).await?;
+    let (result_a, _) = client_a.login(ADMIN_REALM, None).await?;
     let session_a_id = result_a
         .session_id
         .expect("login_a must return a session_id");
 
     let client_b = ctx.get_test_client(admin_scheme());
-    client_b.login(ADMIN_REALM, None, None).await?;
+    client_b.login(ADMIN_REALM, None).await?;
 
     // Delete only session A via a separate management client so that deleting
     // session_a does not invalidate the management client's own cookie.
