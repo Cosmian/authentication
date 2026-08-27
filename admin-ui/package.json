@@ -20,7 +20,7 @@
     "dependencies": {
         "@ant-design/icons": "^6.3.2",
         "@tailwindcss/vite": "^4.2.2",
-        "antd": "^6.5.4",
+        "antd": "^6.6.1",
         "qrcode": "^1.5.4",
         "react": "^19.2.8",
         "react-dom": "^19.2.8",
