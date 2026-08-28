@@ -105,6 +105,8 @@ jobs:
         id: build
         run: |
           bash .github/scripts/nix.sh docker --load
+        env:
+          NIX_CURL_FLAGS: --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
 
       - name: Get image name and digest
         id: image_info
