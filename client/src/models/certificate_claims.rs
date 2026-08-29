@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::AuthScheme;
 
@@ -13,7 +16,11 @@ pub struct CertificateClaims {
     pub realm_id: String,
 
     /// Subject (authenticated username) the verification key is certified for.
-    pub sub: String,
+    /// `sub` can be sensitive; omitted when the caller sets `exclude_sub` in the
+    /// `/certify` request (only allowed when `claims` is non-empty — a certificate
+    /// must identify its holder by at least one claim).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub: Option<String>,
 
     /// Authentication scheme that was used to establish the session under which
     /// certification was requested.
@@ -27,4 +34,10 @@ pub struct CertificateClaims {
 
     /// Expiration (Unix seconds).
     pub exp: i64,
+
+    /// Extra claims copied from the session's own `extra` claims, restricted to the
+    /// names the caller explicitly listed in the `/certify` request body — never copied
+    /// wholesale, since a certificate can outlive its session by a long margin.
+    #[serde(flatten, default, skip_serializing_if = "HashMap::is_empty")]
+    pub extra: HashMap<String, Value>,
 }

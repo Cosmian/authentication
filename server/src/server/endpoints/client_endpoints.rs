@@ -81,18 +81,23 @@ pub async fn login(
     }
     // --- end TOTP check ---
 
-    // Fetch roles from userpass record (if authenticated via username/password).
-    // For non-userpass auth schemes (JWT, mTLS), roles=[] (fail-closed).
-    let roles = if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword {
+    // Fetch roles and extra claims from the userpass record (if authenticated via
+    // username/password). For non-userpass auth schemes (JWT, mTLS), both are empty
+    // (fail-closed): a userpass row's roles/extra_claims are only trustworthy for the
+    // identity that actually authenticated against it, never borrowed by a same-named
+    // identity authenticated through a different scheme.
+    let (roles, extra_claims) = if authenticated_client.auth_scheme
+        == crate::AuthScheme::UsernamePassword
+    {
         match database
             .get_userpass(&realm.id, &authenticated_client.username)
             .await?
         {
-            Some(up) => up.roles,
-            None => Vec::new(),
+            Some(up) => (up.roles, up.extra_claims.unwrap_or_default()),
+            None => (Vec::new(), Default::default()),
         }
     } else {
-        Vec::new()
+        (Vec::new(), Default::default())
     };
 
     let token = issue_token(
@@ -100,6 +105,7 @@ pub async fn login(
         authenticated_client.auth_scheme,
         &realm.id,
         roles,
+        extra_claims,
         &jwt_token_config,
         realm.session_max_age_seconds,
     )?;
@@ -156,6 +162,19 @@ pub async fn whoami(req: HttpRequest) -> Result<HttpResponse, AuthError> {
 pub struct CertifyRequest {
     /// PEM-encoded public key to certify.
     pub verification_key: String,
+
+    /// Names of the session's extra claims (set via `UserPass.extra_claims` at
+    /// enrollment) to copy into this certificate. Only claims both requested here and
+    /// present in the session are included — nothing is copied by default.
+    #[serde(default)]
+    pub claims: Vec<String>,
+
+    /// Omit `sub` (the authenticated username) from the certificate, for callers who
+    /// consider it sensitive. Only allowed when `claims` is non-empty — a certificate
+    /// must identify its holder by at least one claim, so it can't be both anonymous
+    /// and empty.
+    #[serde(default)]
+    pub exclude_sub: bool,
 }
 
 /// Response body for `POST /certify`.
@@ -199,7 +218,6 @@ pub async fn certify(
             "verification_key must be a PEM-encoded key or certificate".to_string(),
         ));
     }
-
     let cert_jwt_config = cert_jwt_config.get_ref().as_ref().ok_or_else(|| {
         AuthError::Config("certificate signing is not configured on this server".to_string())
     })?;
@@ -237,13 +255,33 @@ pub async fn certify(
         })?
         .as_secs() as i64;
 
+    // Only claims both explicitly requested and present in the session are copied —
+    // nothing is included by default, and requesting an absent claim is not an error
+    // on its own (it simply contributes nothing to `extra`).
+    let extra: std::collections::HashMap<String, serde_json::Value> = body
+        .claims
+        .iter()
+        .filter_map(|name| claims.extra.get(name).map(|v| (name.clone(), v.clone())))
+        .collect();
+
+    // A certificate must identify its holder by at least one claim: `exclude_sub` is
+    // only honored when the requested/present intersection actually yielded something,
+    // not merely when the request listed names — an all-absent `claims` list must not
+    // silently produce a certificate with neither `sub` nor any extra claim.
+    if body.exclude_sub && extra.is_empty() {
+        return Err(AuthError::BadRequest(
+            "exclude_sub requires at least one requested claim in 'claims' to actually be present in the session — a certificate cannot be both anonymous and empty".to_string(),
+        ));
+    }
+
     let cert_claims = CertificateClaims {
         realm_id,
-        sub,
+        sub: if body.exclude_sub { None } else { Some(sub) },
         auth_scheme,
         verification_key: verification_key.to_string(),
         iat: now,
         exp: now + realm.certificate_max_age_seconds,
+        extra,
     };
 
     let header = Header::new(Algorithm::ES256);

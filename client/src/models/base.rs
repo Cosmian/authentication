@@ -44,6 +44,13 @@ pub struct UserPass {
     /// Emitted in the JWT `roles` claim for OPA policy evaluation.
     #[serde(default)]
     pub roles: Vec<String>,
+
+    /// Arbitrary extra claims set by the realm admin at enrollment, merged into the
+    /// session JWT's `extra` claims on login (username/password sessions only — see
+    /// `AuthPrivateClaims` for why this isn't sourced from other auth schemes) and,
+    /// when explicitly requested by the caller, into `POST /certify` certificates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_claims: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Authentication server admins.

@@ -55,6 +55,7 @@ pub(super) async fn seed_dev_realm_admin(
             password: hashed,
             change_password: true,
             roles: Vec::new(),
+            extra_claims: None,
         };
         db.create_userpass(&userpass).await.map_err(|e| {
             crate::AuthError::Init(format!(
@@ -110,6 +111,7 @@ pub(super) async fn seed_dev_realm_admin(
                 password: hashed,
                 change_password: false,
                 roles: Vec::new(),
+                extra_claims: None,
             };
             db.create_userpass(&userpass).await.map_err(|e| {
                 crate::AuthError::Init(format!(

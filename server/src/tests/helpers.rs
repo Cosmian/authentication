@@ -57,6 +57,7 @@ pub fn create_userpass(
         password: password.as_bytes().to_vec(),
         change_password,
         roles: Vec::new(),
+        extra_claims: None,
     })
 }
 

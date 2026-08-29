@@ -97,6 +97,7 @@ pub fn issue_token(
     auth_scheme: AuthScheme,
     realm_id: &str,
     roles: Vec<String>,
+    extra_claims: std::collections::HashMap<String, serde_json::Value>,
     jwt_config: &JwtTokenConfig,
     expiration_seconds: i64,
 ) -> Result<String, AuthError> {
@@ -119,6 +120,7 @@ pub fn issue_token(
             auth_scheme: Some(auth_scheme),
             realm_id: Some(realm_id.to_string()),
         },
+        extra: extra_claims,
         ..Default::default()
     };
 
@@ -164,6 +166,7 @@ mod tests {
             AuthScheme::UsernamePassword,
             "realm123",
             vec!["CryptoOfficer".to_string()],
+            std::collections::HashMap::new(),
             &config,
             expiration_seconds,
         )
@@ -192,6 +195,7 @@ mod tests {
             AuthScheme::UsernamePassword,
             "realm123",
             Vec::new(),
+            std::collections::HashMap::new(),
             &config,
             expiration_seconds,
         )
@@ -221,6 +225,7 @@ mod tests {
             AuthScheme::UsernamePassword,
             "realm123",
             Vec::new(),
+            std::collections::HashMap::new(),
             &config,
             expiration_seconds,
         )
