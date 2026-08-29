@@ -22,6 +22,7 @@ use futures::{
     Future,
     future::{Ready, ok},
 };
+use zeroize::Zeroizing;
 
 use crate::{
     AuthenticatedClientScheme,
@@ -216,7 +217,7 @@ where
 /// # Returns
 /// * `Some((username, password))` - If valid Basic auth credentials are found
 /// * `None` - If no valid Basic auth header is present
-fn extract_basic_auth_credentials(req: &ServiceRequest) -> Option<(String, String)> {
+fn extract_basic_auth_credentials(req: &ServiceRequest) -> Option<(String, Zeroizing<String>)> {
     let auth_header = req.headers().get(AUTHORIZATION)?;
     let auth_str = auth_header.to_str().ok()?;
 
@@ -225,19 +226,21 @@ fn extract_basic_auth_credentials(req: &ServiceRequest) -> Option<(String, Strin
         return None;
     }
 
-    // Extract and decode the base64-encoded credentials
+    // Extract and decode the base64-encoded credentials.
+    // `String::from_utf8` reuses the decoded `Vec<u8>`'s allocation rather than copying, so
+    // wrapping the resulting String in `Zeroizing` covers both the decoded bytes and the
+    // "username:password" string with a single wrap.
     let encoded_credentials = auth_str[6..].trim();
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded_credentials)
         .ok()?;
-
-    let credentials_str = String::from_utf8(decoded).ok()?;
+    let credentials_str = Zeroizing::new(String::from_utf8(decoded).ok()?);
 
     // Split on the first colon (password may contain colons)
     let colon_pos = credentials_str.find(':')?;
     let username = credentials_str[..colon_pos].to_string();
     // TODO : Check that this doesn't panic in case 'basic ' and nothing else / Base64 of empty string
-    let password = credentials_str[colon_pos + 1..].to_string();
+    let password = Zeroizing::new(credentials_str[colon_pos + 1..].to_string());
 
     // Username must not be empty
     if username.is_empty() {

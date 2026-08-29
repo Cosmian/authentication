@@ -52,3 +52,4 @@ toml = "0.9.8"
 url = { version = "2.5", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 x509-cert = { version = "0.2", features = ["pem"] }
+zeroize = "1.8"

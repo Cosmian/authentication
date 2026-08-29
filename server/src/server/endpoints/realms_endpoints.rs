@@ -10,6 +10,7 @@ use actix_web::{
 };
 use cosmian_logger::info;
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 /// Create a new user password entry.
 ///
@@ -36,8 +37,11 @@ pub async fn create_userpass(
 
     // Kept in plaintext (not persisted) so a conflict can be re-checked against it below —
     // Argon2 hashes are salted, so the stored hash can never be compared by equality.
-    let plaintext_password = String::from_utf8(userpass.password)
-        .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?;
+    // Zeroized on drop rather than left for the allocator to overwrite whenever it likes.
+    let plaintext_password = Zeroizing::new(
+        String::from_utf8(userpass.password)
+            .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
+    );
     userpass.password = hash_password_with_argon2(&plaintext_password)
         .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
 
@@ -159,10 +163,10 @@ pub async fn update_userpass(
             .update_userpass_metadata(&realm, &username, userpass.change_password, &userpass.roles)
             .await?;
     } else {
-        userpass.password =
-            hash_password_with_argon2(&String::from_utf8(userpass.password).map_err(|e| {
-                AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
-            })?)?;
+        let plaintext_password = Zeroizing::new(String::from_utf8(userpass.password).map_err(
+            |e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")),
+        )?);
+        userpass.password = hash_password_with_argon2(&plaintext_password)?;
         database.update_userpass(&userpass).await?;
     }
     info!(
