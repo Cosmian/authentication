@@ -73,6 +73,16 @@ stdenv.mkDerivation {
   # configHook runs pnpm install --offline --frozen-lockfile
   inherit pnpmDeps;
 
+  # Node.js 22.10.0 (pinned in nixpkgs) doesn't satisfy the engines requirement
+  # of @rolldown/binding-linux-x64-gnu ("^20.19.0 || >=22.12.0"), so pnpm
+  # silently skips that optional native binding.  The ABI is stable across all
+  # Node 22.x releases (ABI 127), so the binary runs fine on 22.10.0.
+  # Telling pnpm to evaluate engine constraints against 22.12.0 makes it
+  # include the binding during the offline install step.
+  prePnpmInstall = ''
+    export npm_config_node_version="22.12.0"
+  '';
+
   # No native binaries — skip the strip/file-detection phase which requires
   # the `file` command. Without this, Nix's fixupPhase fails on modern nixpkgs
   # where `file` is not in the stdenv's default PATH.

@@ -76,13 +76,20 @@ let
     else
       pkgs234;
 
-  # Modern importCargoLock (from pkgsWithRust) that supports workspace inheritance
-  # via replace-workspace-values.py. Used to override the missing step in pkgs234.
-  importCargoLockModern =
-    (pkgsWithRust.makeRustPlatform {
-      cargo = rustToolchain;
-      rustc = rustToolchain;
-    }).importCargoLock;
+  # Custom importCargoLock that wraps fetchurl with a browser User-Agent.
+  # The default fetchurl sends "curl/X Nixpkgs/Y" which crates.io CDN may
+  # reject with HTTP 403 from CI runner IPs.  By injecting curlOpts we
+  # override the User-Agent at the curl command level inside the builder.
+  importCargoLockWithUA =
+    let
+      wrappedFetchurl = attrs: pkgsWithRust.fetchurl (attrs // {
+        curlOptsList = [ "--user-agent" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" ];
+      });
+    in
+    pkgsWithRust.callPackage (nixpkgsSrc + "/pkgs/build-support/rust/import-cargo-lock.nix") {
+      fetchurl = wrappedFetchurl;
+      inherit (pkgsWithRust) cargo;
+    };
 
   # rustPlatform: on Linux use pkgs234Fixed (glibc 2.34) with modern importCargoLock
   rustPlatform =
@@ -95,13 +102,20 @@ let
       in
       base // {
         buildRustPackage = base.buildRustPackage.override {
-          importCargoLock = importCargoLockModern;
+          importCargoLock = importCargoLockWithUA;
         };
       }
     else
       pkgsWithRust.makeRustPlatform {
         cargo = rustToolchain;
         rustc = rustToolchain;
+      } // {
+        buildRustPackage = (pkgsWithRust.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        }).buildRustPackage.override {
+          importCargoLock = importCargoLockWithUA;
+        };
       };
 
   # Extract version from workspace Cargo.toml
