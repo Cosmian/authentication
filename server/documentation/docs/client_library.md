@@ -344,8 +344,10 @@ admin.create_admin_credentials_in_realm(
         realm: "my-service".to_string(),
         username: "alice".to_string(),
         password: b"hunter2".to_vec(),  // plaintext — server hashes with Argon2id
+        hashed_password: None,
         change_password: false,
         roles: vec!["CryptoOfficer".to_string()],
+        extra_claims: None,
     },
 ).await?;
 
@@ -361,8 +363,10 @@ admin.update_admin_credentials_in_realm(
         realm: "my-service".to_string(),
         username: "alice".to_string(),
         password: b"new-password".to_vec(),
+        hashed_password: None,
         change_password: true,
         roles: vec!["CryptoOfficer".to_string()],
+        extra_claims: None,
     },
 ).await?;
 
@@ -371,6 +375,62 @@ let all: Vec<UserPass> = admin.list_admin_credentials_in_realm("my-service").awa
 
 // Delete
 admin.delete_admin_credentials_in_realm("my-service", "alice").await?;
+```
+
+### Migrating pre-hashed passwords
+
+`password` and `hashed_password` are mutually exclusive — exactly one must be provided on
+create. Use `hashed_password` to import a credential already hashed by another
+Argon2-based system, without ever sending the plaintext to this server. The value must be
+a full Argon2 PHC string (e.g. `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`); the server
+validates its structure and rejects it with `400` if malformed, but stores it as-is
+otherwise (no re-hashing).
+
+```rust
+admin.create_admin_credentials_in_realm(
+    "my-service",
+    &UserPass {
+        realm: "my-service".to_string(),
+        username: "bob".to_string(),
+        password: Vec::new(),
+        hashed_password: Some("$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>".to_string()),
+        change_password: false,
+        roles: vec![],
+        extra_claims: None,
+    },
+).await?;
+```
+
+The same rule applies on update: leave both `password` and `hashed_password`
+empty/`None` to keep the existing password unchanged while only updating
+`roles`/`change_password`.
+
+### Extra claims
+
+`extra_claims` are set by the realm admin at enrollment and merged into the session JWT's
+top-level claims on username/password login (see
+[`authentication_flows.md`](authentication_flows.md) for which auth schemes this applies
+to). They can be selectively copied into a `POST /certify` certificate by name — see
+[`api_reference.md`](api_reference.md#post-certifyrealmrealm_id).
+
+```rust
+use serde_json::json;
+use std::collections::HashMap;
+
+admin.create_admin_credentials_in_realm(
+    "my-service",
+    &UserPass {
+        realm: "my-service".to_string(),
+        username: "alice".to_string(),
+        password: b"hunter2".to_vec(),
+        hashed_password: None,
+        change_password: false,
+        roles: vec!["CryptoOfficer".to_string()],
+        extra_claims: Some(HashMap::from([
+            ("as_registrant".to_string(), json!("acme-corp")),
+        ])),
+    },
+).await?;
 ```
 
 ---

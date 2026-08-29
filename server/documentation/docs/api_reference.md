@@ -164,13 +164,17 @@ back as a session cookie/token.
 
 ```json
 {
-  "verification_key": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+  "verification_key": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+  "claims": ["as_registrant"],
+  "exclude_sub": false
 }
 ```
 
-| Field               | Type     | Description                              |
-| ------------------- | -------- | ----------------------------------------- |
-| `verification_key`  | `String` | PEM-encoded public key to certify         |
+| Field               | Type       | Description                                                                                                                                     |
+| ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `verification_key`  | `String`   | PEM-encoded public key to certify                                                                                                                |
+| `claims`            | `String[]` | Optional, default `[]`. Names of the session's [extra claims](#userpass) to copy into the certificate. Only names both listed here and present in the session are included — nothing is copied by default. |
+| `exclude_sub`       | `bool`     | Optional, default `false`. Omit `sub` from the certificate. Only allowed when `claims` yields at least one claim actually present in the session — a certificate can't identify nobody. |
 
 **Response — `200 OK`**
 
@@ -184,7 +188,8 @@ back as a session cookie/token.
 [`CertificateClaims`](#certificateclaims) object.
 
 **Response — `400 Bad Request`** — `verification_key` missing, empty, not PEM-shaped
-(`-----BEGIN ...`/`-----END ...`), or longer than 8192 bytes.
+(`-----BEGIN ...`/`-----END ...`), or longer than 8192 bytes; or `exclude_sub: true` while
+the requested/present intersection of `claims` is empty.
 
 **Response — `401 Unauthorized`** — no valid session cookie.
 
@@ -800,18 +805,31 @@ Create a username/password credential in a realm.
   "realm": "my-service",
   "username": "alice",
   "password": [115, 101, 99, 114, 101, 116],
-  "change_password": false
+  "change_password": false,
+  "roles": ["CryptoOfficer"],
+  "extra_claims": { "as_registrant": "acme-corp" }
 }
 ```
 
-| Field             | Type     | Description                                                             |
-| ----------------- | -------- | ----------------------------------------------------------------------- |
-| `realm`           | `String` | Realm ID (must match path parameter)                                    |
-| `username`        | `String` | Credential username                                                     |
-| `password`        | `u8[]`   | UTF-8 bytes of the plaintext password. The server hashes with Argon2id. |
-| `change_password` | `bool`   | When `true`, the next login returns `"ChangePassword"` next step        |
+| Field              | Type               | Description                                                                                                                                  |
+| ------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `realm`            | `String`           | Realm ID (must match path parameter)                                                                                                          |
+| `username`         | `String`           | Credential username                                                                                                                            |
+| `password`         | `u8[]`             | UTF-8 bytes of the plaintext password. The server hashes with Argon2id. Mutually exclusive with `hashed_password`.                            |
+| `hashed_password`  | `String` \| `null` | A pre-computed Argon2 PHC string (e.g. `$argon2id$v=19$m=...$...$...`), stored as-is — for migrating credentials already hashed by another Argon2-based system. Mutually exclusive with `password`; rejected with `400` if it doesn't parse as a valid PHC string. Exactly one of `password`/`hashed_password` must be provided on create. |
+| `change_password`  | `bool`             | When `true`, the next login returns `"ChangePassword"` next step                                                                              |
+| `roles`            | `String[]`         | Optional, default `[]`. RBAC roles assigned to this user, emitted in the session JWT's `roles` claim.                                         |
+| `extra_claims`     | `object` \| `null` | Optional. Arbitrary extra claims merged into the session JWT on username/password login, and selectively exposed via [`POST /certify`](#post-certifyrealmrealm_id)'s `claims` field. |
 
 **Response — `201 Created`** — created `UserPass` object.
+
+**Response — `409 Conflict`** — a credential for this `(realm, username)` already exists.
+If the resubmitted `password`/`change_password`/`roles`/`extra_claims` are byte-for-byte
+identical to the existing entry, the call is instead treated as an idempotent no-op and
+returns `200 OK` with the existing `UserPass` — useful for a client retrying a create call
+it isn't sure landed. This idempotency check only applies to the plaintext `password` path;
+a resubmission via `hashed_password` always returns `409`, since the server never re-exposes
+a stored hash to compare against.
 
 ---
 
@@ -835,9 +853,12 @@ Retrieve a single credential.
 
 ### `PUT /realms/{realm_id}/userpass/{username}`
 
-Update a credential (typically to change the password or set `change_password`).
+Update a credential (typically to change the password or set `change_password`/`roles`).
 
 #### Request body — same shape as `POST /realms/{realm}/userpass`
+
+Leave both `password` and `hashed_password` empty/absent to keep the existing password
+unchanged and only apply `roles`/`change_password`. Providing both is rejected with `400`.
 
 **Response — `200 OK`** — updated `UserPass` object.
 
@@ -999,11 +1020,16 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
   "realm": "my-service",
   "username": "alice",
   "password": [],
-  "change_password": false
+  "change_password": false,
+  "roles": ["CryptoOfficer"],
+  "extra_claims": { "as_registrant": "acme-corp" }
 }
 ```
 
-> The `password` field is always returned as an empty byte array from GET endpoints. Send the plaintext UTF-8 bytes only on create/update.
+> The `password` field is always returned as an empty byte array from GET endpoints, and
+> `hashed_password` is never returned. Send the plaintext UTF-8 bytes in `password`, or a
+> pre-computed Argon2 PHC string in `hashed_password`, on create/update — see
+> [`POST /realms/{realm_id}/userpass`](#post-realmsrealm_iduserpass).
 
 ### `SessionData`
 
@@ -1036,17 +1062,21 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 
 The JWT payload returned by `GET /whoami`:
 
-| Claim    | Type       | Description                                  |
-| -------- | ---------- | -------------------------------------------- |
-| `iss`    | `String`   | Issuer                                       |
-| `sub`    | `String`   | Subject (authenticated username)             |
-| `aud`    | `String[]` | Audience list                                |
-| `exp`    | `i64`      | Expiration (Unix seconds)                    |
-| `nbf`    | `i64`      | Not-before (Unix seconds)                    |
-| `iat`    | `i64`      | Issued-at (Unix seconds)                     |
-| `jti`    | `String`   | JWT ID                                       |
-| `as_as`  | `String`   | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`) |
-| `as_rid` | `String`   | Realm ID                                     |
+| Claim    | Type       | Description                                                                                                          |
+| -------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `iss`    | `String`   | Issuer                                                                                                                |
+| `sub`    | `String`   | Subject (authenticated username)                                                                                     |
+| `aud`    | `String[]` | Audience list                                                                                                         |
+| `exp`    | `i64`      | Expiration (Unix seconds)                                                                                             |
+| `nbf`    | `i64`      | Not-before (Unix seconds)                                                                                             |
+| `iat`    | `i64`      | Issued-at (Unix seconds)                                                                                              |
+| `jti`    | `String`   | JWT ID                                                                                                                |
+| `roles`  | `String[]` | RBAC roles (e.g. `["CryptoOfficer"]`), sourced from `UserPass.roles` for username/password sessions. Absent/empty means no roles (fail-closed in OPA). Empty for all other auth schemes. |
+| `as_as`  | `String`   | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`)                                                                          |
+| `as_rid` | `String`   | Realm ID                                                                                                              |
+
+Any keys from `UserPass.extra_claims` are also present as top-level claims for
+username/password sessions.
 
 ### `CertificateClaims`
 
@@ -1058,8 +1088,11 @@ substituted for, a session token.
 | Claim               | Type     | Description                             |
 | -------------------- | -------- | ---------------------------------------- |
 | `realm_id`           | `String` | Realm the caller authenticated to        |
-| `sub`                | `String` | Subject (authenticated username)         |
+| `sub`                | `String` \| absent | Subject (authenticated username). Absent when the request set `exclude_sub: true`. |
 | `auth_scheme`        | `String` | Auth scheme used to establish the session (`up`/`jwt`/`cc`/`f2`/`dc`) |
 | `verification_key`   | `String` | The certified PEM public key             |
 | `iat`                | `i64`    | Issued-at (Unix seconds)                 |
 | `exp`                | `i64`    | Expiration (Unix seconds) — realm's `certificate_max_age_seconds` |
+
+Any names listed in the `/certify` request's `claims` field are also present as top-level
+claims, copied from the session's own extra claims.
