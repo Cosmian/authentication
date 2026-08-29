@@ -1,6 +1,6 @@
 use crate::{
     AuthError,
-    database::{Database, hash_password_with_argon2},
+    database::{AuthDbError, Database, hash_password_with_argon2},
     models::{ADMIN_REALM, UserPass},
     server::endpoints::admin_from_request,
 };
@@ -34,15 +34,48 @@ pub async fn create_userpass(
     let mut userpass = userpass.into_inner();
     userpass.realm = realm_id.clone();
 
-    // Hash the plaintext password bytes before storing.
-    // Clients always send plaintext UTF-8 bytes; the server is responsible for hashing.
-    userpass.password = hash_password_with_argon2(
-        &String::from_utf8(userpass.password)
-            .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
-    )
-    .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
+    // Kept in plaintext (not persisted) so a conflict can be re-checked against it below —
+    // Argon2 hashes are salted, so the stored hash can never be compared by equality.
+    let plaintext_password = String::from_utf8(userpass.password)
+        .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?;
+    userpass.password = hash_password_with_argon2(&plaintext_password)
+        .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
 
-    database.create_userpass(&userpass).await?;
+    match database.create_userpass(&userpass).await {
+        Ok(()) => {}
+        Err(AuthDbError::Conflict(_)) => {
+            // Re-provisioning with byte-for-byte identical data is a common retry
+            // pattern (e.g. a client that doesn't know whether its previous call
+            // landed) — treat it as a no-op success rather than a conflict. Anything
+            // else about the existing entry differing is a genuine conflict: someone
+            // else already owns this username with different credentials/roles/claims.
+            let password_matches = database
+                .validate_userpass(&realm_id, &userpass.username, &plaintext_password)
+                .await
+                .is_ok();
+            let existing = database.get_userpass(&realm_id, &userpass.username).await?;
+            let data_matches = password_matches
+                && existing.is_some_and(|e| {
+                    e.change_password == userpass.change_password
+                        && e.roles == userpass.roles
+                        && e.extra_claims == userpass.extra_claims
+                });
+
+            if data_matches {
+                info!(
+                    "create_userpass: '{}' re-submitted identical credentials for '{}' in realm '{}' — idempotent no-op",
+                    requester.id, userpass.username, realm_id
+                );
+                return Ok(HttpResponse::Ok().json(userpass));
+            }
+
+            return Err(AuthError::Conflict(format!(
+                "credentials for '{}' already exist in realm '{}' with different data",
+                userpass.username, realm_id
+            )));
+        }
+        Err(e) => return Err(e.into()),
+    }
 
     // Auto-link: when creating a credential in the admin realm, if an admin
     // exists with a matching id, set its `userpass` field to enable login.

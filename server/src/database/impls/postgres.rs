@@ -369,7 +369,16 @@ impl Database for PostgresDatabase {
         .bind(&roles_json)
         .bind(&extra_claims_json)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            AuthDbError::from_insert_error(
+                e,
+                format!(
+                    "credentials for '{}' already exist in realm '{}'",
+                    userpass.username, userpass.realm
+                ),
+            )
+        })?;
 
         Ok(())
     }
