@@ -417,6 +417,7 @@ impl Database for PostgresDatabase {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,
                     password: vec![], // do not return the password hash
+                    hashed_password: None,
                     change_password: row.try_get("change_password")?,
                     roles,
                     extra_claims,
@@ -548,6 +549,7 @@ impl Database for PostgresDatabase {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
+                hashed_password: None,
                 change_password: row.try_get("change_password")?,
                 roles,
                 extra_claims,
@@ -591,6 +593,7 @@ impl Database for PostgresDatabase {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
                 password: row.try_get("password")?,
+                hashed_password: None,
                 change_password: row.try_get("change_password")?,
                 roles,
                 extra_claims,

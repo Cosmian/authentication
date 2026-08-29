@@ -194,6 +194,7 @@ fn make_expired_userpass(realm: &str, username: &str, password: &str) -> AuthRes
         realm: realm.to_string(),
         username: username.to_string(),
         password: password.as_bytes().to_vec(),
+        hashed_password: None,
         change_password: true,
         roles: Vec::new(),
         extra_claims: None,
@@ -599,6 +600,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
         realm: realm_id.to_string(),
         username: username.to_string(),
         password: Vec::new(), // empty — server must keep the existing hash
+        hashed_password: None,
         change_password: false,
         roles: vec!["Auditor".to_string()],
         extra_claims: None,

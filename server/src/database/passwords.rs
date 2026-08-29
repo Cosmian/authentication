@@ -21,6 +21,15 @@ pub fn hash_password_with_argon2(password: &str) -> AuthResult<Vec<u8>> {
     Ok(password_hash)
 }
 
+/// Validate that `hash` is a well-formed Argon2 PHC string, without verifying it against
+/// any password. Used to accept a caller-supplied pre-hashed password (`hashed_password`)
+/// as-is instead of hashing a plaintext one, while still rejecting garbage input.
+pub fn validate_argon2_phc_string(hash: &str) -> AuthResult<()> {
+    PasswordHash::new(hash)
+        .map_err(|e| AuthError::BadRequest(format!("not a valid Argon2 PHC string: {e}")))?;
+    Ok(())
+}
+
 /// Verify a plaintext `password` against a stored Argon2 PHC string.
 ///
 /// Returns `Ok(())` on success, or an error if the password is wrong or

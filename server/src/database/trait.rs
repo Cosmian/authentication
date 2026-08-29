@@ -116,6 +116,7 @@ pub trait Database: Send + Sync {
                         ))
                     },
                 )?,
+                hashed_password: None,
                 change_password: true,
                 roles: Vec::new(),
                 extra_claims: None,

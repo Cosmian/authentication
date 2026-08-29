@@ -1,6 +1,6 @@
 use crate::{
     AuthError,
-    database::{AuthDbError, Database, hash_password_with_argon2},
+    database::{AuthDbError, Database, hash_password_with_argon2, validate_argon2_phc_string},
     models::{ADMIN_REALM, UserPass},
     server::endpoints::admin_from_request,
 };
@@ -35,15 +35,39 @@ pub async fn create_userpass(
     let mut userpass = userpass.into_inner();
     userpass.realm = realm_id.clone();
 
-    // Kept in plaintext (not persisted) so a conflict can be re-checked against it below —
-    // Argon2 hashes are salted, so the stored hash can never be compared by equality.
-    // Zeroized on drop rather than left for the allocator to overwrite whenever it likes.
-    let plaintext_password = Zeroizing::new(
-        String::from_utf8(userpass.password)
-            .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
-    );
-    userpass.password = hash_password_with_argon2(&plaintext_password)
-        .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
+    // Exactly one of `password` (plaintext, hashed below) / `hashed_password` (a
+    // pre-computed Argon2 PHC string, stored as-is — e.g. migrating credentials already
+    // hashed by another Argon2-based system) must be provided.
+    //
+    // `plaintext_password` is kept around (zeroized on drop, not persisted) only in the
+    // plaintext case, so a conflict can be re-checked against it below — Argon2 hashes
+    // are salted, so a stored hash can never be compared for equality directly.
+    let plaintext_password = match (userpass.password.is_empty(), userpass.hashed_password.take())
+    {
+        (false, None) => {
+            let plaintext = Zeroizing::new(String::from_utf8(userpass.password).map_err(
+                |e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")),
+            )?);
+            userpass.password = hash_password_with_argon2(&plaintext)
+                .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
+            Some(plaintext)
+        }
+        (true, Some(hashed)) => {
+            validate_argon2_phc_string(&hashed)?;
+            userpass.password = hashed.into_bytes();
+            None
+        }
+        (true, None) => {
+            return Err(AuthError::BadRequest(
+                "either 'password' or 'hashed_password' must be provided".to_string(),
+            ));
+        }
+        (false, Some(_)) => {
+            return Err(AuthError::BadRequest(
+                "'password' and 'hashed_password' are mutually exclusive".to_string(),
+            ));
+        }
+    };
 
     match database.create_userpass(&userpass).await {
         Ok(()) => {}
@@ -53,17 +77,25 @@ pub async fn create_userpass(
             // landed) — treat it as a no-op success rather than a conflict. Anything
             // else about the existing entry differing is a genuine conflict: someone
             // else already owns this username with different credentials/roles/claims.
-            let password_matches = database
-                .validate_userpass(&realm_id, &userpass.username, &plaintext_password)
-                .await
-                .is_ok();
-            let existing = database.get_userpass(&realm_id, &userpass.username).await?;
-            let data_matches = password_matches
-                && existing.is_some_and(|e| {
-                    e.change_password == userpass.change_password
-                        && e.roles == userpass.roles
-                        && e.extra_claims == userpass.extra_claims
-                });
+            let data_matches = match &plaintext_password {
+                Some(plaintext) => {
+                    let password_matches = database
+                        .validate_userpass(&realm_id, &userpass.username, plaintext)
+                        .await
+                        .is_ok();
+                    let existing = database.get_userpass(&realm_id, &userpass.username).await?;
+                    password_matches
+                        && existing.is_some_and(|e| {
+                            e.change_password == userpass.change_password
+                                && e.roles == userpass.roles
+                                && e.extra_claims == userpass.extra_claims
+                        })
+                }
+                // A pre-hashed submission can't be re-verified without exposing the
+                // stored hash — get_userpass deliberately never returns it — so this is
+                // always treated as a genuine conflict.
+                None => false,
+            };
 
             if data_matches {
                 info!(
@@ -155,19 +187,38 @@ pub async fn update_userpass(
     userpass.realm = realm.clone();
     userpass.username = username.clone();
 
-    // Hash the new password if one was provided; otherwise preserve the existing hash by
-    // only updating the metadata fields (roles, change_password).
-    // Clients send password: [] when only updating roles/flags (GET always returns []).
-    if userpass.password.is_empty() {
-        database
-            .update_userpass_metadata(&realm, &username, userpass.change_password, &userpass.roles)
-            .await?;
-    } else {
-        let plaintext_password = Zeroizing::new(String::from_utf8(userpass.password).map_err(
-            |e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")),
-        )?);
-        userpass.password = hash_password_with_argon2(&plaintext_password)?;
-        database.update_userpass(&userpass).await?;
+    // Hash the new plaintext password / validate-and-store the new pre-hashed password if
+    // either was provided; otherwise preserve the existing hash by only updating the
+    // metadata fields (roles, change_password). Clients send password: [] and no
+    // hashed_password when only updating roles/flags (GET always returns password: []).
+    match (userpass.password.is_empty(), userpass.hashed_password.take()) {
+        (true, None) => {
+            database
+                .update_userpass_metadata(
+                    &realm,
+                    &username,
+                    userpass.change_password,
+                    &userpass.roles,
+                )
+                .await?;
+        }
+        (false, None) => {
+            let plaintext_password = Zeroizing::new(String::from_utf8(userpass.password).map_err(
+                |e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")),
+            )?);
+            userpass.password = hash_password_with_argon2(&plaintext_password)?;
+            database.update_userpass(&userpass).await?;
+        }
+        (true, Some(hashed)) => {
+            validate_argon2_phc_string(&hashed)?;
+            userpass.password = hashed.into_bytes();
+            database.update_userpass(&userpass).await?;
+        }
+        (false, Some(_)) => {
+            return Err(AuthError::BadRequest(
+                "'password' and 'hashed_password' are mutually exclusive".to_string(),
+            ));
+        }
     }
     info!(
         "update_userpass: '{}' updated credentials for '{}' in realm '{}'",

@@ -55,6 +55,7 @@ pub fn create_userpass(
         realm: realm.to_string(),
         username: username.to_string(),
         password: password.as_bytes().to_vec(),
+        hashed_password: None,
         change_password,
         roles: Vec::new(),
         extra_claims: None,

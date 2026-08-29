@@ -38,7 +38,15 @@ fn default_certificate_max_age_seconds() -> i64 {
 pub struct UserPass {
     pub realm: String,
     pub username: String,
+    /// Plaintext UTF-8 password bytes, hashed with Argon2 by the server before storage.
+    /// Mutually exclusive with `hashed_password`; leave empty when providing that instead
+    /// (or, on update, to keep the existing password unchanged).
     pub password: Vec<u8>,
+    /// A pre-computed Argon2 PHC string (e.g. `$argon2id$v=19$m=...$...$...`), stored
+    /// as-is without server-side hashing — for callers migrating already-hashed
+    /// credentials from another Argon2-based system. Mutually exclusive with `password`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hashed_password: Option<String>,
     pub change_password: bool,
     /// RBAC roles assigned to this user (e.g. `["CryptoOfficer", "Auditor"]`).
     /// Emitted in the JWT `roles` claim for OPA policy evaluation.
