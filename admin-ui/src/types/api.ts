@@ -60,10 +60,15 @@ export interface Admin {
 export interface UserPass {
     realm: string;
     username: string;
+    /** Plaintext UTF-8 password bytes. Mutually exclusive with `hashed_password`. */
     password: number[];
+    /** Pre-computed Argon2 PHC string, stored as-is. Mutually exclusive with `password`. */
+    hashed_password?: string;
     change_password: boolean;
     /** RBAC roles assigned to this user (e.g. ["CryptoOfficer"]). Emitted in JWT `roles` claim. */
     roles?: string[];
+    /** Arbitrary extra claims merged into the session JWT on username/password login. */
+    extra_claims?: Record<string, string>;
 }
 
 /** Session data */
