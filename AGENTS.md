@@ -356,3 +356,50 @@ Fix all clippy warnings before considering the task complete.
 | `tokenExpired` / JWT validation error                    | Feature `no_jwt_validation` disabled in prod       | Check configuration; check token TTL                 |
 | `gh` command hangs                                       | Interactive pager opened                           | Use `GH_PAGER=cat gh ...`                            |
 | Rocky Linux GLIBC compatibility error                    | Binary compiled against glibc > 2.34               | Ensure pkgs234 (glibc 2.34) stdenv is used in Nix   |
+
+---
+
+## 11. Security advisory ledger (`SECURITY.md`)
+
+`SECURITY.md` at the repo root is a **hand-maintained** security policy and
+vulnerability-disclosure ledger. It is edited directly (unlike the generated
+root `CHANGELOG.md`) and has three sections that must stay mutually consistent:
+the table of contents, the per-advisory entries, and the bottom summary table.
+
+### Advisory ID scheme
+
+- IDs use the repo-scoped form `COSMIAN-AUTH-<YYYY>-<NNN>` (three-digit,
+  zero-padded), distinct from the KMS repo's `COSMIAN-<YYYY>-<NNN>`.
+- To allocate a new ID, read the highest existing `COSMIAN-AUTH-<YYYY>-NNN` for
+  the current year and increment by one.
+
+### When to add an entry (released vs unreleased)
+
+- Add an entry **only** when the fix repairs a vulnerability that already shipped
+  in a **tagged release**, so the `Affected` range points at real version tags
+  (e.g. `from 0.1.0 before 0.3.0`).
+- A bug that only ever lived on a branch and was fixed before any release gets
+  **no** entry — no users were exposed.
+- The entry lands **only after the fix is merged**. Never document an
+  unfixed vulnerability here.
+
+### How to add an entry
+
+1. Add the `#### COSMIAN-AUTH-<YYYY>-NNN — <title>` heading with its field table
+   (Severity / Published / Affected / Fixed in / Found by / References) followed
+   by Summary / Impact / Mitigation prose.
+2. Add the matching anchor link under the table of contents.
+3. Add a matching row to the **Summary Table**.
+
+All three updates are required for every advisory; there is no automated check,
+so consistency is the author's responsibility.
+
+### Relationship to the changelog
+
+- `SECURITY.md` is never touched by changelog generation; edit it by hand.
+- `Security` bullets in `CHANGELOG.md` and `CHANGELOG/<branch>.md` should cite
+  the relevant `COSMIAN-AUTH-<YYYY>-NNN` IDs so the two stay cross-referenced.
+
+> A generation prompt/skill and regression tests annotated with the advisory IDs
+> are planned as future work; today the lifecycle is enforced by these rules and
+> reviewer diligence.
