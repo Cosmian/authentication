@@ -86,19 +86,18 @@ pub async fn login(
     // (fail-closed): a userpass row's roles/extra_claims are only trustworthy for the
     // identity that actually authenticated against it, never borrowed by a same-named
     // identity authenticated through a different scheme.
-    let (roles, extra_claims) = if authenticated_client.auth_scheme
-        == crate::AuthScheme::UsernamePassword
-    {
-        match database
-            .get_userpass(&realm.id, &authenticated_client.username)
-            .await?
-        {
-            Some(up) => (up.roles, up.extra_claims.unwrap_or_default()),
-            None => (Vec::new(), Default::default()),
-        }
-    } else {
-        (Vec::new(), Default::default())
-    };
+    let (roles, extra_claims) =
+        if authenticated_client.auth_scheme == crate::AuthScheme::UsernamePassword {
+            match database
+                .get_userpass(&realm.id, &authenticated_client.username)
+                .await?
+            {
+                Some(up) => (up.roles, up.extra_claims.unwrap_or_default()),
+                None => (Vec::new(), Default::default()),
+            }
+        } else {
+            (Vec::new(), Default::default())
+        };
 
     let token = issue_token(
         &authenticated_client.username,

@@ -8,7 +8,9 @@ mod impls;
 pub use impls::{MySqlDatabase, PostgresDatabase, SqliteDatabase};
 
 mod passwords;
-pub use passwords::{hash_password_with_argon2, validate_argon2_phc_string, verify_password_argon2};
+pub use passwords::{
+    hash_password_with_argon2, validate_argon2_phc_string, verify_password_argon2,
+};
 
 mod r#trait;
 #[cfg(test)]

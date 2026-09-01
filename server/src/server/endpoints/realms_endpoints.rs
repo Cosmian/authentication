@@ -42,12 +42,15 @@ pub async fn create_userpass(
     // `plaintext_password` is kept around (zeroized on drop, not persisted) only in the
     // plaintext case, so a conflict can be re-checked against it below — Argon2 hashes
     // are salted, so a stored hash can never be compared for equality directly.
-    let plaintext_password = match (userpass.password.is_empty(), userpass.hashed_password.take())
-    {
+    let plaintext_password = match (
+        userpass.password.is_empty(),
+        userpass.hashed_password.take(),
+    ) {
         (false, None) => {
-            let plaintext = Zeroizing::new(String::from_utf8(userpass.password).map_err(
-                |e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")),
-            )?);
+            let plaintext =
+                Zeroizing::new(String::from_utf8(userpass.password).map_err(|e| {
+                    AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
+                })?);
             userpass.password = hash_password_with_argon2(&plaintext)
                 .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
             Some(plaintext)
@@ -191,7 +194,10 @@ pub async fn update_userpass(
     // either was provided; otherwise preserve the existing hash by only updating the
     // metadata fields (roles, change_password). Clients send password: [] and no
     // hashed_password when only updating roles/flags (GET always returns password: []).
-    match (userpass.password.is_empty(), userpass.hashed_password.take()) {
+    match (
+        userpass.password.is_empty(),
+        userpass.hashed_password.take(),
+    ) {
         (true, None) => {
             database
                 .update_userpass_metadata(
@@ -203,9 +209,10 @@ pub async fn update_userpass(
                 .await?;
         }
         (false, None) => {
-            let plaintext_password = Zeroizing::new(String::from_utf8(userpass.password).map_err(
-                |e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")),
-            )?);
+            let plaintext_password =
+                Zeroizing::new(String::from_utf8(userpass.password).map_err(|e| {
+                    AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
+                })?);
             userpass.password = hash_password_with_argon2(&plaintext_password)?;
             database.update_userpass(&userpass).await?;
         }

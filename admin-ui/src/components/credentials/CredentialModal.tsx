@@ -38,10 +38,18 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
     // Fetch available roles whenever the modal opens
     useEffect(() => {
         if (!open) return;
+        let cancelled = false;
         const api = createRolesApi(serverUrl);
         api.list()
-            .then(setAvailableRoles)
-            .catch(() => setAvailableRoles([]));
+            .then((roles) => {
+                if (!cancelled) setAvailableRoles(roles);
+            })
+            .catch(() => {
+                if (!cancelled) setAvailableRoles([]);
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [open, serverUrl]);
 
     // Pre-fill form in edit mode; reset in create mode
