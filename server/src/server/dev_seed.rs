@@ -61,6 +61,7 @@ pub(super) async fn seed_dev_realm_admin(
             password: hashed,
             change_password: true,
             roles: Vec::new(),
+            email: None,
         };
         db.create_userpass(&userpass).await.map_err(|e| {
             crate::AuthError::Init(format!(
@@ -116,6 +117,7 @@ pub(super) async fn seed_dev_realm_admin(
                 password: hashed,
                 change_password: false,
                 roles: Vec::new(),
+                email: None,
             };
             db.create_userpass(&userpass).await.map_err(|e| {
                 crate::AuthError::Init(format!(
@@ -221,7 +223,7 @@ pub(super) async fn seed_dev_realm_admin(
     }
 
     // 6. Optionally seed plain test users in the realm.
-    for DevSeedUser { username, password } in &seed.users {
+    for DevSeedUser { username, password, email } in &seed.users {
         if db.get_userpass(&seed.realm_id, username).await?.is_none() {
             let hashed = hash_password_with_argon2(password).map_err(|e| {
                 crate::AuthError::Init(format!(
@@ -234,6 +236,7 @@ pub(super) async fn seed_dev_realm_admin(
                 password: hashed,
                 change_password: false,
                 roles: Vec::new(),
+                email: email.clone(),
             };
             db.create_userpass(&userpass).await.map_err(|e| {
                 crate::AuthError::Init(format!(

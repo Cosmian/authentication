@@ -151,6 +151,12 @@ fn default_dev_scopes() -> Vec<String> {
 pub struct DevSeedUser {
     pub username: String,
     pub password: String,
+    /// Optional dedicated email address for this user.
+    ///
+    /// When set, stored in the `email` column and used as the OIDC `email` claim
+    /// instead of the username.
+    #[serde(default)]
+    pub email: Option<String>,
 }
 
 impl DevSeedParams {

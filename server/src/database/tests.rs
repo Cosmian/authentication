@@ -105,6 +105,7 @@ fn create_user(realm: &str, username: &str, password: &str, change_password: boo
         password: hash_password_with_argon2(password).expect("Failed to hash password"),
         change_password,
         roles: Vec::new(),
+        email: None,
     }
 }
 

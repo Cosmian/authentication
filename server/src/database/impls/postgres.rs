@@ -60,6 +60,7 @@ impl Database for PostgresDatabase {
                 password BYTEA NOT NULL,
                 change_password BOOLEAN NOT NULL DEFAULT FALSE,
                 roles TEXT NOT NULL DEFAULT '[]',
+                email TEXT,
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -77,6 +78,19 @@ impl Database for PostgresDatabase {
         .unwrap_or(false);
         if !has_roles {
             sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
+                .execute(&self.pool)
+                .await?;
+        }
+
+        // Migration: add email column if missing (existing databases)
+        let has_email: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='userpass' AND column_name='email')",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .unwrap_or(false);
+        if !has_email {
+            sqlx::query("ALTER TABLE userpass ADD COLUMN email TEXT")
                 .execute(&self.pool)
                 .await?;
         }
@@ -392,8 +406,8 @@ impl Database for PostgresDatabase {
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password, roles)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO userpass (realm, username, password, change_password, roles, email)
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(&userpass.realm)
@@ -401,6 +415,7 @@ impl Database for PostgresDatabase {
         .bind(&userpass.password)
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&userpass.email)
         .execute(&self.pool)
         .await?;
 
@@ -410,7 +425,7 @@ impl Database for PostgresDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password, roles
+            SELECT realm, username, change_password, roles, email
             FROM userpass
             WHERE realm = $1 AND username = $2
             "#,
@@ -434,6 +449,7 @@ impl Database for PostgresDatabase {
                     password: vec![], // do not return the password hash
                     change_password: row.try_get("change_password")?,
                     roles,
+                    email: row.try_get("email").ok().flatten(),
                 };
                 Ok(Some(userpass))
             }
@@ -447,7 +463,7 @@ impl Database for PostgresDatabase {
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = $3, change_password = $4, roles = $5
+            SET password = $3, change_password = $4, roles = $5, email = $6
             WHERE realm = $1 AND username = $2
             "#,
         )
@@ -456,6 +472,7 @@ impl Database for PostgresDatabase {
         .bind(&userpass.password)
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&userpass.email)
         .execute(&self.pool)
         .await?;
 
@@ -520,7 +537,7 @@ impl Database for PostgresDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, email
             FROM userpass
             WHERE realm = $1
             ORDER BY username
@@ -545,6 +562,7 @@ impl Database for PostgresDatabase {
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
                 roles,
+                email: row.try_get("email").ok().flatten(),
             });
         }
 
@@ -554,7 +572,7 @@ impl Database for PostgresDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, email
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -577,6 +595,7 @@ impl Database for PostgresDatabase {
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
                 roles,
+                email: row.try_get("email").ok().flatten(),
             });
         }
 

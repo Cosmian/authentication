@@ -21,6 +21,7 @@ use crate::{
 
 const REALM: &str = "oidc";
 const USER: &str = "alice";
+const USER_EMAIL: &str = "alice@example.com";
 const PASSWORD: &str = "s3cret-password";
 const REDIRECT_URI: &str = "https://client.example.org/cb";
 
@@ -84,13 +85,15 @@ async fn provision(ctx: &crate::tests::TestsContext) -> AuthResult<OAuthClientRe
         })
         .await?;
 
-    // Create the end-user in that realm.
+    // Create the end-user in that realm with a dedicated email address.
+    // This verifies that the stored email is preferred over the username in OIDC tokens.
     let userpass = UserPass {
         realm: REALM.to_string(),
         username: USER.to_string(),
         password: PASSWORD.as_bytes().to_vec(),
         change_password: false,
         roles: vec!["Auditor".to_string()],
+        email: Some(USER_EMAIL.to_string()),
     };
     admin
         .create_admin_credentials_in_realm(REALM, &userpass)
@@ -546,5 +549,168 @@ async fn test_oidc_negative_cases() -> AuthResult<()> {
     assert_eq!(resp.status(), 401);
 
     let _ = ADMIN_REALM; // silence unused import in some configurations
+    ctx.stop_server().await
+}
+
+
+// ── Email claim in access token ─────────────────────────────────────────────
+
+/// Verify that an `at+jwt` access token issued with the `email` scope carries
+/// an `email` claim equal to the subject (username), and that the claim is absent
+/// when the scope is not requested.
+///
+/// This test validates that auth-verifier tokens are compatible with relying
+/// parties (e.g. Cosmian KMS) that use `email` as the user identity.
+#[actix_web::test]
+async fn test_access_token_contains_email_when_email_scope_requested() -> AuthResult<()> {
+    use jsonwebtoken::dangerous;
+
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let base = ctx.get_client_url();
+    let client = provision(&ctx).await?;
+    let http = http_client();
+
+    // ── Token WITH email scope ────────────────────────────────────────────
+    let (verifier, challenge) = pkce_pair();
+    let code = get_auth_code(
+        &http,
+        &base,
+        &client,
+        &challenge,
+        "openid profile email",
+        "s1",
+        "n1",
+    )
+    .await;
+
+    let tokens: serde_json::Value = http
+        .post(format!("{base}/oidc/token"))
+        .basic_auth(&client.client_id, client.client_secret.as_deref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(form_body(&[
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", REDIRECT_URI),
+            ("code_verifier", verifier.as_str()),
+        ]))
+        .send()
+        .await
+        .expect("token exchange")
+        .json()
+        .await
+        .unwrap();
+
+    let at = tokens["access_token"].as_str().expect("access_token");
+    let claims = dangerous::insecure_decode::<serde_json::Value>(at).expect("decode AT");
+
+    let email_val = &claims.claims["email"];
+    assert!(
+        email_val.is_string(),
+        "email claim must be present in access token when email scope is granted, \
+         got claims: {claims:#?}"
+    );
+    assert_eq!(
+        email_val.as_str().unwrap(),
+        USER_EMAIL,
+        "email must equal the stored email address, not the username"
+    );
+    // sub must still be present and equal to the username (not email).
+    assert_eq!(claims.claims["sub"].as_str().unwrap(), USER);
+
+    // ── Token WITHOUT email scope must NOT carry email ────────────────────
+    let (v2, c2) = pkce_pair();
+    let code2 = get_auth_code(
+        &http,
+        &base,
+        &client,
+        &c2,
+        "openid profile",
+        "s2",
+        "n2",
+    )
+    .await;
+
+    let tokens2: serde_json::Value = http
+        .post(format!("{base}/oidc/token"))
+        .basic_auth(&client.client_id, client.client_secret.as_deref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(form_body(&[
+            ("grant_type", "authorization_code"),
+            ("code", code2.as_str()),
+            ("redirect_uri", REDIRECT_URI),
+            ("code_verifier", v2.as_str()),
+        ]))
+        .send()
+        .await
+        .expect("token exchange 2")
+        .json()
+        .await
+        .unwrap();
+
+    let at2 = tokens2["access_token"].as_str().expect("access_token2");
+    let claims2 = dangerous::insecure_decode::<serde_json::Value>(at2).expect("decode AT2");
+
+    let email2 = &claims2.claims["email"];
+    assert!(
+        email2.is_null() || !email2.is_string(),
+        "email claim must be absent when email scope is not requested, \
+         got claims: {claims2:#?}"
+    );
+
+    ctx.stop_server().await
+}
+
+/// `client_credentials` grant: the email claim equals the `client_id` when the
+/// `email` scope is requested.
+#[actix_web::test]
+async fn test_client_credentials_access_token_email_equals_client_id() -> AuthResult<()> {
+    use jsonwebtoken::dangerous;
+
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let base = ctx.get_client_url();
+    let client = provision(&ctx).await?;
+    let http = http_client();
+
+    let tokens: serde_json::Value = http
+        .post(format!("{base}/oidc/token"))
+        .basic_auth(&client.client_id, client.client_secret.as_deref())
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(form_body(&[
+            ("grant_type", "client_credentials"),
+            ("scope", "email"),
+        ]))
+        .send()
+        .await
+        .expect("client_credentials token")
+        .json()
+        .await
+        .unwrap();
+
+    let at = tokens["access_token"].as_str().expect("access_token");
+    let claims = dangerous::insecure_decode::<serde_json::Value>(at).expect("decode AT");
+
+    let email_val = &claims.claims["email"];
+    assert!(
+        email_val.is_string(),
+        "client_credentials AT must carry email when email scope is granted, \
+         got claims: {claims:#?}"
+    );
+    assert_eq!(
+        email_val.as_str().unwrap(),
+        client.client_id,
+        "email must equal client_id for service accounts"
+    );
+
     ctx.stop_server().await
 }

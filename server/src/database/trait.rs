@@ -195,6 +195,7 @@ pub trait Database: Send + Sync {
                 )?,
                 change_password: true,
                 roles: Vec::new(),
+                email: None,
             };
             self.create_userpass(&app_user_pass).await?;
             // create the admin in the admin table

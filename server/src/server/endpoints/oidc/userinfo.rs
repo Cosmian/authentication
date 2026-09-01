@@ -50,18 +50,24 @@ pub async fn userinfo(
     };
 
     let realm = claims.realm.clone().unwrap_or_default();
-    let roles = match database.get_userpass(&realm, &claims.sub).await {
-        Ok(Some(up)) => up.roles,
-        _ => Vec::new(),
+    let (roles, stored_email) = match database.get_userpass(&realm, &claims.sub).await {
+        Ok(Some(up)) => (up.roles, up.email),
+        _ => (Vec::new(), None),
     };
+    // Resolve the effective email: prefer the stored email, fall back to the
+    // access token's own `email` claim (set during token issuance), and finally
+    // fall back to `sub` — consistent with `build_profile()`.
+    let effective_email = stored_email
+        .or_else(|| claims.email.clone())
+        .unwrap_or_else(|| claims.sub.clone());
 
     // Always include `sub`; other claims are gated by the token's scope.
     let mut out = serde_json::json!({ "sub": claims.sub });
     if tokens::scope_contains(&claims.scope, "profile") {
         out["preferred_username"] = serde_json::Value::String(claims.sub.clone());
     }
-    if tokens::scope_contains(&claims.scope, "email") && claims.sub.contains('@') {
-        out["email"] = serde_json::Value::String(claims.sub.clone());
+    if tokens::scope_contains(&claims.scope, "email") {
+        out["email"] = serde_json::Value::String(effective_email);
         out["email_verified"] = serde_json::Value::Bool(false);
     }
     if tokens::scope_contains(&claims.scope, "roles") && !roles.is_empty() {

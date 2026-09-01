@@ -82,6 +82,7 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                     password: passwordBytes,
                     change_password: (values.change_password as boolean | undefined) ?? false,
                     roles: (values.roles as string[] | undefined) ?? [],
+                    email: (values.email as string | undefined) || null,
                 };
                 await api.create(realmId, userpass);
                 message.success(`Credential "${values.username as string}" created`);
@@ -145,6 +146,14 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                         </Form.Item>
                         <Form.Item name="change_password" valuePropName="checked">
                             <Checkbox>Require password change on next login</Checkbox>
+                        </Form.Item>
+                        <Form.Item
+                            name="email"
+                            label="Email (optional)"
+                            rules={[{ type: "email", message: "Must be a valid email address" }]}
+                            tooltip="Dedicated email address for this user. When set, used as the identity in OIDC tokens instead of the username."
+                        >
+                            <Input placeholder="alice@example.com" autoComplete="off" />
                         </Form.Item>
                     </>
                 )}

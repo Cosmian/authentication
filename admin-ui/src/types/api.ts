@@ -64,6 +64,12 @@ export interface UserPass {
     change_password: boolean;
     /** RBAC roles assigned to this user (e.g. ["CryptoOfficer"]). Emitted in JWT `roles` claim. */
     roles?: string[];
+    /**
+     * Optional dedicated email address for this user.
+     * When set, used as the `email` claim in OIDC tokens (overrides the username-as-email fallback).
+     * When absent, the username is used as the email identifier.
+     */
+    email?: string | null;
 }
 
 /** Session data */

@@ -61,6 +61,7 @@ impl Database for MySqlDatabase {
                 password BLOB NOT NULL,
                 change_password BOOLEAN NOT NULL DEFAULT FALSE,
                 roles TEXT NOT NULL,
+                email VARCHAR(320),
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -87,6 +88,21 @@ impl Database for MySqlDatabase {
                 .execute(&self.pool)
                 .await?;
             sqlx::query("ALTER TABLE userpass MODIFY COLUMN roles TEXT NOT NULL")
+                .execute(&self.pool)
+                .await?;
+        }
+
+
+        // Migration: add email column if missing (existing databases)
+        let has_email: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='userpass' AND column_name='email'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map(|c: i64| c > 0)
+        .unwrap_or(false);
+        if !has_email {
+            sqlx::query("ALTER TABLE userpass ADD COLUMN email VARCHAR(320)")
                 .execute(&self.pool)
                 .await?;
         }
@@ -401,8 +417,8 @@ impl Database for MySqlDatabase {
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password, roles)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO userpass (realm, username, password, change_password, roles, email)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&userpass.realm)
@@ -410,6 +426,7 @@ impl Database for MySqlDatabase {
         .bind(&userpass.password)
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&userpass.email)
         .execute(&self.pool)
         .await?;
 
@@ -419,7 +436,7 @@ impl Database for MySqlDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password, roles
+            SELECT realm, username, change_password, roles, email
             FROM userpass
             WHERE realm = ? AND username = ?
             "#,
@@ -443,6 +460,7 @@ impl Database for MySqlDatabase {
                     password: vec![], // do not return the password hash
                     change_password: row.try_get("change_password")?,
                     roles,
+                    email: row.try_get("email").ok().flatten(),
                 };
                 Ok(Some(userpass))
             }
@@ -456,13 +474,14 @@ impl Database for MySqlDatabase {
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = ?, change_password = ?, roles = ?
+            SET password = ?, change_password = ?, roles = ?, email = ?
             WHERE realm = ? AND username = ?
             "#,
         )
         .bind(&userpass.password)
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&userpass.email)
         .bind(&userpass.realm)
         .bind(&userpass.username)
         .execute(&self.pool)
@@ -529,7 +548,7 @@ impl Database for MySqlDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, email
             FROM userpass
             WHERE realm = ?
             ORDER BY username
@@ -554,6 +573,7 @@ impl Database for MySqlDatabase {
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
                 roles,
+                email: row.try_get("email").ok().flatten(),
             });
         }
 
@@ -563,7 +583,7 @@ impl Database for MySqlDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, email
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -586,6 +606,7 @@ impl Database for MySqlDatabase {
                 password: row.try_get("password")?,
                 change_password: row.try_get("change_password")?,
                 roles,
+                email: row.try_get("email").ok().flatten(),
             });
         }
 

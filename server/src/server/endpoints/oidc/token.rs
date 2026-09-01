@@ -28,17 +28,21 @@ fn token_response(body: serde_json::Value) -> HttpResponse {
         .json(body)
 }
 
-/// Fetch the subject's profile attributes (roles, best-effort email/username).
+/// Fetch the subject's profile attributes (roles, email as subject identity).
+///
+/// `email` is always set so that OIDC relying parties (e.g. KMS)
+/// that use the `email` claim as the user identity always receive a value:
+/// 1. If the user record has a dedicated `email` field set, that is used.
+/// 2. Otherwise, `subject` is used as the fallback (covers both
+///    email-style usernames like `"alice@example.com"` and plain
+///    usernames like `"alice"`).
 async fn build_profile(database: &Arc<dyn Database>, realm: &str, subject: &str) -> SubjectProfile {
-    let roles = match database.get_userpass(realm, subject).await {
-        Ok(Some(up)) => up.roles,
-        _ => Vec::new(),
+    let (roles, stored_email) = match database.get_userpass(realm, subject).await {
+        Ok(Some(up)) => (up.roles, up.email),
+        _ => (Vec::new(), None),
     };
-    let email = if subject.contains('@') {
-        Some(subject.to_string())
-    } else {
-        None
-    };
+    // Prefer the stored email; fall back to subject as identifier.
+    let email = Some(stored_email.unwrap_or_else(|| subject.to_string()));
     SubjectProfile {
         name: None,
         preferred_username: Some(subject.to_string()),
@@ -217,6 +221,9 @@ async fn grant_client_credentials(
 
     let profile = SubjectProfile {
         preferred_username: Some(client.client_id.clone()),
+        // Use client_id as the email identity for service accounts so relying
+        // parties that require an email claim (e.g. KMS) always get a value.
+        email: Some(client.client_id.clone()),
         ..Default::default()
     };
     match tokens::issue_access_token(

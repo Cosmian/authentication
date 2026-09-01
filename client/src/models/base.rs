@@ -37,6 +37,14 @@ pub struct UserPass {
     /// Emitted in the JWT `roles` claim for OPA policy evaluation.
     #[serde(default)]
     pub roles: Vec<String>,
+    /// Optional dedicated email address for this user.
+    ///
+    /// When set, this email is used as the `email` claim in OIDC access and ID
+    /// tokens (when the `email` scope is requested) instead of the username.
+    /// When absent, the `username` is used as a fallback email identifier so
+    /// relying parties (e.g. Cosmian KMS) always receive a non-null `email` claim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 /// Authentication server admins.

@@ -196,6 +196,7 @@ fn make_expired_userpass(realm: &str, username: &str, password: &str) -> AuthRes
         password: password.as_bytes().to_vec(),
         change_password: true,
         roles: Vec::new(),
+        email: None,
     })
 }
 
@@ -596,6 +597,7 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
         password: Vec::new(), // empty — server must keep the existing hash
         change_password: false,
         roles: vec!["Auditor".to_string()],
+        email: None,
     };
     admin
         .update_admin_credentials_in_realm(realm_id, username, &roles_only)

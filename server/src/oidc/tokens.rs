@@ -62,6 +62,16 @@ pub struct AccessTokenClaims {
     /// Realm the subject authenticated against (private claim).
     #[serde(rename = "as_rid", skip_serializing_if = "Option::is_none")]
     pub realm: Option<String>,
+    /// User email address or service-account identifier.
+    ///
+    /// Populated when the `email` scope is present. For human users this is their
+    /// email address (or their username when no dedicated email is stored). For
+    /// `client_credentials` service accounts this is the `client_id`.
+    ///
+    /// Relying parties (e.g. Cosmian KMS) use this claim as the authenticated
+    /// identity instead of the opaque `sub` claim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub email: Option<String>,
 }
 
 /// The subject's profile attributes used to populate scope-gated claims.
@@ -120,6 +130,11 @@ pub fn issue_access_token(
     } else {
         None
     };
+    let email = if scope_contains(scope, "email") {
+        profile.email.clone()
+    } else {
+        None
+    };
 
     let claims = AccessTokenClaims {
         iss: state.issuer.clone(),
@@ -132,6 +147,7 @@ pub fn issue_access_token(
         scope: scope.to_string(),
         roles,
         realm: Some(realm.to_string()),
+        email,
     };
 
     let header = signing_header(state, Some(AT_JWT_TYP));
