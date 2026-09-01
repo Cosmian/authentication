@@ -76,3 +76,13 @@ cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
+```
+
+## Security advisory ledger
+
+`SECURITY.md` at the repo root is a hand-maintained vulnerability-disclosure
+ledger. Advisory IDs use `COSMIAN-AUTH-<YYYY>-NNN`. Add an entry only for a
+vulnerability that already shipped in a tagged release, and only after the fix is
+merged; branch-only bugs get none. Every entry must update the table of contents,
+the entry body, and the summary table together, and cite its ID from the matching
+`CHANGELOG` Security bullet. See AGENTS.md §11 for the full rules.
