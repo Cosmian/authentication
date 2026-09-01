@@ -14,7 +14,7 @@ mod proxy_params;
 pub use proxy_params::ProxyParams;
 
 mod server_params;
-pub use server_params::{DevSeedParams, ServerParams};
+pub use server_params::{DevSeedParams, DevSeedUser, ServerParams};
 
 mod tls_params;
 pub use tls_params::TlsParams;

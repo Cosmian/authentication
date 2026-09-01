@@ -97,6 +97,60 @@ pub struct DevSeedParams {
     /// Fixed Base32 TOTP secret for the TOTP user (optional).
     /// If omitted, a random secret is generated and logged at startup.
     pub totp_secret: Option<String>,
+    /// Optional OIDC client to pre-seed in the realm.
+    ///
+    /// When present, `seed_dev_realm_admin` creates this client (idempotent)
+    /// so that development environments have a known, stable client_id /
+    /// client_secret without requiring a separate registration step.
+    pub oidc_client: Option<DevSeedOidcClient>,
+    /// Plain regular users to pre-seed in the realm (optional).
+    ///
+    /// Each entry is created as a non-admin userpass credential in `realm_id`.
+    /// Useful to provide a ready-to-use test user without a manual registration step.
+    #[serde(default)]
+    pub users: Vec<DevSeedUser>,
+}
+
+/// Development-only OIDC client seed — creates a registered OAuth client with
+/// predictable credentials on first startup.
+///
+/// **Never use in production** — the secret is stored in plain text in the
+/// config file only for developer convenience.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct DevSeedOidcClient {
+    /// Fixed `client_id` to register (e.g. `"kms-ui-dev"`).
+    pub client_id: String,
+    /// Plain-text client secret.  Stored hashed (SHA-256) in the database.
+    pub client_secret: String,
+    /// Human-readable name for the client.
+    pub client_name: String,
+    /// Allowed redirect URIs.
+    pub redirect_uris: Vec<String>,
+    /// Allowed grant types (defaults: `["authorization_code","refresh_token"]`).
+    #[serde(default = "default_dev_grant_types")]
+    pub grant_types: Vec<String>,
+    /// Allowed scopes (defaults: `["openid","profile","email"]`).
+    #[serde(default = "default_dev_scopes")]
+    pub scopes: Vec<String>,
+}
+
+fn default_dev_grant_types() -> Vec<String> {
+    vec!["authorization_code".to_owned(), "refresh_token".to_owned()]
+}
+
+fn default_dev_scopes() -> Vec<String> {
+    vec![
+        "openid".to_owned(),
+        "profile".to_owned(),
+        "email".to_owned(),
+    ]
+}
+
+/// A plain (non-admin) user to pre-seed in the realm for development.
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct DevSeedUser {
+    pub username: String,
+    pub password: String,
 }
 
 impl DevSeedParams {

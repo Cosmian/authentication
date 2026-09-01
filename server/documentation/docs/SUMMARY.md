@@ -9,6 +9,7 @@
   - [Two-factor authentication](two_factor_authentication.md)
   - [AppRole, Kubernetes & Tokens](app_auth_api.md)
   - [OpenID Connect provider](oidc.md)
+  - [Configuring OIDC for the KMS](kms_oidc_setup.md)
   - [Session management](session_management.md)
 - [Authorization and administration](authorization_and_administration.md)
 - [Client library](client_library.md)
@@ -16,3 +17,4 @@
 - Architecture Decision Records
   - [Role / JWT / OPA integration](adr/2026-06-24-role-jwt-opa-integration.md)
   - [App auth API for SPIRE](adr/2026-07-26-app-auth-api-for-spire.md)
+  - [Embed OIDC Provider in auth-verifier](adr/2026-08-11-oidc-provider-in-auth-verifier.md)

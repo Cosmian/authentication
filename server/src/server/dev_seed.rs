@@ -1,11 +1,18 @@
 use crate::{
     AuthResult,
-    database::{Database, hash_password_with_argon2},
+    database::{Database, OAuthClient, hash_password_with_argon2},
     models::{ADMIN_REALM, Admin, Realm, UserPass},
-    server::parameters::DevSeedParams,
+    server::parameters::{DevSeedParams, DevSeedUser},
     {RealmAuthParams, UsernamePasswordParams},
 };
 use cosmian_logger::info;
+use sha2::{Digest, Sha256};
+
+/// SHA-256 hash of a client secret — mirrors the production implementation in
+/// `server::endpoints::oidc::common::hash_secret` without requiring a public export.
+fn hash_client_secret(secret: &str) -> Vec<u8> {
+    Sha256::digest(secret.as_bytes()).to_vec()
+}
 
 /// Seeds a realm and a realm-scoped admin account for development use.
 /// All operations are idempotent — nothing is overwritten if it already exists.
@@ -182,6 +189,58 @@ pub(super) async fn seed_dev_realm_admin(
                 "dev_seed: TOTP enabled for user '{}' in realm '{}'",
                 totp_username, seed.realm_id
             );
+        }
+    }
+
+    // 5. Optionally seed a pre-registered OIDC client with stable credentials.
+    if let Some(ref oidc) = seed.oidc_client
+        && db.get_oauth_client(&oidc.client_id).await?.is_none()
+    {
+            let record = OAuthClient {
+                client_id: oidc.client_id.clone(),
+                client_secret_hash: Some(hash_client_secret(&oidc.client_secret)),
+                client_name: oidc.client_name.clone(),
+                redirect_uris: oidc.redirect_uris.clone(),
+                grant_types: oidc.grant_types.clone(),
+                response_types: vec!["code".to_owned()],
+                scopes: oidc.scopes.clone(),
+                token_endpoint_auth_method: "client_secret_basic".to_owned(),
+                realm: seed.realm_id.clone(),
+                created_at: chrono::Utc::now().timestamp(),
+            };
+            db.create_oauth_client(&record).await.map_err(|e| {
+                crate::AuthError::Init(format!(
+                    "dev_seed: failed to create OIDC client '{}': {e}",
+                    oidc.client_id
+                ))
+            })?;
+            info!(
+                "dev_seed: created OIDC client '{}' ('{}') in realm '{}'",
+                oidc.client_id, oidc.client_name, seed.realm_id
+            );
+    }
+
+    // 6. Optionally seed plain test users in the realm.
+    for DevSeedUser { username, password } in &seed.users {
+        if db.get_userpass(&seed.realm_id, username).await?.is_none() {
+            let hashed = hash_password_with_argon2(password).map_err(|e| {
+                crate::AuthError::Init(format!(
+                    "dev_seed: failed to hash password for user '{username}': {e}"
+                ))
+            })?;
+            let userpass = UserPass {
+                realm: seed.realm_id.clone(),
+                username: username.clone(),
+                password: hashed,
+                change_password: false,
+                roles: Vec::new(),
+            };
+            db.create_userpass(&userpass).await.map_err(|e| {
+                crate::AuthError::Init(format!(
+                    "dev_seed: failed to create user '{username}': {e}"
+                ))
+            })?;
+            info!("dev_seed: created user '{username}' in realm '{}'", seed.realm_id);
         }
     }
 

@@ -50,3 +50,57 @@
   separation model, configuration and flows, and synchronised the OpenAPI schema
   (`openapi.yaml`) with all new OIDC and client-management paths, schemas and
   parameters.
+- Added `server/documentation/docs/kms_oidc_setup.md` — step-by-step guide for
+  configuring the auth-verifier as an OIDC Provider for the Cosmian KMS, covering
+  both the explicit `[ui_config.ui_oidc_auth]` (Option A) and auto-populate
+  `[auth_verifier]` (Option B) KMS config patterns.
+- Added ADR `adr/2026-08-11-oidc-provider-in-auth-verifier.md` documenting the
+  architectural decision to embed the OIDC OP directly in auth-verifier.
+
+## Features
+
+- Added **`DevSeedUser`** list (`[[dev_seed.users]]`) to `DevSeedParams` so
+  plain test users can be pre-seeded in the realm on first startup alongside the
+  realm-admin and OIDC client, eliminating the manual user-creation step.
+- `test_data/configs/auth_verifier/oidc_dev.toml` now seeds user `alice` /
+  `alice123` so the full OIDC login flow works immediately after `cargo run`.
+
+## Bug Fixes
+
+- **CSP `form-action 'self'` blocked the Allow button in Firefox**: the consent
+  page was sending `form-action 'self'` in the `Content-Security-Policy` header;
+  Firefox applies this directive to the *post-consent redirect target* (not just
+  the initial form action), blocking the redirect to the KMS callback URL.
+  Fixed by splitting `page_login()` (keeps `form-action 'self'`) and
+  `page_consent()` (omits `form-action`); the consent page is safe without it
+  because both the form action and redirect target are server-controlled and
+  validated against the registered `redirect_uri`.
+  `[dev_seed.oidc_client]` is present in the server config, a fixed OIDC client
+  with a known `client_id` and `client_secret` (stored SHA-256-hashed) is created
+  idempotently on first startup, eliminating the manual client-registration step
+  in development setups.
+- `test_data/configs/auth_verifier/oidc_dev.toml` now pre-seeds the
+  `kms-ui-dev` OIDC client so that both `cargo run -p auth_verifier` and
+  `cargo run -p cosmian_kms_server` produce a working OIDC login button in the
+  KMS Web UI without any additional steps.
+
+## Features (admin-ui)
+
+- Added **OIDC Clients** page (`/oidc-clients`) to the Admin UI with full CRUD:
+  list, register (with one-time secret modal showing the KMS `[ui_config.ui_oidc_auth]`
+  config snippet), edit, and delete — realm-scoped for realm admins and accordion
+  view across all realms for super-admins.
+- The one-time secret modal dynamically uses the server URL as the OIDC issuer in
+  the generated KMS config snippet instead of a hardcoded value.
+
+
+## Features
+
+- **Themed OIDC sign-in and consent pages**: the server-rendered OIDC
+  `authorize.rs` pages now match the admin-UI visual design —
+  CSS custom-property tokens for primary (`#e34319` light / `#9e6eff` dark),
+  background (`#f0f2f5` / `#2a2d30`), and card (`#fff` / `#393E46`);
+  automatic `@media (prefers-color-scheme: dark)` dark mode; inline SVG icons
+  in input fields (user, lock, TOTP hash); scope tags on the consent page;
+  400 px card width matching the admin-UI `LoginPage`; "Cosmian Authentication
+  Server" footer; no external resources (compatible with CSP `default-src 'none'`).

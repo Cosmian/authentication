@@ -217,3 +217,33 @@ export interface TokenInfo {
     ttl: number;
     creation_time: number;
 }
+
+// ── OIDC / OAuth 2.0 client management ──────────────────────────────────────
+
+/** Request body to create or update an OIDC / OAuth 2.0 client. */
+export interface OAuthClientRequest {
+    client_name: string;
+    /** Allowed redirect URIs (exact match). */
+    redirect_uris: string[];
+    grant_types: string[];
+    response_types: string[];
+    scopes: string[];
+    /** "client_secret_basic" | "client_secret_post" | "none" */
+    token_endpoint_auth_method: string;
+}
+
+/** OIDC / OAuth 2.0 client as returned by the server.
+ *  `client_secret` is present **only** in the creation response. */
+export interface OAuthClientResponse {
+    client_id: string;
+    /** Only present immediately after creation. */
+    client_secret?: string;
+    client_name: string;
+    redirect_uris: string[];
+    grant_types: string[];
+    response_types: string[];
+    scopes: string[];
+    token_endpoint_auth_method: string;
+    realm: string;
+    created_at: number;
+}

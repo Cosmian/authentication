@@ -434,21 +434,66 @@ pub async fn authorize_consent(
 
 // ── HTML rendering ──────────────────────────────────────────────────────────
 
-const PAGE_STYLE: &str = "body{font-family:system-ui,sans-serif;background:#f5f6f8;margin:0;\
-display:flex;min-height:100vh;align-items:center;justify-content:center}\
-.card{background:#fff;padding:2rem;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.15);\
-width:320px}h1{font-size:1.2rem;margin:0 0 1rem}label{display:block;margin:.5rem 0 .2rem;\
-font-size:.85rem;color:#333}input{width:100%;padding:.5rem;border:1px solid #ccc;\
-border-radius:4px;box-sizing:border-box}button{margin-top:1rem;width:100%;padding:.6rem;\
-border:0;border-radius:4px;background:#2b6cb0;color:#fff;font-size:1rem;cursor:pointer}\
-button.secondary{background:#718096}.err{color:#c53030;font-size:.85rem;margin:.5rem 0}\
-.scopes{font-size:.9rem;color:#333;margin:.5rem 0}.row{display:flex;gap:.5rem}";
+/// Shared CSS matching the admin-UI theme (branding.json tokens, Ant Design spacing).
+///
+/// Primary light: #e34319 | Primary dark: #9e6eff
+/// Background light: #f0f2f5 | Background dark: #2a2d30
+/// Card light: #ffffff | Card dark: #393E46
+const PAGE_STYLE: &str = "\
+:root{--primary:#e34319;--bg:#f0f2f5;--card:#fff;--border:#d9d9d9;\
+--text:#292f52;--text2:#6b7280;--input-bg:#fff;--err-bg:#fff1f0;\
+--err-border:#ff675f;--err-text:#a8071a;--scope-bg:#fff7f5;--scope-border:#e34319;}\
+@media(prefers-color-scheme:dark){\
+:root{--primary:#9e6eff;--bg:#2a2d30;--card:#393E46;--border:#34383f;\
+--text:#e4dddd;--text2:#b9b9b9;--input-bg:#2f3239;\
+--err-bg:#3b0a0a;--err-border:#ff4d4f;--err-text:#ffb3b0;\
+--scope-bg:#2d1f3d;--scope-border:#9e6eff;}}\
+*,*::before,*::after{box-sizing:border-box}\
+body{font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;\
+background:var(--bg);color:var(--text);margin:0;\
+display:flex;min-height:100vh;align-items:center;justify-content:center;}\
+.card{background:var(--card);padding:2rem;border-radius:8px;\
+box-shadow:0 1px 8px rgba(0,0,0,.12);width:400px;max-width:calc(100vw - 2rem)}\
+.logo{text-align:center;margin-bottom:1.5rem}\
+.logo-text{font-size:1.5rem;font-weight:700;color:var(--primary)}\
+h1{font-size:1.1rem;font-weight:600;text-align:center;margin:0 0 1.5rem;color:var(--text)}\
+.field{margin-bottom:1rem}\
+.field label{display:block;font-size:.8125rem;font-weight:500;color:var(--text2);margin-bottom:.375rem}\
+.input-wrap{position:relative}\
+.input-wrap svg{position:absolute;left:.75rem;top:50%;transform:translateY(-50%);\
+width:1rem;height:1rem;color:var(--text2);pointer-events:none}\
+input{width:100%;padding:.5rem .75rem .5rem 2.375rem;border:1px solid var(--border);\
+border-radius:6px;background:var(--input-bg);color:var(--text);\
+font-size:.9375rem;transition:border-color .2s,box-shadow .2s;outline:none}\
+input:focus{border-color:var(--primary);box-shadow:0 0 0 2px color-mix(in srgb,var(--primary) 20%,transparent)}\
+input[type=password]{letter-spacing:.1em}\
+.totp input{letter-spacing:.25em;font-variant-numeric:tabular-nums}\
+button{margin-top:.75rem;width:100%;padding:.625rem 1rem;border:0;border-radius:6px;\
+background:var(--primary);color:#fff;font-size:.9375rem;font-weight:500;\
+cursor:pointer;transition:opacity .15s}\
+button:hover{opacity:.88}button:active{opacity:.75}\
+button.secondary{background:transparent;border:1px solid var(--border);\
+color:var(--text);margin-top:.5rem}\
+button.secondary:hover{border-color:var(--primary);color:var(--primary)}\
+.err{background:var(--err-bg);border:1px solid var(--err-border);border-radius:6px;\
+color:var(--err-text);font-size:.875rem;padding:.625rem .875rem;\
+margin-bottom:1rem;display:flex;gap:.5rem;align-items:flex-start}\
+.err svg{flex-shrink:0;margin-top:.1rem}\
+.scope-list{list-style:none;padding:0;margin:.75rem 0 1rem;display:flex;flex-wrap:wrap;gap:.375rem}\
+.scope-list li{background:var(--scope-bg);border:1px solid var(--scope-border);\
+border-radius:4px;color:var(--primary);font-size:.8125rem;padding:.2rem .6rem}\
+.consent-app{font-weight:600;color:var(--primary)}\
+.consent-desc{font-size:.875rem;color:var(--text2);margin:.5rem 0 0}\
+.row{display:flex;flex-direction:column;gap:0}\
+footer{margin-top:1.5rem;text-align:center;font-size:.75rem;color:var(--text2)}";
 
-fn page(body: &str) -> HttpResponse {
+/// Login page — strict `form-action 'self'` keeps the submission within the OP.
+fn page_login(body: &str) -> HttpResponse {
     let html = format!(
         "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-         <title>Sign in</title><style>{PAGE_STYLE}</style></head><body>{body}</body></html>"
+         <title>Sign in — Auth</title><style>{PAGE_STYLE}</style></head>\
+         <body>{body}</body></html>"
     );
     HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
@@ -459,21 +504,103 @@ fn page(body: &str) -> HttpResponse {
         .body(html)
 }
 
+/// Consent page — `form-action` is intentionally omitted.
+///
+/// The login page uses `form-action 'self'` to prevent the form from being
+/// pointed at an attacker-controlled URL.  The consent page submits to the
+/// same server (`/oidc/authorize/consent`, hardcoded in the HTML), but the
+/// server then issues a 302 redirect to the client's registered `redirect_uri`
+/// which is an external origin.
+///
+/// Several browsers (Firefox in particular) apply the `form-action` directive
+/// to the *final redirect target*, not only the initial submission URL.  If
+/// `form-action 'self'` were set here, Firefox would block the post-consent
+/// redirect to the client application, making the Allow button appear broken.
+///
+/// Omitting `form-action` is safe because:
+/// - The form action (`/oidc/authorize/consent`) is server-rendered, not
+///   attacker-controlled.
+/// - The redirect target is validated server-side against the registered
+///   `redirect_uri`; an attacker cannot change it.
+fn page_consent(body: &str) -> HttpResponse {
+    let html = format!(
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <title>Authorize — Auth</title><style>{PAGE_STYLE}</style></head>\
+         <body>{body}</body></html>"
+    );
+    HttpResponse::Ok()
+        .content_type("text/html; charset=utf-8")
+        .insert_header((
+            "Content-Security-Policy",
+            "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'",
+        ))
+        .body(html)
+}
+
+// Inline SVG icons (no external resource — compatible with CSP `default-src 'none'`).
+const ICON_USER: &str = "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\
+<circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 20c0-4 3.6-7 8-7s8 3 8 7\"/></svg>";
+
+const ICON_LOCK: &str = "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\
+<rect x=\"3\" y=\"11\" width=\"18\" height=\"11\" rx=\"2\"/>\
+<path d=\"M7 11V7a5 5 0 0 1 10 0v4\"/></svg>";
+
+const ICON_SHIELD: &str = "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\
+<path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/></svg>";
+
+const ICON_HASH: &str = "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\
+<line x1=\"4\" y1=\"9\" x2=\"20\" y2=\"9\"/><line x1=\"4\" y1=\"15\" x2=\"20\" y2=\"15\"/>\
+<line x1=\"10\" y1=\"3\" x2=\"8\" y2=\"21\"/><line x1=\"16\" y1=\"3\" x2=\"14\" y2=\"21\"/></svg>";
+
+const ICON_ERR: &str = "<svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" \
+stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"width:1rem;height:1rem\">\
+<circle cx=\"12\" cy=\"12\" r=\"10\"/>\
+<line x1=\"12\" y1=\"8\" x2=\"12\" y2=\"12\"/>\
+<line x1=\"12\" y1=\"16\" x2=\"12.01\" y2=\"16\"/></svg>";
+
 fn render_login(flow_token: &str, error: Option<&str>) -> HttpResponse {
     let err_html = error
-        .map(|e| format!("<div class=\"err\">{}</div>", html_escape(e)))
+        .map(|e| {
+            format!(
+                "<div class=\"err\">{ICON_ERR}<span>{}</span></div>",
+                html_escape(e)
+            )
+        })
         .unwrap_or_default();
     let body = format!(
-        "<div class=\"card\"><h1>Sign in</h1>{err_html}\
+        "<div class=\"card\">\
+         <div class=\"logo\"><span class=\"logo-text\">Auth Server</span></div>\
+         <h1>Sign in</h1>\
+         {err_html}\
          <form method=\"post\" action=\"/oidc/authorize/login\">\
-         <input type=\"hidden\" name=\"flow_token\" value=\"{}\">\
-         <label for=\"u\">Username</label><input id=\"u\" name=\"username\" autocomplete=\"username\" autofocus>\
-         <label for=\"p\">Password</label><input id=\"p\" name=\"password\" type=\"password\" autocomplete=\"current-password\">\
-         <label for=\"t\">TOTP code (if enabled)</label><input id=\"t\" name=\"totp_code\" inputmode=\"numeric\" autocomplete=\"one-time-code\">\
-         <button type=\"submit\">Sign in</button></form></div>",
-        html_escape(flow_token)
+         <input type=\"hidden\" name=\"flow_token\" value=\"{token}\">\
+         <div class=\"field\">\
+           <label for=\"u\">Username</label>\
+           <div class=\"input-wrap\">{ICON_USER}<input id=\"u\" name=\"username\" \
+autocomplete=\"username\" autofocus required placeholder=\"Enter your username\"></div>\
+         </div>\
+         <div class=\"field\">\
+           <label for=\"p\">Password</label>\
+           <div class=\"input-wrap\">{ICON_LOCK}<input id=\"p\" name=\"password\" type=\"password\" \
+autocomplete=\"current-password\" required placeholder=\"Enter your password\"></div>\
+         </div>\
+         <div class=\"field totp\">\
+           <label for=\"t\">TOTP code <span style=\"font-weight:400;font-size:.75rem\">(if enabled)</span></label>\
+           <div class=\"input-wrap\">{ICON_HASH}<input id=\"t\" name=\"totp_code\" \
+inputmode=\"numeric\" maxlength=\"6\" autocomplete=\"one-time-code\" placeholder=\"000000\"></div>\
+         </div>\
+         <button type=\"submit\">Sign in</button>\
+         </form>\
+         <footer>Cosmian Authentication Server</footer>\
+         </div>",
+        token = html_escape(flow_token)
     );
-    page(&body)
+    page_login(&body)
 }
 
 fn render_consent(flow_token: &str, flow: &FlowClaims) -> HttpResponse {
@@ -483,30 +610,48 @@ fn render_consent(flow_token: &str, flow: &FlowClaims) -> HttpResponse {
         .map(|s| format!("<li>{}</li>", html_escape(s)))
         .collect::<String>();
     let body = format!(
-        "<div class=\"card\"><h1>Authorize {}</h1>\
-         <div class=\"scopes\">This application requests access to:<ul>{}</ul></div>\
+        "<div class=\"card\">\
+         <div class=\"logo\"><span class=\"logo-text\">Auth Server</span></div>\
+         <h1>Authorize access</h1>\
+         <p style=\"text-align:center;margin:0 0 1.25rem\">\
+           <span class=\"consent-app\">{app}</span> is requesting access to your account.\
+         </p>\
+         <div class=\"field\">\
+           <label>Requested permissions</label>\
+           <ul class=\"scope-list\">{scopes}</ul>\
+         </div>\
          <form method=\"post\" action=\"/oidc/authorize/consent\">\
-         <input type=\"hidden\" name=\"flow_token\" value=\"{}\">\
+         <input type=\"hidden\" name=\"flow_token\" value=\"{token}\">\
          <div class=\"row\">\
-         <button type=\"submit\" name=\"decision\" value=\"approve\">Allow</button>\
-         <button type=\"submit\" name=\"decision\" value=\"deny\" class=\"secondary\">Deny</button>\
-         </div></form></div>",
-        html_escape(&flow.client_id),
-        scopes_html,
-        html_escape(flow_token)
+           <button type=\"submit\" name=\"decision\" value=\"approve\">{ICON_SHIELD} Allow</button>\
+           <button type=\"submit\" name=\"decision\" value=\"deny\" class=\"secondary\">Deny</button>\
+         </div>\
+         </form>\
+         <footer>Cosmian Authentication Server</footer>\
+         </div>",
+        app = html_escape(&flow.client_id),
+        scopes = scopes_html,
+        token = html_escape(flow_token)
     );
-    page(&body)
+    page_consent(&body)
 }
 
 fn render_error_page(message: &str) -> HttpResponse {
     let body = format!(
-        "<div class=\"card\"><h1>Authorization error</h1><div class=\"err\">{}</div></div>",
+        "<div class=\"card\">\
+         <div class=\"logo\"><span class=\"logo-text\">Auth Server</span></div>\
+         <h1>Authorization error</h1>\
+         <div class=\"err\">{ICON_ERR}<span>{}</span></div>\
+         <footer>Cosmian Authentication Server</footer>\
+         </div>",
         html_escape(message)
     );
     // Bad client/redirect: 400 with an explanatory page (must not redirect).
     let html = format!(
         "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">\
-         <title>Error</title><style>{PAGE_STYLE}</style></head><body>{body}</body></html>"
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <title>Error — Auth</title><style>{PAGE_STYLE}</style></head>\
+         <body>{body}</body></html>"
     );
     HttpResponse::BadRequest()
         .content_type("text/html; charset=utf-8")

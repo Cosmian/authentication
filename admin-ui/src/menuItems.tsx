@@ -1,4 +1,12 @@
-import { AppstoreOutlined, ClockCircleOutlined, CrownOutlined, DashboardOutlined, KeyOutlined, RobotOutlined } from "@ant-design/icons";
+import {
+    AppstoreOutlined,
+    ClockCircleOutlined,
+    CrownOutlined,
+    DashboardOutlined,
+    KeyOutlined,
+    RobotOutlined,
+    SafetyOutlined,
+} from "@ant-design/icons";
 
 export interface MenuItem {
     key: string;
@@ -43,5 +51,10 @@ export const menuItems: MenuItem[] = [
         key: "/sessions",
         label: "Sessions",
         icon: <ClockCircleOutlined />,
+    },
+    {
+        key: "/oidc-clients",
+        label: "OIDC Clients",
+        icon: <SafetyOutlined />,
     },
 ];

@@ -11,6 +11,7 @@ import DashboardPage from "./pages/DashboardPage";
 import LoginPage from "./pages/LoginPage";
 import MachineCredentialsPage from "./pages/MachineCredentialsPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import OidcClientsPage from "./pages/OidcClientsPage";
 import RealmsPage from "./pages/RealmsPage";
 import SessionsPage from "./pages/SessionsPage";
 import TotpPage from "./pages/TotpPage";
@@ -39,6 +40,7 @@ const App: React.FC = () => {
                         <Route path="machine-credentials" element={<MachineCredentialsPage />} />
                         <Route path="sessions" element={<SessionsPage />} />
                         <Route path="totp" element={<TotpPage />} />
+                        <Route path="oidc-clients" element={<OidcClientsPage />} />
                     </Route>
                     <Route path="*" element={<NotFoundPage />} />
                 </Routes>
