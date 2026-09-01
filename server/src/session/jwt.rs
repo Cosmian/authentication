@@ -121,7 +121,6 @@ pub fn issue_token(
             realm_id: Some(realm_id.to_string()),
         },
         extra: extra_claims,
-        ..Default::default()
     };
 
     let header = Header::new(jwt_config.algorithm);
