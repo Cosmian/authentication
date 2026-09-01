@@ -40,7 +40,7 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
             return;
         }
         if (credential) {
-            form.setFieldsValue({ roles: credential.roles ?? [] });
+            form.setFieldsValue({ roles: credential.roles ?? [], email: credential.email ?? "" });
         } else {
             form.resetFields();
         }
@@ -71,9 +71,13 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
             const api = createCredentialsApi(serverUrl);
 
             if (isEdit) {
-                const updated: UserPass = { ...credential, roles: values.roles ?? [] };
+                const updated: UserPass = {
+                    ...credential,
+                    roles: values.roles ?? [],
+                    email: (values.email as string | undefined) || null,
+                };
                 await api.update(realmId, credential.username, updated);
-                message.success(`Roles updated for "${credential.username}"`);
+                message.success(`Credential "${credential.username}" updated`);
             } else {
                 const passwordBytes = Array.from(new TextEncoder().encode(values.password as string));
                 const userpass: UserPass = {
@@ -108,7 +112,7 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
 
     return (
         <Modal
-            title={isEdit ? `Edit roles — ${credential?.username ?? ""}` : "New Credential"}
+            title={isEdit ? `Edit credential — ${credential?.username ?? ""}` : "New Credential"}
             open={open}
             onOk={handleOk}
             onCancel={handleCancel}
@@ -147,14 +151,6 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                         <Form.Item name="change_password" valuePropName="checked">
                             <Checkbox>Require password change on next login</Checkbox>
                         </Form.Item>
-                        <Form.Item
-                            name="email"
-                            label="Email (optional)"
-                            rules={[{ type: "email", message: "Must be a valid email address" }]}
-                            tooltip="Dedicated email address for this user. When set, used as the identity in OIDC tokens instead of the username."
-                        >
-                            <Input placeholder="alice@example.com" autoComplete="off" />
-                        </Form.Item>
                     </>
                 )}
                 <Form.Item name="roles" label="Roles">
@@ -164,6 +160,14 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                         placeholder={isEdit ? "No roles" : "No roles (optional)"}
                         options={availableRoles.map((r) => ({ label: r, value: r }))}
                     />
+                </Form.Item>
+                <Form.Item
+                    name="email"
+                    label="Email (optional)"
+                    rules={[{ type: "email", message: "Must be a valid email address" }]}
+                    tooltip="Dedicated email address for this user. When set, used as the identity in OIDC tokens instead of the username."
+                >
+                    <Input placeholder="alice@example.com" autoComplete="off" />
                 </Form.Item>
                 {submitError && (
                     <Form.Item>

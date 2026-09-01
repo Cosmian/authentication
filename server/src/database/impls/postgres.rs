@@ -485,13 +485,14 @@ impl Database for PostgresDatabase {
         username: &str,
         change_password: bool,
         roles: &[String],
+        email: Option<&str>,
     ) -> AuthDbResult<()> {
         let roles_json = serde_json::to_string(roles)
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
             UPDATE userpass
-            SET change_password = $3, roles = $4
+            SET change_password = $3, roles = $4, email = $5
             WHERE realm = $1 AND username = $2
             "#,
         )
@@ -499,6 +500,7 @@ impl Database for PostgresDatabase {
         .bind(username)
         .bind(change_password)
         .bind(&roles_json)
+        .bind(email)
         .execute(&self.pool)
         .await?;
 

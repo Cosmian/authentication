@@ -67,6 +67,14 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
     const columns = [
         { title: "Username", dataIndex: "username", key: "username", width: "20%" },
         {
+            title: "Email",
+            dataIndex: "email",
+            key: "email",
+            width: "20%",
+            render: (val: string | null | undefined) =>
+                val ? val : <Typography.Text type="secondary">—</Typography.Text>,
+        },
+        {
             title: "Status",
             dataIndex: "change_password",
             key: "change_password",
@@ -273,6 +281,13 @@ const CredentialsPage: React.FC = () => {
 
     const columns = [
         { title: "Username", dataIndex: "username", key: "username" },
+        {
+            title: "Email",
+            dataIndex: "email",
+            key: "email",
+            render: (val: string | null | undefined) =>
+                val ? val : <Typography.Text type="secondary">—</Typography.Text>,
+        },
         {
             title: "Status",
             dataIndex: "change_password",

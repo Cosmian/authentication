@@ -245,13 +245,14 @@ pub trait Database: Send + Sync {
 
     /// Update only the metadata of a user password entry (roles and change_password flag),
     /// leaving the stored password hash untouched.
-    /// Used when the client sends an empty password field (e.g. roles-only updates).
+    /// Used when the client sends an empty password field (e.g. roles or email-only updates).
     async fn update_userpass_metadata(
         &self,
         realm: &str,
         username: &str,
         change_password: bool,
         roles: &[String],
+        email: Option<&str>,
     ) -> AuthDbResult<()>;
 
     /// Delete a user password entry by realm and username

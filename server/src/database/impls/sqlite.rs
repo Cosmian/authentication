@@ -509,18 +509,20 @@ impl Database for SqliteDatabase {
         username: &str,
         change_password: bool,
         roles: &[String],
+        email: Option<&str>,
     ) -> AuthDbResult<()> {
         let roles_json = serde_json::to_string(roles)
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
         sqlx::query(
             r#"
             UPDATE userpass
-            SET change_password = ?, roles = ?
+            SET change_password = ?, roles = ?, email = ?
             WHERE realm = ? AND username = ?
             "#,
         )
         .bind(change_password)
         .bind(&roles_json)
+        .bind(email)
         .bind(realm)
         .bind(username)
         .execute(&self.pool)

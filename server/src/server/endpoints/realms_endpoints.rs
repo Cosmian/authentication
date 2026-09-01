@@ -123,7 +123,13 @@ pub async fn update_userpass(
     // Clients send password: [] when only updating roles/flags (GET always returns []).
     if userpass.password.is_empty() {
         database
-            .update_userpass_metadata(&realm, &username, userpass.change_password, &userpass.roles)
+            .update_userpass_metadata(
+                &realm,
+                &username,
+                userpass.change_password,
+                &userpass.roles,
+                userpass.email.as_deref(),
+            )
             .await?;
     } else {
         userpass.password =
