@@ -105,6 +105,7 @@ pub async fn create_userpass(
                     "create_userpass: '{}' re-submitted identical credentials for '{}' in realm '{}' — idempotent no-op",
                     requester.id, userpass.username, realm_id
                 );
+                userpass.password = Vec::new();
                 return Ok(HttpResponse::Ok().json(userpass));
             }
 
@@ -131,6 +132,8 @@ pub async fn create_userpass(
         requester.id, userpass.username, realm_id
     );
 
+    // Never return the stored password hash to callers — matches get_userpass.
+    userpass.password = Vec::new();
     Ok(HttpResponse::Created().json(userpass))
 }
 
@@ -199,6 +202,20 @@ pub async fn update_userpass(
         userpass.hashed_password.take(),
     ) {
         (true, None) => {
+            // `update_userpass_metadata` only persists roles/change_password — it has no
+            // column to write extra_claims through. Silently dropping a genuine change
+            // there would report success while not applying it, so only allow this path
+            // when extra_claims is absent or unchanged from what's already stored.
+            if let Some(requested) = &userpass.extra_claims {
+                let existing = database.get_userpass(&realm, &username).await?;
+                let unchanged =
+                    existing.is_some_and(|e| e.extra_claims.as_ref() == Some(requested));
+                if !unchanged {
+                    return Err(AuthError::BadRequest(
+                        "extra_claims cannot be changed without also providing 'password' or 'hashed_password' in the same request".to_string(),
+                    ));
+                }
+            }
             database
                 .update_userpass_metadata(
                     &realm,
@@ -232,6 +249,8 @@ pub async fn update_userpass(
         requester.id, username, realm
     );
 
+    // Never return the stored password hash to callers — matches get_userpass.
+    userpass.password = Vec::new();
     Ok(HttpResponse::Ok().json(userpass))
 }
 
