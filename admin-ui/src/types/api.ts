@@ -62,7 +62,8 @@ export interface UserPass {
     username: string;
     /** Plaintext UTF-8 password bytes. Mutually exclusive with `hashed_password`. */
     password: number[];
-    /** Pre-computed Argon2 PHC string, stored as-is. Mutually exclusive with `password`. */
+    /** Pre-computed Argon2id PHC string using this server's exact cost parameters
+     * (m=65536,t=3,p=4). Mutually exclusive with `password`. */
     hashed_password?: string;
     change_password: boolean;
     /** RBAC roles assigned to this user (e.g. ["CryptoOfficer"]). Emitted in JWT `roles` claim. */

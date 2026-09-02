@@ -9,8 +9,9 @@ interface PasswordFieldsProps {
 }
 
 /**
- * Toggles between a plaintext password (+ confirmation) and a pre-computed
- * Argon2 PHC string, mutually exclusive per `UserPass.password`/`hashed_password`.
+ * Toggles between a plaintext password (+ confirmation) and a pre-computed Argon2id PHC
+ * string, mutually exclusive per `UserPass.password`/`hashed_password`. The server requires
+ * the pre-hashed value to use exactly its own cost parameters (m=65536,t=3,p=4).
  */
 export const PasswordFields: React.FC<PasswordFieldsProps> = ({ mode, onModeChange }) => (
     <>
@@ -51,13 +52,16 @@ export const PasswordFields: React.FC<PasswordFieldsProps> = ({ mode, onModeChan
         ) : (
             <Form.Item
                 name="hashed_password"
-                label="Pre-hashed password (Argon2 PHC string)"
+                label="Pre-hashed password (Argon2id, this server's own parameters only)"
                 rules={[
                     { required: true, message: "Hashed password is required" },
-                    { pattern: /^\$argon2(id|i|d)\$/, message: "Must be a valid Argon2 PHC string" },
+                    {
+                        pattern: /^\$argon2id\$v=19\$m=65536,t=3,p=4\$/,
+                        message: "Must be argon2id with this server's exact parameters (m=65536,t=3,p=4)",
+                    },
                 ]}
             >
-                <Input.TextArea rows={2} placeholder="$argon2id$v=19$m=19456,t=2,p=1$..." />
+                <Input.TextArea rows={2} placeholder="$argon2id$v=19$m=65536,t=3,p=4$..." />
             </Form.Item>
         )}
     </>

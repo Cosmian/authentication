@@ -377,14 +377,18 @@ let all: Vec<UserPass> = admin.list_admin_credentials_in_realm("my-service").awa
 admin.delete_admin_credentials_in_realm("my-service", "alice").await?;
 ```
 
-### Migrating pre-hashed passwords
+### Provisioning a pre-computed password hash
 
 `password` and `hashed_password` are mutually exclusive — exactly one must be provided on
-create. Use `hashed_password` to import a credential already hashed by another
-Argon2-based system, without ever sending the plaintext to this server. The value must be
-a full Argon2 PHC string (e.g. `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`); the server
-validates its structure and rejects it with `400` if malformed, but stores it as-is
-otherwise (no re-hashing).
+create. Use `hashed_password` to provision a credential without ever sending its plaintext
+to this server — e.g. a script that hashes locally before calling this API. The value must
+be a PHC string using **exactly this server's own Argon2id cost parameters**
+(`m=65536,t=3,p=4`, RFC 9106 §4's recommended option for deployments without a secret pepper
+key); the server rejects it with `400` if it
+doesn't parse as PHC, isn't `argon2id`, or its cost parameters don't match exactly. The
+blanket `PasswordVerifier` derives its cost parameters from the *stored* string, so an
+unbounded `m` would let an unauthenticated login attempt allocate arbitrary memory before
+the password comparison even runs — pinning to one known-safe preset closes that off.
 
 ```rust
 admin.create_admin_credentials_in_realm(
@@ -393,7 +397,7 @@ admin.create_admin_credentials_in_realm(
         realm: "my-service".to_string(),
         username: "bob".to_string(),
         password: Vec::new(),
-        hashed_password: Some("$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>".to_string()),
+        hashed_password: Some("$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>".to_string()),
         change_password: false,
         roles: vec![],
         extra_claims: None,

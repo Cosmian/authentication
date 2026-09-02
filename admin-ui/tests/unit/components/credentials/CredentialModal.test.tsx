@@ -134,7 +134,7 @@ describe("CredentialModal — hashed password and extra claims", () => {
 
         expect(screen.queryByLabelText("Password")).toBeNull();
         expect(screen.queryByLabelText("Confirm Password")).toBeNull();
-        expect(screen.getByLabelText("Pre-hashed password (Argon2 PHC string)")).toBeDefined();
+        expect(screen.getByLabelText("Pre-hashed password (Argon2id, this server's own parameters only)")).toBeDefined();
     });
 
     it("submit is disabled for a hashed_password that isn't a valid PHC string", async () => {
@@ -145,7 +145,7 @@ describe("CredentialModal — hashed password and extra claims", () => {
         await act(async () => {
             fireEvent.change(screen.getByLabelText("Username"), { target: { value: "bob" } });
             fireEvent.click(screen.getByRole("radio", { name: "Pre-hashed (Argon2)" }));
-            fireEvent.change(screen.getByLabelText("Pre-hashed password (Argon2 PHC string)"), {
+            fireEvent.change(screen.getByLabelText("Pre-hashed password (Argon2id, this server's own parameters only)"), {
                 target: { value: "not-a-phc-string" },
             });
         });
@@ -159,11 +159,11 @@ describe("CredentialModal — hashed password and extra claims", () => {
             render(<CredentialModal open={true} credential={null} realmId="realm1" onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
 
-        const phc = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA";
+        const phc = "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA";
         await act(async () => {
             fireEvent.change(screen.getByLabelText("Username"), { target: { value: "bob" } });
             fireEvent.click(screen.getByRole("radio", { name: "Pre-hashed (Argon2)" }));
-            fireEvent.change(screen.getByLabelText("Pre-hashed password (Argon2 PHC string)"), {
+            fireEvent.change(screen.getByLabelText("Pre-hashed password (Argon2id, this server's own parameters only)"), {
                 target: { value: phc },
             });
         });

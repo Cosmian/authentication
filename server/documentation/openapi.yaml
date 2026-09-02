@@ -286,12 +286,17 @@ components:
           type: string
           nullable: true
           description: |
-            A pre-computed Argon2 PHC string (e.g. `$argon2id$v=19$m=19456,t=2,p=1$...`),
-            stored as-is without server-side hashing — for migrating credentials already
-            hashed by another Argon2-based system. Mutually exclusive with `password`;
-            rejected with 400 if it doesn't parse as a valid PHC string. Never returned
-            on read.
-          example: "$argon2id$v=19$m=19456,t=2,p=1$c29tZXNhbHQ$aGFzaGVkdmFsdWU"
+            A pre-computed Argon2id PHC string, stored as-is without server-side hashing —
+            for provisioning a credential without ever sending its plaintext to this server.
+            Must use exactly this server's own Argon2id cost parameters
+            (`m=65536,t=3,p=4`, RFC 9106 §4's recommended option for deployments without a
+            secret pepper key). Rejected with 400 if it doesn't
+            parse as a PHC string, uses a variant other than argon2id, or its cost parameters don't
+            match exactly (the PHC format doesn't validate parameter *choice*, only syntax,
+            and an unbounded `m` would let an unauthenticated login attempt allocate
+            arbitrary memory before the password comparison even runs). Mutually exclusive
+            with `password`. Never returned on read.
+          example: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$aGFzaGVkdmFsdWU"
         change_password:
           type: boolean
           example: false
