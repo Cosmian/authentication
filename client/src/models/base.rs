@@ -33,20 +33,36 @@ fn default_certificate_max_age_seconds() -> i64 {
     365 * 24 * 3600
 }
 
+/// How a caller provides a user's password on create/update, mutually exclusive by
+/// construction. Omit `UserPass::password_input` entirely (`None`) on update to keep
+/// the existing password unchanged; it is required on create.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PasswordInput {
+    /// Plaintext UTF-8 password, hashed with Argon2 by the server before storage.
+    Plaintext(String),
+    /// A pre-computed Argon2 PHC string (e.g. `$argon2id$v=19$m=...$...$...`), stored
+    /// as-is without server-side hashing — for callers migrating already-hashed
+    /// credentials from another Argon2-based system. Must match this server's own
+    /// cost parameters.
+    Hashed(String),
+}
+
 /// Username password entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPass {
     pub realm: String,
     pub username: String,
-    /// Plaintext UTF-8 password bytes, hashed with Argon2 by the server before storage.
-    /// Mutually exclusive with `hashed_password`; leave empty when providing that instead
-    /// (or, on update, to keep the existing password unchanged).
-    pub password: Vec<u8>,
-    /// A pre-computed Argon2 PHC string (e.g. `$argon2id$v=19$m=...$...$...`), stored
-    /// as-is without server-side hashing — for callers migrating already-hashed
-    /// credentials from another Argon2-based system. Mutually exclusive with `password`.
+    /// The stored password hash, as a PHC string (e.g. `$argon2id$v=19$...`).
+    /// Server-computed and server-owned: ignored on input (see `password_input` to
+    /// set/change the password) and always emitted empty in responses, since the hash
+    /// is never returned to callers.
+    #[serde(default, skip_deserializing)]
+    pub password_hash: String,
+    /// How to set the password on create/update. Required on create; omit on update
+    /// to keep the existing password unchanged. Never present in responses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hashed_password: Option<String>,
+    pub password_input: Option<PasswordInput>,
     pub change_password: bool,
     /// RBAC roles assigned to this user (e.g. `["CryptoOfficer", "Auditor"]`).
     /// Emitted in the JWT `roles` claim for OPA policy evaluation.

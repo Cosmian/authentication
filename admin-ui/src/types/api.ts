@@ -56,15 +56,25 @@ export interface Admin {
     totp_auth_url: string | null;
 }
 
+/** How to set a user's password on create/update — mutually exclusive by construction. */
+export type PasswordInput =
+    | { plaintext: string }
+    | {
+          /** Pre-computed Argon2id PHC string using this server's exact cost parameters
+           * (m=65536,t=3,p=4). */
+          hashed: string;
+      };
+
 /** Username/password credential entry */
 export interface UserPass {
     realm: string;
     username: string;
-    /** Plaintext UTF-8 password bytes. Mutually exclusive with `hashed_password`. */
-    password: number[];
-    /** Pre-computed Argon2id PHC string using this server's exact cost parameters
-     * (m=65536,t=3,p=4). Mutually exclusive with `password`. */
-    hashed_password?: string;
+    /** Server-computed stored password hash (a PHC string); ignored on input, always
+     * empty in responses. */
+    password_hash: string;
+    /** How to set the password on create/update. Required on create; omit on update
+     * to keep the existing password unchanged. */
+    password_input?: PasswordInput;
     change_password: boolean;
     /** RBAC roles assigned to this user (e.g. ["CryptoOfficer"]). Emitted in JWT `roles` claim. */
     roles?: string[];

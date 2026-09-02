@@ -71,8 +71,8 @@ const anotherRealm = {
 };
 
 const mockCredentials: UserPass[] = [
-    { realm: "my-service", username: "alice", password: [], change_password: false },
-    { realm: "my-service", username: "bob", password: [], change_password: true },
+    { realm: "my-service", username: "alice", password_hash: "", change_password: false },
+    { realm: "my-service", username: "bob", password_hash: "", change_password: true },
 ];
 
 const defaultRealmContext = {

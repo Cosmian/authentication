@@ -1,7 +1,10 @@
 use crate::{
     AuthError,
     database::{AuthDbError, Database, hash_password_with_argon2, validate_argon2_phc_string},
-    models::{ADMIN_REALM, UserPass, reject_reserved_claim_names, validate_extra_claims_size},
+    models::{
+        ADMIN_REALM, PasswordInput, UserPass, reject_reserved_claim_names,
+        validate_extra_claims_size,
+    },
     server::endpoints::admin_from_request,
 };
 use actix_web::{
@@ -40,33 +43,18 @@ pub async fn create_userpass(
         validate_extra_claims_size(extra_claims)?;
     }
 
-    // Exactly one of `password` (plaintext, hashed below) / `hashed_password` (a
-    // pre-computed Argon2 PHC string, stored as-is — e.g. migrating credentials already
-    // hashed by another Argon2-based system) must be provided.
-    match (
-        userpass.password.is_empty(),
-        userpass.hashed_password.take(),
-    ) {
-        (false, None) => {
-            let plaintext =
-                Zeroizing::new(String::from_utf8(userpass.password).map_err(|e| {
-                    AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
-                })?);
-            userpass.password = hash_password_with_argon2(&plaintext)
+    match userpass.password_input.take() {
+        Some(PasswordInput::Plaintext(plaintext)) => {
+            userpass.password_hash = hash_password_with_argon2(&Zeroizing::new(plaintext))
                 .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
         }
-        (true, Some(hashed)) => {
+        Some(PasswordInput::Hashed(hashed)) => {
             validate_argon2_phc_string(&hashed)?;
-            userpass.password = hashed.into_bytes();
+            userpass.password_hash = hashed;
         }
-        (true, None) => {
+        None => {
             return Err(AuthError::BadRequest(
-                "either 'password' or 'hashed_password' must be provided".to_string(),
-            ));
-        }
-        (false, Some(_)) => {
-            return Err(AuthError::BadRequest(
-                "'password' and 'hashed_password' are mutually exclusive".to_string(),
+                "'password_input' must be provided".to_string(),
             ));
         }
     };
@@ -103,7 +91,7 @@ pub async fn create_userpass(
     );
 
     // Never return the stored password hash to callers — matches get_userpass.
-    userpass.password = Vec::new();
+    userpass.password_hash = String::new();
     Ok(HttpResponse::Created().json(userpass))
 }
 
@@ -129,7 +117,7 @@ pub async fn get_userpass(
     match database.get_userpass(&realm, &username).await? {
         Some(mut userpass) => {
             // Never return the stored password hash to callers.
-            userpass.password = Vec::new();
+            userpass.password_hash = String::new();
             Ok(HttpResponse::Ok().json(userpass))
         }
         None => Err(AuthError::BadRequest(format!(
@@ -170,13 +158,10 @@ pub async fn update_userpass(
 
     // Hash the new plaintext password / validate-and-store the new pre-hashed password if
     // either was provided; otherwise preserve the existing hash by only updating the
-    // metadata fields (roles, change_password). Clients send password: [] and no
-    // hashed_password when only updating roles/flags (GET always returns password: []).
-    match (
-        userpass.password.is_empty(),
-        userpass.hashed_password.take(),
-    ) {
-        (true, None) => {
+    // metadata fields (roles, change_password). Clients omit `password_input` when only
+    // updating roles/flags.
+    match userpass.password_input.take() {
+        None => {
             // `update_userpass_metadata` only persists roles/change_password — it has no
             // column to write extra_claims through. Silently dropping a genuine change
             // there would report success while not applying it, so only allow this path
@@ -187,7 +172,7 @@ pub async fn update_userpass(
                     existing.is_some_and(|e| e.extra_claims.as_ref() == Some(requested));
                 if !unchanged {
                     return Err(AuthError::BadRequest(
-                        "extra_claims cannot be changed without also providing 'password' or 'hashed_password' in the same request".to_string(),
+                        "extra_claims cannot be changed without also providing 'password_input' in the same request".to_string(),
                     ));
                 }
             }
@@ -200,23 +185,15 @@ pub async fn update_userpass(
                 )
                 .await?;
         }
-        (false, None) => {
-            let plaintext_password =
-                Zeroizing::new(String::from_utf8(userpass.password).map_err(|e| {
-                    AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
-                })?);
-            userpass.password = hash_password_with_argon2(&plaintext_password)?;
+        Some(PasswordInput::Plaintext(plaintext_password)) => {
+            userpass.password_hash =
+                hash_password_with_argon2(&Zeroizing::new(plaintext_password))?;
             database.update_userpass(&userpass).await?;
         }
-        (true, Some(hashed)) => {
+        Some(PasswordInput::Hashed(hashed)) => {
             validate_argon2_phc_string(&hashed)?;
-            userpass.password = hashed.into_bytes();
+            userpass.password_hash = hashed;
             database.update_userpass(&userpass).await?;
-        }
-        (false, Some(_)) => {
-            return Err(AuthError::BadRequest(
-                "'password' and 'hashed_password' are mutually exclusive".to_string(),
-            ));
         }
     }
     info!(
@@ -225,7 +202,7 @@ pub async fn update_userpass(
     );
 
     // Never return the stored password hash to callers — matches get_userpass.
-    userpass.password = Vec::new();
+    userpass.password_hash = String::new();
     Ok(HttpResponse::Ok().json(userpass))
 }
 

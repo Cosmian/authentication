@@ -7,7 +7,7 @@ use crate::{
     AuthError, AuthResult, AuthenticationNextStep, Realm,
     client::AuthClientScheme,
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
-    models::{ADMIN_REALM, UserPass},
+    models::{ADMIN_REALM, PasswordInput, UserPass},
     tests::{
         get_default_server_params, get_default_server_params_with_certify, helpers::test_realm,
         start_test_server,
@@ -28,8 +28,8 @@ async fn create_user_with_extra_claims(
     let userpass = UserPass {
         realm: ADMIN_REALM.to_string(),
         username: username.to_string(),
-        password: password.as_bytes().to_vec(),
-        hashed_password: None,
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Plaintext(password.to_string())),
         change_password: false,
         roles: vec![],
         extra_claims: Some(extra_claims),

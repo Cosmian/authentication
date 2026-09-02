@@ -261,9 +261,38 @@ components:
         totp_secret:
         totp_auth_url:
 
+    PasswordInput:
+      description: |
+        How to set a user's password on create/update — mutually exclusive by
+        construction (exactly one of the two shapes below).
+      oneOf:
+        - type: object
+          required: [plaintext]
+          properties:
+            plaintext:
+              type: string
+              description: Plaintext UTF-8 password, hashed with Argon2id by the server before storage.
+          example: { plaintext: "correct horse battery staple" }
+        - type: object
+          required: [hashed]
+          properties:
+            hashed:
+              type: string
+              description: |
+                A pre-computed Argon2id PHC string, stored as-is without server-side hashing —
+                for provisioning a credential without ever sending its plaintext to this server.
+                Must use exactly this server's own Argon2id cost parameters
+                (`m=65536,t=3,p=4`, RFC 9106 §4's recommended option for deployments without a
+                secret pepper key). Rejected with 400 if it doesn't
+                parse as a PHC string, uses a variant other than argon2id, or its cost parameters don't
+                match exactly (the PHC format doesn't validate parameter *choice*, only syntax,
+                and an unbounded `m` would let an unauthenticated login attempt allocate
+                arbitrary memory before the password comparison even runs).
+          example: { hashed: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$aGFzaGVkdmFsdWU" }
+
     UserPass:
       type: object
-      required: [realm, username, password, change_password]
+      required: [realm, username, password_hash, change_password]
       properties:
         realm:
           type: string
@@ -271,32 +300,21 @@ components:
         username:
           type: string
           example: alice
-        password:
-          type: array
-          items:
-            type: integer
-          description: |
-            UTF-8 bytes of the plaintext password on write. Mutually exclusive with
-            `hashed_password` — exactly one of the two must be non-empty/provided on
-            create. On update, leave both empty/absent to keep the existing password
-            unchanged (only `roles`/`change_password` are applied).
-            Always returned as an empty array on read (server stores only the Argon2id hash).
-          example: [115, 101, 99, 114, 101, 116]
-        hashed_password:
+        password_hash:
           type: string
+          description: |
+            The stored password hash, as a PHC string. Server-computed and server-owned:
+            ignored on input (use `password_input` to set/change the password) and
+            always returned as an empty string on read — the hash is never returned to
+            callers.
+          example: ""
+        password_input:
+          allOf:
+            - $ref: "#/components/schemas/PasswordInput"
           nullable: true
           description: |
-            A pre-computed Argon2id PHC string, stored as-is without server-side hashing —
-            for provisioning a credential without ever sending its plaintext to this server.
-            Must use exactly this server's own Argon2id cost parameters
-            (`m=65536,t=3,p=4`, RFC 9106 §4's recommended option for deployments without a
-            secret pepper key). Rejected with 400 if it doesn't
-            parse as a PHC string, uses a variant other than argon2id, or its cost parameters don't
-            match exactly (the PHC format doesn't validate parameter *choice*, only syntax,
-            and an unbounded `m` would let an unauthenticated login attempt allocate
-            arbitrary memory before the password comparison even runs). Mutually exclusive
-            with `password`. Never returned on read.
-          example: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$aGFzaGVkdmFsdWU"
+            How to set the password on create/update. Required on create; omit on
+            update to keep the existing password unchanged. Never present in responses.
         change_password:
           type: boolean
           example: false
@@ -1573,7 +1591,7 @@ paths:
         - cookieAuth: []
       responses:
         '200':
-          description: Array of UserPass objects. password is always empty.
+          description: Array of UserPass objects. password_hash is always empty.
           content:
             application/json:
               schema:
@@ -1583,7 +1601,7 @@ paths:
               example:
                 - realm: my-service
                   username: alice
-                  password: []
+                  password_hash: ""
                   change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1788,11 +1806,12 @@ paths:
             example:
               realm: my-service
               username: alice
-              password: [115, 101, 99, 114, 101, 116]
+              password_hash: ""
+              password_input: { plaintext: secret }
               change_password: false
       responses:
         '201':
-          description: Created credential. password returned as empty array.
+          description: Created credential. password_hash returned as an empty string.
           content:
             application/json:
               schema:
@@ -1814,7 +1833,7 @@ paths:
         - cookieAuth: []
       responses:
         '200':
-          description: Array of UserPass objects. password is always empty.
+          description: Array of UserPass objects. password_hash is always empty.
           content:
             application/json:
               schema:
@@ -1824,7 +1843,7 @@ paths:
               example:
                 - realm: my-service
                   username: alice
-                  password: []
+                  password_hash: ""
                   change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1843,7 +1862,7 @@ paths:
         - cookieAuth: []
       responses:
         '200':
-          description: UserPass object. password is always empty.
+          description: UserPass object. password_hash is always empty.
           content:
             application/json:
               schema:
@@ -1851,7 +1870,7 @@ paths:
               example:
                 realm: my-service
                 username: alice
-                password: []
+                password_hash: ""
                 change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1879,11 +1898,12 @@ paths:
             example:
               realm: my-service
               username: alice
-              password: [110, 101, 119, 115, 101, 99, 114, 101, 116]
+              password_hash: ""
+              password_input: { plaintext: newsecret }
               change_password: false
       responses:
         '200':
-          description: Updated credential. password returned as empty array.
+          description: Updated credential. password_hash returned as an empty string.
           content:
             application/json:
               schema:

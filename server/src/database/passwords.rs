@@ -19,25 +19,24 @@ fn server_argon2() -> Argon2<'static> {
 
 /// Hash a password using this server's Argon2id preset with a cryptographically random salt.
 ///
-/// The returned bytes are the full PHC string (e.g.
+/// The returned string is the full PHC string (e.g.
 /// `$argon2id$v=19$m=65536,t=3,p=4$<b64-salt>$<b64-hash>`), which encodes both the salt and
 /// the hash. Use [`verify_password_argon2`] to authenticate an incoming password against the
 /// stored value.
-pub fn hash_password_with_argon2(password: &str) -> AuthResult<Vec<u8>> {
+pub fn hash_password_with_argon2(password: &str) -> AuthResult<String> {
     let salt = SaltString::generate(&mut OsRng);
     let password_hash = server_argon2()
         .hash_password(password.as_bytes(), &salt)
         .map_err(|e| AuthError::Unexpected(format!("Failed to hash password with Argon2: {e}")))?
-        .to_string()
-        .into_bytes();
+        .to_string();
     Ok(password_hash)
 }
 
 /// Validate that `hash` is a well-formed Argon2id PHC string using exactly the algorithm,
 /// version, and cost parameters (`m`, `t`, `p`) this server's own
 /// [`hash_password_with_argon2`] would have produced, without verifying it against any
-/// password. Used to accept a caller-supplied pre-hashed password (`hashed_password`) as-is
-/// instead of hashing a plaintext one.
+/// password. Used to accept a caller-supplied pre-hashed password (`PasswordInput::Hashed`)
+/// as-is instead of hashing a plaintext one.
 ///
 /// The PHC string format is a generic, algorithm-agnostic envelope (see the
 /// [PHC string spec](https://github.com/P-H-C/phc-string-format)) — `PasswordHash::new` on its
@@ -95,11 +94,8 @@ pub fn validate_argon2_phc_string(hash: &str) -> AuthResult<()> {
 ///
 /// Returns `Ok(())` on success, or an error if the password is wrong or
 /// the stored hash is malformed.
-pub fn verify_password_argon2(stored: &[u8], password: &str) -> AuthResult<()> {
-    let stored_str = std::str::from_utf8(stored).map_err(|_| {
-        AuthError::Unexpected("stored password hash is not valid UTF-8".to_string())
-    })?;
-    let parsed_hash = PasswordHash::new(stored_str)
+pub fn verify_password_argon2(stored: &str, password: &str) -> AuthResult<()> {
+    let parsed_hash = PasswordHash::new(stored)
         .map_err(|e| AuthError::Unexpected(format!("Invalid stored password hash: {e}")))?;
     server_argon2()
         .verify_password(password.as_bytes(), &parsed_hash)
@@ -113,8 +109,7 @@ mod tests {
     #[test]
     fn validate_argon2_phc_string_accepts_this_servers_own_output() {
         let hash = hash_password_with_argon2("sabrina").unwrap();
-        let hash_str = std::str::from_utf8(&hash).unwrap();
-        assert!(validate_argon2_phc_string(hash_str).is_ok());
+        assert!(validate_argon2_phc_string(&hash).is_ok());
     }
 
     #[test]

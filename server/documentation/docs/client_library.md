@@ -332,10 +332,12 @@ admin.delete_admin_as_super_admin("bob").await?;
 
 ## Credential Management
 
-Passwords are hashed with **Argon2id** server-side. Pass the plaintext password as a UTF-8 byte array. The server stores only the hash. When reading back a credential, the `password` field is always empty.
+Passwords are hashed with **Argon2id** server-side. Pass the plaintext password via
+`password_input: Some(PasswordInput::Plaintext(...))`. The server stores only the hash in
+`password_hash`, which is server-computed and always empty in responses and ignored on input.
 
 ```rust
-use auth_client::UserPass;
+use auth_client::{PasswordInput, UserPass};
 
 // Create credentials
 admin.create_admin_credentials_in_realm(
@@ -343,17 +345,17 @@ admin.create_admin_credentials_in_realm(
     &UserPass {
         realm: "my-service".to_string(),
         username: "alice".to_string(),
-        password: b"hunter2".to_vec(),  // plaintext — server hashes with Argon2id
-        hashed_password: None,
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Plaintext("hunter2".to_string())),
         change_password: false,
         roles: vec!["CryptoOfficer".to_string()],
         extra_claims: None,
     },
 ).await?;
 
-// Read back — password is always empty
+// Read back — password_hash is always empty
 let stored: UserPass = admin.get_admin_credentials_in_realm("my-service", "alice").await?;
-assert!(stored.password.is_empty());
+assert!(stored.password_hash.is_empty());
 
 // Force password change on next login
 admin.update_admin_credentials_in_realm(
@@ -362,8 +364,8 @@ admin.update_admin_credentials_in_realm(
     &UserPass {
         realm: "my-service".to_string(),
         username: "alice".to_string(),
-        password: b"new-password".to_vec(),
-        hashed_password: None,
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Plaintext("new-password".to_string())),
         change_password: true,
         roles: vec!["CryptoOfficer".to_string()],
         extra_claims: None,
@@ -379,16 +381,17 @@ admin.delete_admin_credentials_in_realm("my-service", "alice").await?;
 
 ### Provisioning a pre-computed password hash
 
-`password` and `hashed_password` are mutually exclusive — exactly one must be provided on
-create. Use `hashed_password` to provision a credential without ever sending its plaintext
-to this server — e.g. a script that hashes locally before calling this API. The value must
-be a PHC string using **exactly this server's own Argon2id cost parameters**
-(`m=65536,t=3,p=4`, RFC 9106 §4's recommended option for deployments without a secret pepper
-key); the server rejects it with `400` if it
-doesn't parse as PHC, isn't `argon2id`, or its cost parameters don't match exactly. The
-blanket `PasswordVerifier` derives its cost parameters from the *stored* string, so an
-unbounded `m` would let an unauthenticated login attempt allocate arbitrary memory before
-the password comparison even runs — pinning to one known-safe preset closes that off.
+`password_input` is required on create — either `PasswordInput::Plaintext(String)` or
+`PasswordInput::Hashed(String)`, mutually exclusive by construction. Use `Hashed` to
+provision a credential without ever sending its plaintext to this server — e.g. a script
+that hashes locally before calling this API. The value must be a PHC string using
+**exactly this server's own Argon2id cost parameters** (`m=65536,t=3,p=4`, RFC 9106 §4's
+recommended option for deployments without a secret pepper key); the server rejects it with
+`400` if it doesn't parse as PHC, isn't `argon2id`, or its cost parameters don't match
+exactly. The blanket `PasswordVerifier` derives its cost parameters from the *stored*
+string, so an unbounded `m` would let an unauthenticated login attempt allocate arbitrary
+memory before the password comparison even runs — pinning to one known-safe preset closes
+that off.
 
 ```rust
 admin.create_admin_credentials_in_realm(
@@ -396,8 +399,10 @@ admin.create_admin_credentials_in_realm(
     &UserPass {
         realm: "my-service".to_string(),
         username: "bob".to_string(),
-        password: Vec::new(),
-        hashed_password: Some("$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>".to_string()),
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Hashed(
+            "$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>".to_string(),
+        )),
         change_password: false,
         roles: vec![],
         extra_claims: None,
@@ -405,9 +410,8 @@ admin.create_admin_credentials_in_realm(
 ).await?;
 ```
 
-The same rule applies on update: leave both `password` and `hashed_password`
-empty/`None` to keep the existing password unchanged while only updating
-`roles`/`change_password`.
+The same rule applies on update: leave `password_input` as `None` to keep the existing
+password unchanged while only updating `roles`/`change_password`.
 
 ### Extra claims
 
@@ -426,8 +430,8 @@ admin.create_admin_credentials_in_realm(
     &UserPass {
         realm: "my-service".to_string(),
         username: "alice".to_string(),
-        password: b"hunter2".to_vec(),
-        hashed_password: None,
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Plaintext("hunter2".to_string())),
         change_password: false,
         roles: vec!["CryptoOfficer".to_string()],
         extra_claims: Some(HashMap::from([

@@ -105,7 +105,7 @@ describe("CredentialModal — create mode submit button state", () => {
     });
 
     it("shows only roles field in edit mode", async () => {
-        const credential = { realm: "realm1", username: "alice", password: [], change_password: false, roles: ["Admin"] };
+        const credential = { realm: "realm1", username: "alice", password_hash: "", change_password: false, roles: ["Admin"] };
         await act(async () => {
             render(<CredentialModal open={true} credential={credential} realmId="realm1" onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
@@ -137,7 +137,7 @@ describe("CredentialModal — hashed password and extra claims", () => {
         expect(screen.getByLabelText("Pre-hashed password (Argon2id, this server's own parameters only)")).toBeDefined();
     });
 
-    it("submit is disabled for a hashed_password that isn't a valid PHC string", async () => {
+    it("submit is disabled for a pre-hashed password that isn't a valid PHC string", async () => {
         await act(async () => {
             render(<CredentialModal open={true} credential={null} realmId="realm1" onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
@@ -154,7 +154,7 @@ describe("CredentialModal — hashed password and extra claims", () => {
         await waitFor(() => expect(btn).toBeDisabled());
     });
 
-    it("submits password: [] and hashed_password set when a valid PHC string is provided", async () => {
+    it("submits password_hash: '' and password_input: { hashed } when a valid PHC string is provided", async () => {
         await act(async () => {
             render(<CredentialModal open={true} credential={null} realmId="realm1" onClose={vi.fn()} onSuccess={vi.fn()} />);
         });
@@ -175,9 +175,9 @@ describe("CredentialModal — hashed password and extra claims", () => {
         });
 
         await waitFor(() => expect(mockCreate).toHaveBeenCalledTimes(1));
-        const [, submitted] = mockCreate.mock.calls[0] as [string, { password: number[]; hashed_password?: string }];
-        expect(submitted.password).toEqual([]);
-        expect(submitted.hashed_password).toBe(phc);
+        const [, submitted] = mockCreate.mock.calls[0] as [string, { password_hash: string; password_input?: { hashed: string } }];
+        expect(submitted.password_hash).toBe("");
+        expect(submitted.password_input).toEqual({ hashed: phc });
     });
 
     it("with no extra claims added, extra_claims is omitted from the submitted payload", async () => {

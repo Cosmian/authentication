@@ -95,12 +95,12 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                 await api.update(realmId, credential.username, updated);
                 message.success(`Roles updated for "${credential.username}"`);
             } else {
-                const passwordBytes = passwordMode === "plain" ? Array.from(new TextEncoder().encode(values.password as string)) : [];
                 const userpass: UserPass = {
                     realm: realmId,
                     username: values.username as string,
-                    password: passwordBytes,
-                    hashed_password: passwordMode === "hashed" ? (values.hashed_password as string) : undefined,
+                    password_hash: "",
+                    password_input:
+                        passwordMode === "plain" ? { plaintext: values.password as string } : { hashed: values.hashed_password as string },
                     change_password: (values.change_password as boolean | undefined) ?? false,
                     roles: (values.roles as string[] | undefined) ?? [],
                     extra_claims: toExtraClaims(values.extraClaims as ExtraClaimPair[] | undefined),

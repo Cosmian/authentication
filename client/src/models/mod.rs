@@ -1,6 +1,7 @@
 mod base;
 pub use base::{
-    ADMIN_REALM, Admin, AuthScheme, AuthenticatedClientScheme, Realm, SessionData, UserPass,
+    ADMIN_REALM, Admin, AuthScheme, AuthenticatedClientScheme, PasswordInput, Realm, SessionData,
+    UserPass,
 };
 
 mod certificate_claims;

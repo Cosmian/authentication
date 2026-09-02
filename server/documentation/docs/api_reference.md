@@ -694,7 +694,7 @@ List all realms. Super admins see all realms; realm admins see only their admini
 
 List all username/password credentials across every realm. Super admin only.
 
-**Response — `200 OK`** — array of `UserPass` objects. The `password` field is always returned as an empty byte array.
+**Response — `200 OK`** — array of `UserPass` objects. The `password_hash` field is always returned as an empty string.
 
 ---
 
@@ -804,7 +804,8 @@ Create a username/password credential in a realm.
 {
   "realm": "my-service",
   "username": "alice",
-  "password": [115, 101, 99, 114, 101, 116],
+  "password_hash": "",
+  "password_input": { "plaintext": "secret" },
   "change_password": false,
   "roles": ["CryptoOfficer"],
   "extra_claims": { "as_registrant": "acme-corp" }
@@ -815,8 +816,8 @@ Create a username/password credential in a realm.
 | ------------------ | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `realm`            | `String`           | Realm ID (must match path parameter)                                                                                                          |
 | `username`         | `String`           | Credential username                                                                                                                            |
-| `password`         | `u8[]`             | UTF-8 bytes of the plaintext password. The server hashes with Argon2id. Mutually exclusive with `hashed_password`.                            |
-| `hashed_password`  | `String` \| `null` | A pre-computed Argon2id PHC string, stored as-is — for provisioning a credential without ever sending its plaintext to this server. Must use exactly this server's own Argon2id cost parameters (`m=65536,t=3,p=4`). Rejected with `400` if it doesn't parse as PHC, isn't `argon2id`, or its cost parameters don't match exactly. Mutually exclusive with `password`; exactly one of the two must be provided on create. |
+| `password_hash`    | `String`           | Server-computed stored password hash (a PHC string). Ignored on input — use `password_input` instead. Always empty in responses.              |
+| `password_input`   | `object` \| absent | How to set the password: `{ "plaintext": "<password>" }`, hashed with Argon2id by the server before storage; or `{ "hashed": "<PHC string>" }`, stored as-is — for provisioning a credential without ever sending its plaintext to this server, and must use exactly this server's own Argon2id cost parameters (`m=65536,t=3,p=4`). Rejected with `400` if it doesn't parse as PHC, isn't `argon2id`, or its cost parameters don't match exactly. Required on create.                            |
 | `change_password`  | `bool`             | When `true`, the next login returns `"ChangePassword"` next step                                                                              |
 | `roles`            | `String[]`         | Optional, default `[]`. RBAC roles assigned to this user, emitted in the session JWT's `roles` claim.                                         |
 | `extra_claims`     | `object` \| `null` | Optional. Arbitrary extra claims merged into the session JWT on username/password login, and selectively exposed via [`POST /certify`](#post-certifyrealmrealm_id)'s `claims` field. Rejected with `400` if it also uses a reserved claim name, or if its serialized size exceeds 4 KiB. |
@@ -835,7 +836,7 @@ Use `PUT /realms/{realm_id}/userpass/{username}` to update an existing credentia
 
 List all credentials in a realm.
 
-**Response — `200 OK`** — array of `UserPass` objects. The `password` field is always empty.
+**Response — `200 OK`** — array of `UserPass` objects. The `password_hash` field is always empty.
 
 ---
 
@@ -843,7 +844,7 @@ List all credentials in a realm.
 
 Retrieve a single credential.
 
-**Response — `200 OK`** — `UserPass` object. The `password` field is always empty.
+**Response — `200 OK`** — `UserPass` object. The `password_hash` field is always empty.
 
 **Response — `404 Not Found`** — credential does not exist.
 
@@ -855,8 +856,8 @@ Update a credential (typically to change the password or set `change_password`/`
 
 #### Request body — same shape as `POST /realms/{realm}/userpass`
 
-Leave both `password` and `hashed_password` empty/absent to keep the existing password
-unchanged and only apply `roles`/`change_password`. Providing both is rejected with `400`.
+Omit `password_input` to keep the existing password unchanged and only apply
+`roles`/`change_password`.
 
 **Response — `200 OK`** — updated `UserPass` object.
 
@@ -1017,16 +1018,16 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 {
   "realm": "my-service",
   "username": "alice",
-  "password": [],
+  "password_hash": "",
   "change_password": false,
   "roles": ["CryptoOfficer"],
   "extra_claims": { "as_registrant": "acme-corp" }
 }
 ```
 
-> The `password` field is always returned as an empty byte array from GET endpoints, and
-> `hashed_password` is never returned. Send the plaintext UTF-8 bytes in `password`, or a
-> pre-computed Argon2 PHC string in `hashed_password`, on create/update — see
+> The `password_hash` field is always returned as an empty string from GET endpoints, and
+> `password_input` is never returned. Send `{ "plaintext": "<password>" }` or
+> `{ "hashed": "<PHC string>" }` in `password_input` on create/update — see
 > [`POST /realms/{realm_id}/userpass`](#post-realmsrealm_iduserpass).
 
 ### `SessionData`

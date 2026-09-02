@@ -4,7 +4,7 @@ use crate::{
     AuthResult, AuthenticationNextStep, Realm, RealmAuthParams,
     client::{AuthClient, AuthClientScheme},
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
-    models::{ADMIN_REALM, Admin, UserPass},
+    models::{ADMIN_REALM, Admin, PasswordInput, UserPass},
     tests::TestsContext,
 };
 use cosmian_logger::info;
@@ -54,8 +54,8 @@ pub fn create_userpass(
     Ok(UserPass {
         realm: realm.to_string(),
         username: username.to_string(),
-        password: password.as_bytes().to_vec(),
-        hashed_password: None,
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Plaintext(password.to_string())),
         change_password,
         roles: Vec::new(),
         extra_claims: None,

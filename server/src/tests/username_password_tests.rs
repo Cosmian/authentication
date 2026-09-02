@@ -3,7 +3,7 @@ use crate::{
     UsernamePasswordParams,
     client::AuthClientScheme,
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
-    models::{ADMIN_REALM, UserPass},
+    models::{ADMIN_REALM, PasswordInput, UserPass},
     tests::{
         helpers::{authenticate_as_admin, create_userpass},
         init_test_logging, start_default_test_server,
@@ -195,8 +195,8 @@ fn make_expired_userpass(realm: &str, username: &str, password: &str) -> AuthRes
     Ok(UserPass {
         realm: realm.to_string(),
         username: username.to_string(),
-        password: password.as_bytes().to_vec(),
-        hashed_password: None,
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Plaintext(password.to_string())),
         change_password: true,
         roles: Vec::new(),
         extra_claims: None,
@@ -601,8 +601,8 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
     let roles_only = UserPass {
         realm: realm_id.to_string(),
         username: username.to_string(),
-        password: Vec::new(), // empty — server must keep the existing hash
-        hashed_password: None,
+        password_hash: String::new(),
+        password_input: None, // absent — server must keep the existing hash
         change_password: false,
         roles: vec!["Auditor".to_string()],
         extra_claims: None,

@@ -52,8 +52,8 @@ pub(super) async fn seed_dev_realm_admin(
         let userpass = UserPass {
             realm: ADMIN_REALM.to_string(),
             username: seed.admin_username.clone(),
-            password: hashed,
-            hashed_password: None,
+            password_hash: hashed,
+            password_input: None,
             change_password: true,
             roles: Vec::new(),
             extra_claims: None,
@@ -109,8 +109,8 @@ pub(super) async fn seed_dev_realm_admin(
             let userpass = UserPass {
                 realm: seed.realm_id.clone(),
                 username: totp_username.clone(),
-                password: hashed,
-                hashed_password: None,
+                password_hash: hashed,
+                password_input: None,
                 change_password: false,
                 roles: Vec::new(),
                 extra_claims: None,

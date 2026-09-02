@@ -10,7 +10,7 @@ interface PasswordFieldsProps {
 
 /**
  * Toggles between a plaintext password (+ confirmation) and a pre-computed Argon2id PHC
- * string, mutually exclusive per `UserPass.password`/`hashed_password`. The server requires
+ * string, mapped to the two variants of `UserPass.password_input`. The server requires
  * the pre-hashed value to use exactly its own cost parameters (m=65536,t=3,p=4).
  */
 export const PasswordFields: React.FC<PasswordFieldsProps> = ({ mode, onModeChange }) => (

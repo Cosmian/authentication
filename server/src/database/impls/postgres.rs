@@ -348,7 +348,7 @@ impl Database for PostgresDatabase {
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
-        .bind(&userpass.password)
+        .bind(userpass.password_hash.as_bytes())
         .bind(userpass.change_password)
         .bind(&roles_json)
         .bind(&extra_claims_json)
@@ -400,8 +400,8 @@ impl Database for PostgresDatabase {
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,
-                    password: vec![], // do not return the password hash
-                    hashed_password: None,
+                    password_hash: String::new(), // do not return the password hash
+                    password_input: None,
                     change_password: row.try_get("change_password")?,
                     roles,
                     extra_claims,
@@ -432,7 +432,7 @@ impl Database for PostgresDatabase {
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
-        .bind(&userpass.password)
+        .bind(userpass.password_hash.as_bytes())
         .bind(userpass.change_password)
         .bind(&roles_json)
         .bind(&extra_claims_json)
@@ -529,11 +529,14 @@ impl Database for PostgresDatabase {
                         "failed to deserialize extra_claims for user '{username}': {e}"
                     ))
                 })?;
+            let password_hash: Vec<u8> = row.try_get("password")?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
-                password: row.try_get("password")?,
-                hashed_password: None,
+                password_hash: String::from_utf8(password_hash).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?,
+                password_input: None,
                 change_password: row.try_get("change_password")?,
                 roles,
                 extra_claims,
@@ -573,11 +576,14 @@ impl Database for PostgresDatabase {
                         "failed to deserialize extra_claims for user '{username}': {e}"
                     ))
                 })?;
+            let password_hash: Vec<u8> = row.try_get("password")?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
-                password: row.try_get("password")?,
-                hashed_password: None,
+                password_hash: String::from_utf8(password_hash).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?,
+                password_input: None,
                 change_password: row.try_get("change_password")?,
                 roles,
                 extra_claims,
@@ -607,6 +613,9 @@ impl Database for PostgresDatabase {
         match row {
             Some(row) => {
                 let stored_password: Vec<u8> = row.try_get("password")?;
+                let stored_password = String::from_utf8(stored_password).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?;
                 crate::database::verify_password_argon2(&stored_password, password)
                     .map_err(|_| crate::database::AuthDbError::InvalidCredentials)?;
                 let change_password: bool = row.try_get("change_password")?;

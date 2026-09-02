@@ -51,12 +51,12 @@ export const AdminCredentialModal: React.FC<AdminCredentialModalProps> = ({ open
             const values = await form.validateFields();
             setLoading(true);
             const api = createCredentialsApi(serverUrl);
-            const passwordBytes = Array.from(new TextEncoder().encode(values.password as string));
 
             const userpass: UserPass = {
                 realm: SUPER_ADMIN_REALM_ID,
                 username: adminId,
-                password: passwordBytes,
+                password_hash: "",
+                password_input: { plaintext: values.password as string },
                 change_password: (values.change_password as boolean | undefined) ?? false,
                 roles: [],
             };
