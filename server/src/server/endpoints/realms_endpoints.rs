@@ -117,10 +117,14 @@ pub async fn create_userpass(
         Err(e) => return Err(e.into()),
     }
 
+    // TODO: This code is never executed in case of conflict. Is this normal?
+
     // Auto-link: when creating a credential in the admin realm, if an admin
     // exists with a matching id, set its `userpass` field to enable login.
     if realm_id == ADMIN_REALM
         && let Some(mut admin) = database.get_admin(&userpass.username).await?
+    // TODO: why comparing a userpass with a username? those do not seem to be
+    // homogeneous.
         && admin.userpass.as_deref() != Some(&userpass.username)
     {
         admin.userpass = Some(userpass.username.clone());
@@ -191,6 +195,9 @@ pub async fn update_userpass(
 
     let mut userpass = userpass.into_inner();
     userpass.realm = realm.clone();
+    // TODO: if I understand correctly, even a realm admin cannot modify the
+    // userpass of another user? However, it can delete then create another
+    // userpass... which seems to be another way to modify it.
     userpass.username = username.clone();
 
     // Hash the new plaintext password / validate-and-store the new pre-hashed password if
@@ -227,6 +234,8 @@ pub async fn update_userpass(
         }
         (false, None) => {
             let plaintext_password =
+            // TODO: Why not changing the `userpass.password` field to make it a
+            // `Zeroizing<String>` instead?
                 Zeroizing::new(String::from_utf8(userpass.password).map_err(|e| {
                     AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
                 })?);

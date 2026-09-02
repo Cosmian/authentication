@@ -9,6 +9,8 @@ use cosmian_logger::info;
 
 /// Seeds a realm and a realm-scoped admin account for development use.
 /// All operations are idempotent — nothing is overwritten if it already exists.
+// TODO: How can we ensure this is `dev` only? Consider gating this by a macro
+// instead of relying on the naming.
 pub(super) async fn seed_dev_realm_admin(
     db: &dyn Database,
     seed: &DevSeedParams,
@@ -52,6 +54,8 @@ pub(super) async fn seed_dev_realm_admin(
         let userpass = UserPass {
             realm: ADMIN_REALM.to_string(),
             username: seed.admin_username.clone(),
+            // TODO: why is the hashed password stored as `password` instead of
+            // `hashed_password`?
             password: hashed,
             hashed_password: None,
             change_password: true,
@@ -100,6 +104,7 @@ pub(super) async fn seed_dev_realm_admin(
             .await?
             .is_none()
         {
+            // TODO: why is the TOTP password hashed with Argon2?
             let hashed = hash_password_with_argon2(totp_password).map_err(|e| {
                 crate::AuthError::Init(format!(
                     "dev_seed: failed to hash password for TOTP user '{}': {e}",
@@ -108,9 +113,15 @@ pub(super) async fn seed_dev_realm_admin(
             })?;
             let userpass = UserPass {
                 realm: seed.realm_id.clone(),
+                // TODO: if I understand correctly, a user be created in the new
+                // realm upon setting-up the realm admin. Why is this linked to
+                // TOTP though? Those seem to be different considerations.
                 username: totp_username.clone(),
+                // TODO: why is the hashed password stored as `password` instead
+                // of `hashed_password`?
                 password: hashed,
                 hashed_password: None,
+                // TODO: Why is this field set to false ?
                 change_password: false,
                 roles: Vec::new(),
                 extra_claims: None,

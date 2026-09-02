@@ -35,6 +35,7 @@ pub fn validate_argon2_phc_string(hash: &str) -> AuthResult<()> {
 /// Returns `Ok(())` on success, or an error if the password is wrong or
 /// the stored hash is malformed.
 pub fn verify_password_argon2(stored: &[u8], password: &str) -> AuthResult<()> {
+    // TODO: pass a string as input instead.
     let stored_str = std::str::from_utf8(stored).map_err(|_| {
         AuthError::Unexpected("stored password hash is not valid UTF-8".to_string())
     })?;

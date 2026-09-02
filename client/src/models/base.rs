@@ -29,7 +29,9 @@ pub struct Realm {
 }
 
 /// Default `Realm::certificate_max_age_seconds`: one year.
+// TODO: This is either a constant of a constant function.
 fn default_certificate_max_age_seconds() -> i64 {
+    // Note that this is not used in `seed_dev_realm_admin`.
     365 * 24 * 3600
 }
 
@@ -45,11 +47,14 @@ pub struct UserPass {
     /// A pre-computed Argon2 PHC string (e.g. `$argon2id$v=19$m=...$...$...`), stored
     /// as-is without server-side hashing — for callers migrating already-hashed
     /// credentials from another Argon2-based system. Mutually exclusive with `password`.
+    // TODO: use an enum to represent the mutual exclusivity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hashed_password: Option<String>,
+    // TODO: What is the meaning of this field?
     pub change_password: bool,
     /// RBAC roles assigned to this user (e.g. `["CryptoOfficer", "Auditor"]`).
     /// Emitted in the JWT `roles` claim for OPA policy evaluation.
+    // TODO: Why aren't those defined as extra claims instead?
     #[serde(default)]
     pub roles: Vec<String>,
 
@@ -69,6 +74,7 @@ pub struct Admin {
     /// Realms that the admin administers.
     /// An admin administering the ADMIN_REALM is a super admin and can administer all realms.
     pub realms: Vec<String>,
+    // TODO: What is the meaning of this field?
     pub userpass: Option<String>,
     pub jwt: Option<String>,
     pub fido2: Option<String>,

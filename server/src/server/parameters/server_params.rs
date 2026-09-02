@@ -97,6 +97,8 @@ fn default_login_rate_limit_burst() -> u32 {
 }
 
 /// Parameters for seeding a realm-admin on first start in development mode.
+// TODO: "seed" has a specific meaning in crypto, consider using a different
+// name like "init" or "config".
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct DevSeedParams {
     /// ID of the realm to create (if it does not already exist).

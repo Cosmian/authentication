@@ -221,6 +221,8 @@ pub trait Database: Send + Sync {
     async fn list_admins(&self) -> AuthDbResult<Vec<Admin>>;
 
     // Find Admins by authentication scheme (e.g. userpass, jwt, fido2, vp, certificate) and value (e.g. username for userpass, subject for jwt, etc.)
+    // TODO: why is it not an error to find several admin profiles? Imho, the
+    // return type should be `Result<Option<Admin>, _>`.
     async fn find_admins_by_auth_scheme(
         &self,
         auth_scheme: AuthScheme,
