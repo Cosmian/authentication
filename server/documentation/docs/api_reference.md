@@ -823,13 +823,11 @@ Create a username/password credential in a realm.
 
 **Response — `201 Created`** — created `UserPass` object.
 
-**Response — `409 Conflict`** — a credential for this `(realm, username)` already exists.
-If the resubmitted `password`/`change_password`/`roles`/`extra_claims` are byte-for-byte
-identical to the existing entry, the call is instead treated as an idempotent no-op and
-returns `200 OK` with the existing `UserPass` — useful for a client retrying a create call
-it isn't sure landed. This idempotency check only applies to the plaintext `password` path;
-a resubmission via `hashed_password` always returns `409`, since the server never re-exposes
-a stored hash to compare against.
+**Response — `409 Conflict`** — a credential for this `(realm, username)` already exists,
+including on a byte-for-byte resubmission of the same data: telling the two cases apart
+would require verifying the submitted password against the stored hash on this
+unrate-limited, admin-authenticated endpoint, turning it into a password-guessing oracle.
+Use `PUT /realms/{realm_id}/userpass/{username}` to update an existing credential.
 
 ---
 

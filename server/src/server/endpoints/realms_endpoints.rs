@@ -42,11 +42,7 @@ pub async fn create_userpass(
     // Exactly one of `password` (plaintext, hashed below) / `hashed_password` (a
     // pre-computed Argon2 PHC string, stored as-is — e.g. migrating credentials already
     // hashed by another Argon2-based system) must be provided.
-    //
-    // `plaintext_password` is kept around (zeroized on drop, not persisted) only in the
-    // plaintext case, so a conflict can be re-checked against it below — Argon2 hashes
-    // are salted, so a stored hash can never be compared for equality directly.
-    let plaintext_password = match (
+    match (
         userpass.password.is_empty(),
         userpass.hashed_password.take(),
     ) {
@@ -57,12 +53,10 @@ pub async fn create_userpass(
                 })?);
             userpass.password = hash_password_with_argon2(&plaintext)
                 .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
-            Some(plaintext)
         }
         (true, Some(hashed)) => {
             validate_argon2_phc_string(&hashed)?;
             userpass.password = hashed.into_bytes();
-            None
         }
         (true, None) => {
             return Err(AuthError::BadRequest(
@@ -78,43 +72,14 @@ pub async fn create_userpass(
 
     match database.create_userpass(&userpass).await {
         Ok(()) => {}
+        // A conflicting (realm, username) is always rejected, even on a byte-for-byte
+        // resubmission: telling the two cases apart requires verifying the submitted
+        // password against the stored hash, which turns this admin-authenticated,
+        // unrate-limited endpoint into a password-guessing oracle. Clients that need
+        // idempotent provisioning should use PUT instead.
         Err(AuthDbError::Conflict(_)) => {
-            // Re-provisioning with byte-for-byte identical data is a common retry
-            // pattern (e.g. a client that doesn't know whether its previous call
-            // landed) — treat it as a no-op success rather than a conflict. Anything
-            // else about the existing entry differing is a genuine conflict: someone
-            // else already owns this username with different credentials/roles/claims.
-            let data_matches = match &plaintext_password {
-                Some(plaintext) => {
-                    let password_matches = database
-                        .validate_userpass(&realm_id, &userpass.username, plaintext)
-                        .await
-                        .is_ok();
-                    let existing = database.get_userpass(&realm_id, &userpass.username).await?;
-                    password_matches
-                        && existing.is_some_and(|e| {
-                            e.change_password == userpass.change_password
-                                && e.roles == userpass.roles
-                                && e.extra_claims == userpass.extra_claims
-                        })
-                }
-                // A pre-hashed submission can't be re-verified without exposing the
-                // stored hash — get_userpass deliberately never returns it — so this is
-                // always treated as a genuine conflict.
-                None => false,
-            };
-
-            if data_matches {
-                info!(
-                    "create_userpass: '{}' re-submitted identical credentials for '{}' in realm '{}' — idempotent no-op",
-                    requester.id, userpass.username, realm_id
-                );
-                userpass.password = Vec::new();
-                return Ok(HttpResponse::Ok().json(userpass));
-            }
-
             return Err(AuthError::Conflict(format!(
-                "credentials for '{}' already exist in realm '{}' with different data",
+                "credentials for '{}' already exist in realm '{}' — use PUT to update them",
                 userpass.username, realm_id
             )));
         }
