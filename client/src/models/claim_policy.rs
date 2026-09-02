@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+use serde_json::Value;
+
 use crate::{AuthError, AuthResult, AuthScheme};
 
 use super::certificate_claims::CertificateClaims;
@@ -84,6 +86,30 @@ pub fn reject_reserved_claim_names<'a>(
     Ok(())
 }
 
+/// Maximum serialized size, in bytes, of a `UserPass.extra_claims` map.
+///
+/// `extra_claims` is merged into every session JWT issued for its user, so an unbounded map
+/// here becomes an unbounded JWT — one that a reverse proxy or load balancer in front of a
+/// relying service may reject outright (e.g. nginx's default `large_client_header_buffers` is
+/// 8 KiB total, shared across *all* request headers). 4 KiB leaves headroom for the JWT's other
+/// claims, its header/signature, and base64 overhead, while still comfortably fitting typical
+/// metadata use cases.
+const MAX_EXTRA_CLAIMS_BYTES: usize = 4096;
+
+/// Reject an `extra_claims` map whose serialized size exceeds [`MAX_EXTRA_CLAIMS_BYTES`] — see
+/// its documentation for why an unbounded map is a problem.
+pub fn validate_extra_claims_size(claims: &HashMap<String, Value>) -> AuthResult<()> {
+    let size = serde_json::to_vec(claims)
+        .expect("a HashMap<String, Value> always serializes without error")
+        .len();
+    if size > MAX_EXTRA_CLAIMS_BYTES {
+        return Err(AuthError::BadRequest(format!(
+            "extra_claims is {size} bytes when serialized, exceeding the {MAX_EXTRA_CLAIMS_BYTES}-byte limit"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +168,26 @@ mod tests {
                 "verification_key",
             ]
         );
+    }
+
+    #[test]
+    fn accepts_a_small_extra_claims_map() {
+        let mut claims = HashMap::new();
+        claims.insert(
+            "as_registrant".to_string(),
+            Value::String("acme".to_string()),
+        );
+        assert!(validate_extra_claims_size(&claims).is_ok());
+    }
+
+    #[test]
+    fn rejects_an_oversized_extra_claims_map() {
+        let mut claims = HashMap::new();
+        claims.insert(
+            "blob".to_string(),
+            Value::String("x".repeat(MAX_EXTRA_CLAIMS_BYTES)),
+        );
+        let err = validate_extra_claims_size(&claims).expect_err("oversized map must be rejected");
+        assert!(matches!(err, AuthError::BadRequest(ref m) if m.contains("exceeding")));
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
     AuthError,
     database::{AuthDbError, Database, hash_password_with_argon2, validate_argon2_phc_string},
-    models::{ADMIN_REALM, UserPass, reject_reserved_claim_names},
+    models::{ADMIN_REALM, UserPass, reject_reserved_claim_names, validate_extra_claims_size},
     server::endpoints::admin_from_request,
 };
 use actix_web::{
@@ -37,6 +37,7 @@ pub async fn create_userpass(
 
     if let Some(extra_claims) = &userpass.extra_claims {
         reject_reserved_claim_names(extra_claims.keys())?;
+        validate_extra_claims_size(extra_claims)?;
     }
 
     // Exactly one of `password` (plaintext, hashed below) / `hashed_password` (a
@@ -164,6 +165,7 @@ pub async fn update_userpass(
 
     if let Some(extra_claims) = &userpass.extra_claims {
         reject_reserved_claim_names(extra_claims.keys())?;
+        validate_extra_claims_size(extra_claims)?;
     }
 
     // Hash the new plaintext password / validate-and-store the new pre-hashed password if

@@ -819,7 +819,7 @@ Create a username/password credential in a realm.
 | `hashed_password`  | `String` \| `null` | A pre-computed Argon2id PHC string, stored as-is — for provisioning a credential without ever sending its plaintext to this server. Must use exactly this server's own Argon2id cost parameters (`m=65536,t=3,p=4`). Rejected with `400` if it doesn't parse as PHC, isn't `argon2id`, or its cost parameters don't match exactly. Mutually exclusive with `password`; exactly one of the two must be provided on create. |
 | `change_password`  | `bool`             | When `true`, the next login returns `"ChangePassword"` next step                                                                              |
 | `roles`            | `String[]`         | Optional, default `[]`. RBAC roles assigned to this user, emitted in the session JWT's `roles` claim.                                         |
-| `extra_claims`     | `object` \| `null` | Optional. Arbitrary extra claims merged into the session JWT on username/password login, and selectively exposed via [`POST /certify`](#post-certifyrealmrealm_id)'s `claims` field. |
+| `extra_claims`     | `object` \| `null` | Optional. Arbitrary extra claims merged into the session JWT on username/password login, and selectively exposed via [`POST /certify`](#post-certifyrealmrealm_id)'s `claims` field. Rejected with `400` if it also uses a reserved claim name, or if its serialized size exceeds 4 KiB. |
 
 **Response — `201 Created`** — created `UserPass` object.
 

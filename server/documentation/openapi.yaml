@@ -317,7 +317,8 @@ components:
             Arbitrary extra claims set by the realm admin at enrollment. Merged into the
             session JWT's top-level claims on username/password login only (other auth
             schemes never source claims from a UserPass row). Selectively exposed via
-            POST /certify when explicitly named in that request's `claims` field.
+            POST /certify when explicitly named in that request's `claims` field. Rejected
+            with 400 if its serialized size exceeds 4 KiB.
           example: { as_registrant: "acme-corp" }
     SessionData:
       type: object
