@@ -50,8 +50,7 @@ impl Database for MySqlDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i64| c > 0)
-        .unwrap_or(false);
+        .map(|c: i64| c > 0)?;
         if !has_certificate_max_age_seconds {
             sqlx::query(
                 "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds BIGINT UNSIGNED NOT NULL DEFAULT 31536000",
@@ -84,8 +83,7 @@ impl Database for MySqlDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i64| c > 0)
-        .unwrap_or(false);
+        .map(|c: i64| c > 0)?;
         if !has_roles {
             // MySQL TEXT columns do not support DEFAULT values in many versions.
             // Use a three-step migration: add nullable, backfill, then enforce NOT NULL.
@@ -106,8 +104,7 @@ impl Database for MySqlDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i64| c > 0)
-        .unwrap_or(false);
+        .map(|c: i64| c > 0)?;
         if !has_extra_claims {
             sqlx::query("ALTER TABLE userpass ADD COLUMN extra_claims TEXT")
                 .execute(&self.pool)

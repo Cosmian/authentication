@@ -64,31 +64,15 @@ impl Database for PostgresDatabase {
         .execute(&self.pool)
         .await?;
 
-        // Migration: add roles column if missing (existing databases)
-        let has_roles: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='userpass' AND column_name='roles')",
+        // Migration: add roles/extra_claims columns if missing (existing databases).
+        sqlx::query(
+            "ALTER TABLE userpass ADD COLUMN IF NOT EXISTS roles TEXT NOT NULL DEFAULT '[]'",
         )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(false);
-        if !has_roles {
-            sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
-                .execute(&self.pool)
-                .await?;
-        }
-
-        // Migration: add extra_claims column if missing (existing databases)
-        let has_extra_claims: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='userpass' AND column_name='extra_claims')",
-        )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(false);
-        if !has_extra_claims {
-            sqlx::query("ALTER TABLE userpass ADD COLUMN extra_claims TEXT")
-                .execute(&self.pool)
-                .await?;
-        }
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("ALTER TABLE userpass ADD COLUMN IF NOT EXISTS extra_claims TEXT")
+            .execute(&self.pool)
+            .await?;
 
         // Create admin table
         sqlx::query(

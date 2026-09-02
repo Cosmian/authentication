@@ -71,8 +71,7 @@ impl Database for SqliteDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i32| c > 0)
-        .unwrap_or(false);
+        .map(|c: i32| c > 0)?;
         if !has_certificate_max_age_seconds {
             sqlx::query(
                 "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds INTEGER NOT NULL DEFAULT 31536000",
@@ -105,8 +104,7 @@ impl Database for SqliteDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i32| c > 0)
-        .unwrap_or(false);
+        .map(|c: i32| c > 0)?;
         if !has_roles {
             sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
                 .execute(&self.pool)
@@ -119,8 +117,7 @@ impl Database for SqliteDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i32| c > 0)
-        .unwrap_or(false);
+        .map(|c: i32| c > 0)?;
         if !has_extra_claims {
             sqlx::query("ALTER TABLE userpass ADD COLUMN extra_claims TEXT")
                 .execute(&self.pool)
