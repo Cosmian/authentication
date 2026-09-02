@@ -1,4 +1,4 @@
-use crate::models::{CertificateClaims, ClientClaims, LoginRequest};
+use crate::models::{CertificateClaims, ClientClaims, LoginRequest, reject_reserved_claim_names};
 use crate::server::parameters::ServerParams;
 use crate::session::{self, JwksData, JwtTokenConfig, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
@@ -217,6 +217,12 @@ pub async fn certify(
             "verification_key must be a PEM-encoded key or certificate".to_string(),
         ));
     }
+    // Defense in depth against duplicate JWT Claim Names (RFC 7519 §4): enrollment already
+    // rejects a reserved name in `extra_claims`, but a row provisioned before that check
+    // existed could still carry one, and `CertificateClaims` flattens `extra` after every
+    // typed field with no deduplication against them — a colliding name here is emitted a
+    // second time in the certificate, with the caller-supplied value last.
+    reject_reserved_claim_names(body.claims.iter())?;
     let cert_jwt_config = cert_jwt_config.get_ref().as_ref().ok_or_else(|| {
         AuthError::Config("certificate signing is not configured on this server".to_string())
     })?;

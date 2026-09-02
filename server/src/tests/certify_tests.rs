@@ -442,3 +442,29 @@ async fn test_certify_exclude_sub_omits_subject_when_claim_present() -> AuthResu
 
     ctx.stop_server().await
 }
+
+/// Requesting a reserved claim name via `claims` must be rejected with 400, even though it
+/// would just intersect to nothing against the session's own extra claims otherwise — this is
+/// defense in depth against a row provisioned before enrollment validated `extra_claims`.
+#[actix_web::test]
+async fn test_certify_rejects_reserved_claim_name_in_claims() -> AuthResult<()> {
+    let ctx = start_test_server(get_default_server_params_with_certify()?).await?;
+    let client = ctx.get_test_client(admin_scheme());
+    client.login(ADMIN_REALM, None).await?;
+
+    let body = serde_json::json!({
+        "verification_key": SAMPLE_VERIFICATION_KEY,
+        "claims": ["auth_scheme"],
+    });
+    let err = client
+        .post::<_, serde_json::Value>(&format!("/certify?realm={ADMIN_REALM}"), &body)
+        .await
+        .expect_err("a reserved claim name in 'claims' must be rejected");
+
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400")),
+        "Expected 400, got: {err:?}"
+    );
+
+    ctx.stop_server().await
+}

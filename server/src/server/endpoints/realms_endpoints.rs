@@ -1,7 +1,7 @@
 use crate::{
     AuthError,
     database::{AuthDbError, Database, hash_password_with_argon2, validate_argon2_phc_string},
-    models::{ADMIN_REALM, UserPass},
+    models::{ADMIN_REALM, UserPass, reject_reserved_claim_names},
     server::endpoints::admin_from_request,
 };
 use actix_web::{
@@ -34,6 +34,10 @@ pub async fn create_userpass(
 
     let mut userpass = userpass.into_inner();
     userpass.realm = realm_id.clone();
+
+    if let Some(extra_claims) = &userpass.extra_claims {
+        reject_reserved_claim_names(extra_claims.keys())?;
+    }
 
     // Exactly one of `password` (plaintext, hashed below) / `hashed_password` (a
     // pre-computed Argon2 PHC string, stored as-is — e.g. migrating credentials already
@@ -192,6 +196,10 @@ pub async fn update_userpass(
     let mut userpass = userpass.into_inner();
     userpass.realm = realm.clone();
     userpass.username = username.clone();
+
+    if let Some(extra_claims) = &userpass.extra_claims {
+        reject_reserved_claim_names(extra_claims.keys())?;
+    }
 
     // Hash the new plaintext password / validate-and-store the new pre-hashed password if
     // either was provided; otherwise preserve the existing hash by only updating the

@@ -42,6 +42,7 @@ pub mod models {
         ADMIN_REALM, Admin, AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme,
         AuthenticationNextStep, AuthenticationResult, AuthorizationClaims, CertificateClaims,
         ClientClaims, LoginRequest, Realm, RegisteredClaims, SessionData, UserPass,
+        reject_reserved_claim_names,
     };
 }
 

@@ -6,6 +6,9 @@ pub use base::{
 mod certificate_claims;
 pub use certificate_claims::CertificateClaims;
 
+mod claim_policy;
+pub use claim_policy::reject_reserved_claim_names;
+
 mod client_claims;
 pub use client_claims::{AuthPrivateClaims, AuthorizationClaims, ClientClaims, RegisteredClaims};
 
