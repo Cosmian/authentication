@@ -51,7 +51,8 @@ mod models;
 pub use models::{
     ADMIN_REALM, Admin, AuthPrivateClaims, AuthScheme, AuthenticatedClientScheme,
     AuthenticationNextStep, AuthenticationResult, AuthorizationClaims, CertificateClaims,
-    ClientClaims, LoginRequest, Realm, RegisteredClaims, SessionData, UserPass,
+    ClientClaims, LoginRequest, PasswordInput, Realm, RegisteredClaims, SessionData, UserPass,
+    reject_reserved_claim_names, validate_extra_claims_size,
 };
 
 mod params;

@@ -261,9 +261,38 @@ components:
         totp_secret:
         totp_auth_url:
 
+    PasswordInput:
+      description: |
+        How to set a user's password on create/update — mutually exclusive by
+        construction (exactly one of the two shapes below).
+      oneOf:
+        - type: object
+          required: [plaintext]
+          properties:
+            plaintext:
+              type: string
+              description: Plaintext UTF-8 password, hashed with Argon2id by the server before storage.
+          example: { plaintext: "correct horse battery staple" }
+        - type: object
+          required: [hashed]
+          properties:
+            hashed:
+              type: string
+              description: |
+                A pre-computed Argon2id PHC string, stored as-is without server-side hashing —
+                for provisioning a credential without ever sending its plaintext to this server.
+                Must use exactly this server's own Argon2id cost parameters
+                (`m=65536,t=3,p=4`, RFC 9106 §4's recommended option for deployments without a
+                secret pepper key). Rejected with 400 if it doesn't
+                parse as a PHC string, uses a variant other than argon2id, or its cost parameters don't
+                match exactly (the PHC format doesn't validate parameter *choice*, only syntax,
+                and an unbounded `m` would let an unauthenticated login attempt allocate
+                arbitrary memory before the password comparison even runs).
+          example: { hashed: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$aGFzaGVkdmFsdWU" }
+
     UserPass:
       type: object
-      required: [realm, username, password, change_password]
+      required: [realm, username, password_hash, change_password]
       properties:
         realm:
           type: string
@@ -271,14 +300,21 @@ components:
         username:
           type: string
           example: alice
-        password:
-          type: array
-          items:
-            type: integer
+        password_hash:
+          type: string
           description: |
-            UTF-8 bytes of the plaintext password on write.
-            Always returned as an empty array on read (server stores only the Argon2id hash).
-          example: [115, 101, 99, 114, 101, 116]
+            The stored password hash, as a PHC string. Server-computed and server-owned:
+            ignored on input (use `password_input` to set/change the password) and
+            always returned as an empty string on read — the hash is never returned to
+            callers.
+          example: ""
+        password_input:
+          allOf:
+            - $ref: "#/components/schemas/PasswordInput"
+          nullable: true
+          description: |
+            How to set the password on create/update. Required on create; omit on
+            update to keep the existing password unchanged. Never present in responses.
         change_password:
           type: boolean
           example: false
@@ -291,6 +327,17 @@ components:
             Emitted in the JWT `roles` claim for OPA policy evaluation.
           default: []
           example: [CryptoOfficer]
+        extra_claims:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: |
+            Arbitrary extra claims set by the realm admin at enrollment. Merged into the
+            session JWT's top-level claims on username/password login only (other auth
+            schemes never source claims from a UserPass row). Selectively exposed via
+            POST /certify when explicitly named in that request's `claims` field. Rejected
+            with 400 if its serialized size exceeds 4 KiB.
+          example: { as_registrant: "acme-corp" }
     SessionData:
       type: object
       description: |
@@ -400,6 +447,24 @@ components:
           type: string
           description: PEM-encoded public key to certify.
           example: "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+        claims:
+          type: array
+          items:
+            type: string
+          default: []
+          description: |
+            Names of the session's extra claims (set via UserPass.extra_claims at
+            enrollment) to copy into the issued certificate. Only claims both requested
+            here and present in the session are included — nothing is copied by default.
+          example: [as_registrant]
+        exclude_sub:
+          type: boolean
+          default: false
+          description: |
+            Omit `sub` (the authenticated username) from the certificate, for callers who
+            consider it sensitive. Only allowed when the requested/present intersection of
+            `claims` is non-empty — rejected with 400 otherwise, since a certificate must
+            identify its holder by at least one claim.
 
     CertifyResponse:
       type: object
@@ -414,13 +479,19 @@ components:
 
     CertificateClaims:
       type: object
-      description: Payload of the JWS returned by POST /certify. Distinct shape from ClientClaims.
+      description: >
+        Payload of the JWS returned by POST /certify. Distinct shape from ClientClaims —
+        no `roles`, no `as_*`-prefixed names — so a certificate can never be confused
+        with, or substituted for, a session token. Any properties beyond those listed
+        below are claims explicitly requested via CertifyRequest.claims.
       properties:
         realm_id:
           type: string
           example: my-service
         sub:
           type: string
+          nullable: true
+          description: "Absent when the request set `exclude_sub: true`."
           example: alice
         auth_scheme:
           $ref: '#/components/schemas/AuthScheme'
@@ -434,6 +505,7 @@ components:
           type: integer
           format: int64
           example: 1776532400
+      additionalProperties: true
 
     GetSessionRequest:
       type: object
@@ -1519,7 +1591,7 @@ paths:
         - cookieAuth: []
       responses:
         '200':
-          description: Array of UserPass objects. password is always empty.
+          description: Array of UserPass objects. password_hash is always empty.
           content:
             application/json:
               schema:
@@ -1529,7 +1601,7 @@ paths:
               example:
                 - realm: my-service
                   username: alice
-                  password: []
+                  password_hash: ""
                   change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1734,11 +1806,12 @@ paths:
             example:
               realm: my-service
               username: alice
-              password: [115, 101, 99, 114, 101, 116]
+              password_hash: ""
+              password_input: { plaintext: secret }
               change_password: false
       responses:
         '201':
-          description: Created credential. password returned as empty array.
+          description: Created credential. password_hash returned as an empty string.
           content:
             application/json:
               schema:
@@ -1760,7 +1833,7 @@ paths:
         - cookieAuth: []
       responses:
         '200':
-          description: Array of UserPass objects. password is always empty.
+          description: Array of UserPass objects. password_hash is always empty.
           content:
             application/json:
               schema:
@@ -1770,7 +1843,7 @@ paths:
               example:
                 - realm: my-service
                   username: alice
-                  password: []
+                  password_hash: ""
                   change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1789,7 +1862,7 @@ paths:
         - cookieAuth: []
       responses:
         '200':
-          description: UserPass object. password is always empty.
+          description: UserPass object. password_hash is always empty.
           content:
             application/json:
               schema:
@@ -1797,7 +1870,7 @@ paths:
               example:
                 realm: my-service
                 username: alice
-                password: []
+                password_hash: ""
                 change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1825,11 +1898,12 @@ paths:
             example:
               realm: my-service
               username: alice
-              password: [110, 101, 119, 115, 101, 99, 114, 101, 116]
+              password_hash: ""
+              password_input: { plaintext: newsecret }
               change_password: false
       responses:
         '200':
-          description: Updated credential. password returned as empty array.
+          description: Updated credential. password_hash returned as an empty string.
           content:
             application/json:
               schema:

@@ -5,7 +5,7 @@ interface ResetPasswordModalProps {
     open: boolean;
     username: string;
     onCancel: () => void;
-    onSubmit: (password: number[]) => Promise<void>;
+    onSubmit: (password: string) => Promise<void>;
 }
 
 export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ open, username, onCancel, onSubmit }) => {
@@ -35,8 +35,7 @@ export const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ open, us
         try {
             const values = await form.validateFields();
             setLoading(true);
-            const passwordBytes = Array.from(new TextEncoder().encode(values.password));
-            await onSubmit(passwordBytes);
+            await onSubmit(values.password as string);
             form.resetFields();
         } catch (err) {
             if (err instanceof Error) {

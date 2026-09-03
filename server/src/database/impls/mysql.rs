@@ -50,8 +50,7 @@ impl Database for MySqlDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i64| c > 0)
-        .unwrap_or(false);
+        .map(|c: i64| c > 0)?;
         if !has_certificate_max_age_seconds {
             sqlx::query(
                 "ALTER TABLE realm ADD COLUMN certificate_max_age_seconds BIGINT UNSIGNED NOT NULL DEFAULT 31536000",
@@ -69,6 +68,7 @@ impl Database for MySqlDatabase {
                 password BLOB NOT NULL,
                 change_password BOOLEAN NOT NULL DEFAULT FALSE,
                 roles TEXT NOT NULL,
+                extra_claims TEXT,
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -83,8 +83,7 @@ impl Database for MySqlDatabase {
         )
         .fetch_one(&self.pool)
         .await
-        .map(|c: i64| c > 0)
-        .unwrap_or(false);
+        .map(|c: i64| c > 0)?;
         if !has_roles {
             // MySQL TEXT columns do not support DEFAULT values in many versions.
             // Use a three-step migration: add nullable, backfill, then enforce NOT NULL.
@@ -95,6 +94,19 @@ impl Database for MySqlDatabase {
                 .execute(&self.pool)
                 .await?;
             sqlx::query("ALTER TABLE userpass MODIFY COLUMN roles TEXT NOT NULL")
+                .execute(&self.pool)
+                .await?;
+        }
+
+        // Migration: add extra_claims column if missing (existing databases)
+        let has_extra_claims: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='userpass' AND column_name='extra_claims'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map(|c: i64| c > 0)?;
+        if !has_extra_claims {
+            sqlx::query("ALTER TABLE userpass ADD COLUMN extra_claims TEXT")
                 .execute(&self.pool)
                 .await?;
         }
@@ -356,19 +368,37 @@ impl Database for MySqlDatabase {
     async fn create_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
         let roles_json = serde_json::to_string(&userpass.roles)
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
+        let extra_claims_json = userpass
+            .extra_claims
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                AuthDbError::Unexpected(format!("failed to serialize extra_claims: {e}"))
+            })?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password, roles)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO userpass (realm, username, password, change_password, roles, extra_claims)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
-        .bind(&userpass.password)
+        .bind(userpass.password_hash.as_bytes())
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&extra_claims_json)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            AuthDbError::from_insert_error(
+                e,
+                format!(
+                    "credentials for '{}' already exist in realm '{}'",
+                    userpass.username, userpass.realm
+                ),
+            )
+        })?;
 
         Ok(())
     }
@@ -376,7 +406,7 @@ impl Database for MySqlDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password, roles
+            SELECT realm, username, change_password, roles, extra_claims
             FROM userpass
             WHERE realm = ? AND username = ?
             "#,
@@ -394,12 +424,23 @@ impl Database for MySqlDatabase {
                         "failed to deserialize roles for user '{username}': {e}"
                     ))
                 })?;
+                let extra_claims_json: Option<String> = row.try_get("extra_claims")?;
+                let extra_claims = extra_claims_json
+                    .map(|json| serde_json::from_str(&json))
+                    .transpose()
+                    .map_err(|e| {
+                        AuthDbError::Unexpected(format!(
+                            "failed to deserialize extra_claims for user '{username}': {e}"
+                        ))
+                    })?;
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,
-                    password: vec![], // do not return the password hash
+                    password_hash: String::new(), // do not return the password hash
+                    password_input: None,
                     change_password: row.try_get("change_password")?,
                     roles,
+                    extra_claims,
                 };
                 Ok(Some(userpass))
             }
@@ -410,16 +451,25 @@ impl Database for MySqlDatabase {
     async fn update_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
         let roles_json = serde_json::to_string(&userpass.roles)
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
+        let extra_claims_json = userpass
+            .extra_claims
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                AuthDbError::Unexpected(format!("failed to serialize extra_claims: {e}"))
+            })?;
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = ?, change_password = ?, roles = ?
+            SET password = ?, change_password = ?, roles = ?, extra_claims = ?
             WHERE realm = ? AND username = ?
             "#,
         )
-        .bind(&userpass.password)
+        .bind(userpass.password_hash.as_bytes())
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&extra_claims_json)
         .bind(&userpass.realm)
         .bind(&userpass.username)
         .execute(&self.pool)
@@ -486,7 +536,7 @@ impl Database for MySqlDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, extra_claims
             FROM userpass
             WHERE realm = ?
             ORDER BY username
@@ -505,12 +555,27 @@ impl Database for MySqlDatabase {
                     "failed to deserialize roles for user '{username}': {e}"
                 ))
             })?;
+            let extra_claims_json: Option<String> = row.try_get("extra_claims")?;
+            let extra_claims = extra_claims_json
+                .map(|json| serde_json::from_str(&json))
+                .transpose()
+                .map_err(|e| {
+                    let username: String = row.try_get("username").unwrap_or_default();
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize extra_claims for user '{username}': {e}"
+                    ))
+                })?;
+            let password_hash: Vec<u8> = row.try_get("password")?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
-                password: row.try_get("password")?,
+                password_hash: String::from_utf8(password_hash).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?,
+                password_input: None,
                 change_password: row.try_get("change_password")?,
                 roles,
+                extra_claims,
             });
         }
 
@@ -520,7 +585,7 @@ impl Database for MySqlDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, extra_claims
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -537,12 +602,27 @@ impl Database for MySqlDatabase {
                     "failed to deserialize roles for user '{username}': {e}"
                 ))
             })?;
+            let extra_claims_json: Option<String> = row.try_get("extra_claims")?;
+            let extra_claims = extra_claims_json
+                .map(|json| serde_json::from_str(&json))
+                .transpose()
+                .map_err(|e| {
+                    let username: String = row.try_get("username").unwrap_or_default();
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize extra_claims for user '{username}': {e}"
+                    ))
+                })?;
+            let password_hash: Vec<u8> = row.try_get("password")?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
-                password: row.try_get("password")?,
+                password_hash: String::from_utf8(password_hash).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?,
+                password_input: None,
                 change_password: row.try_get("change_password")?,
                 roles,
+                extra_claims,
             });
         }
 
@@ -569,6 +649,9 @@ impl Database for MySqlDatabase {
         match row {
             Some(row) => {
                 let stored_password: Vec<u8> = row.try_get("password")?;
+                let stored_password = String::from_utf8(stored_password).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?;
                 crate::database::verify_password_argon2(&stored_password, password)
                     .map_err(|_| crate::database::AuthDbError::InvalidCredentials)?;
                 let change_password: bool = row.try_get("change_password")?;

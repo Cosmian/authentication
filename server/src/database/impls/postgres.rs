@@ -55,6 +55,7 @@ impl Database for PostgresDatabase {
                 password BYTEA NOT NULL,
                 change_password BOOLEAN NOT NULL DEFAULT FALSE,
                 roles TEXT NOT NULL DEFAULT '[]',
+                extra_claims TEXT,
                 PRIMARY KEY (realm, username),
                 FOREIGN KEY (realm) REFERENCES realm(id) ON DELETE CASCADE
             )
@@ -63,18 +64,15 @@ impl Database for PostgresDatabase {
         .execute(&self.pool)
         .await?;
 
-        // Migration: add roles column if missing (existing databases)
-        let has_roles: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='userpass' AND column_name='roles')",
+        // Migration: add roles/extra_claims columns if missing (existing databases).
+        sqlx::query(
+            "ALTER TABLE userpass ADD COLUMN IF NOT EXISTS roles TEXT NOT NULL DEFAULT '[]'",
         )
-        .fetch_one(&self.pool)
-        .await
-        .unwrap_or(false);
-        if !has_roles {
-            sqlx::query("ALTER TABLE userpass ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'")
-                .execute(&self.pool)
-                .await?;
-        }
+        .execute(&self.pool)
+        .await?;
+        sqlx::query("ALTER TABLE userpass ADD COLUMN IF NOT EXISTS extra_claims TEXT")
+            .execute(&self.pool)
+            .await?;
 
         // Create admin table
         sqlx::query(
@@ -334,19 +332,37 @@ impl Database for PostgresDatabase {
     async fn create_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
         let roles_json = serde_json::to_string(&userpass.roles)
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
+        let extra_claims_json = userpass
+            .extra_claims
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                AuthDbError::Unexpected(format!("failed to serialize extra_claims: {e}"))
+            })?;
         sqlx::query(
             r#"
-            INSERT INTO userpass (realm, username, password, change_password, roles)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO userpass (realm, username, password, change_password, roles, extra_claims)
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
-        .bind(&userpass.password)
+        .bind(userpass.password_hash.as_bytes())
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&extra_claims_json)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            AuthDbError::from_insert_error(
+                e,
+                format!(
+                    "credentials for '{}' already exist in realm '{}'",
+                    userpass.username, userpass.realm
+                ),
+            )
+        })?;
 
         Ok(())
     }
@@ -354,7 +370,7 @@ impl Database for PostgresDatabase {
     async fn get_userpass(&self, realm: &str, username: &str) -> AuthDbResult<Option<UserPass>> {
         let row = sqlx::query(
             r#"
-            SELECT realm, username, change_password, roles
+            SELECT realm, username, change_password, roles, extra_claims
             FROM userpass
             WHERE realm = $1 AND username = $2
             "#,
@@ -372,12 +388,23 @@ impl Database for PostgresDatabase {
                         "failed to deserialize roles for user '{username}': {e}"
                     ))
                 })?;
+                let extra_claims_json: Option<String> = row.try_get("extra_claims")?;
+                let extra_claims = extra_claims_json
+                    .map(|json| serde_json::from_str(&json))
+                    .transpose()
+                    .map_err(|e| {
+                        AuthDbError::Unexpected(format!(
+                            "failed to deserialize extra_claims for user '{username}': {e}"
+                        ))
+                    })?;
                 let userpass = UserPass {
                     realm: row.try_get("realm")?,
                     username: row.try_get("username")?,
-                    password: vec![], // do not return the password hash
+                    password_hash: String::new(), // do not return the password hash
+                    password_input: None,
                     change_password: row.try_get("change_password")?,
                     roles,
+                    extra_claims,
                 };
                 Ok(Some(userpass))
             }
@@ -388,18 +415,27 @@ impl Database for PostgresDatabase {
     async fn update_userpass(&self, userpass: &UserPass) -> AuthDbResult<()> {
         let roles_json = serde_json::to_string(&userpass.roles)
             .map_err(|e| AuthDbError::Unexpected(format!("failed to serialize roles: {e}")))?;
+        let extra_claims_json = userpass
+            .extra_claims
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|e| {
+                AuthDbError::Unexpected(format!("failed to serialize extra_claims: {e}"))
+            })?;
         sqlx::query(
             r#"
             UPDATE userpass
-            SET password = $3, change_password = $4, roles = $5
+            SET password = $3, change_password = $4, roles = $5, extra_claims = $6
             WHERE realm = $1 AND username = $2
             "#,
         )
         .bind(&userpass.realm)
         .bind(&userpass.username)
-        .bind(&userpass.password)
+        .bind(userpass.password_hash.as_bytes())
         .bind(userpass.change_password)
         .bind(&roles_json)
+        .bind(&extra_claims_json)
         .execute(&self.pool)
         .await?;
 
@@ -464,7 +500,7 @@ impl Database for PostgresDatabase {
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, extra_claims
             FROM userpass
             WHERE realm = $1
             ORDER BY username
@@ -483,12 +519,27 @@ impl Database for PostgresDatabase {
                     "failed to deserialize roles for user '{username}': {e}"
                 ))
             })?;
+            let extra_claims_json: Option<String> = row.try_get("extra_claims")?;
+            let extra_claims = extra_claims_json
+                .map(|json| serde_json::from_str(&json))
+                .transpose()
+                .map_err(|e| {
+                    let username: String = row.try_get("username").unwrap_or_default();
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize extra_claims for user '{username}': {e}"
+                    ))
+                })?;
+            let password_hash: Vec<u8> = row.try_get("password")?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
-                password: row.try_get("password")?,
+                password_hash: String::from_utf8(password_hash).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?,
+                password_input: None,
                 change_password: row.try_get("change_password")?,
                 roles,
+                extra_claims,
             });
         }
 
@@ -498,7 +549,7 @@ impl Database for PostgresDatabase {
     async fn list_all_userpass(&self) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
-            SELECT realm, username, password, change_password, roles
+            SELECT realm, username, password, change_password, roles, extra_claims
             FROM userpass
             ORDER BY realm, username
             "#,
@@ -515,12 +566,27 @@ impl Database for PostgresDatabase {
                     "failed to deserialize roles for user '{username}': {e}"
                 ))
             })?;
+            let extra_claims_json: Option<String> = row.try_get("extra_claims")?;
+            let extra_claims = extra_claims_json
+                .map(|json| serde_json::from_str(&json))
+                .transpose()
+                .map_err(|e| {
+                    let username: String = row.try_get("username").unwrap_or_default();
+                    AuthDbError::Unexpected(format!(
+                        "failed to deserialize extra_claims for user '{username}': {e}"
+                    ))
+                })?;
+            let password_hash: Vec<u8> = row.try_get("password")?;
             userpass_list.push(UserPass {
                 realm: row.try_get("realm")?,
                 username: row.try_get("username")?,
-                password: row.try_get("password")?,
+                password_hash: String::from_utf8(password_hash).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?,
+                password_input: None,
                 change_password: row.try_get("change_password")?,
                 roles,
+                extra_claims,
             });
         }
 
@@ -547,6 +613,9 @@ impl Database for PostgresDatabase {
         match row {
             Some(row) => {
                 let stored_password: Vec<u8> = row.try_get("password")?;
+                let stored_password = String::from_utf8(stored_password).map_err(|_| {
+                    AuthDbError::Unexpected("stored password hash is not valid UTF-8".to_string())
+                })?;
                 crate::database::verify_password_argon2(&stored_password, password)
                     .map_err(|_| crate::database::AuthDbError::InvalidCredentials)?;
                 let change_password: bool = row.try_get("change_password")?;

@@ -8,6 +8,9 @@ pub enum AuthError {
     #[error("Configuration error: {0}")]
     Config(String),
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     #[error("Cookie error: {0}")]
     Cookie(String),
 
@@ -54,6 +57,7 @@ impl actix_web::ResponseError for AuthError {
     fn error_response(&self) -> actix_web::HttpResponse {
         match self {
             Self::BadRequest(_) => actix_web::HttpResponse::BadRequest().json(format!("{self}")),
+            Self::Conflict(_) => actix_web::HttpResponse::Conflict().json(format!("{self}")),
             Self::JWT(_) | Self::Session(_) | Self::Cookie(_) => {
                 actix_web::HttpResponse::Unauthorized().json(format!("{self}"))
             }

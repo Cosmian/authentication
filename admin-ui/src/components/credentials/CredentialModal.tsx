@@ -4,6 +4,16 @@ import type { UserPass } from "../../types/api";
 import { useAuth } from "../../contexts/AuthContext";
 import { createCredentialsApi } from "../../services/credentialsApi";
 import { createRolesApi } from "../../services/rolesApi";
+import { ExtraClaimsEditor } from "./ExtraClaimsEditor";
+import { PasswordFields, type PasswordMode } from "./PasswordFields";
+
+interface ExtraClaimPair {
+    key: string;
+    value: string;
+}
+
+const toExtraClaims = (pairs: ExtraClaimPair[] | undefined): Record<string, string> | undefined =>
+    pairs && pairs.length > 0 ? Object.fromEntries(pairs.map((p) => [p.key, p.value])) : undefined;
 
 interface CredentialModalProps {
     open: boolean;
@@ -21,16 +31,25 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
     const [canSubmit, setCanSubmit] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [availableRoles, setAvailableRoles] = useState<string[]>([]);
+    const [passwordMode, setPasswordMode] = useState<PasswordMode>("plain");
 
     const isEdit = credential !== null;
 
     // Fetch available roles whenever the modal opens
     useEffect(() => {
         if (!open) return;
+        let cancelled = false;
         const api = createRolesApi(serverUrl);
         api.list()
-            .then(setAvailableRoles)
-            .catch(() => setAvailableRoles([]));
+            .then((roles) => {
+                if (!cancelled) setAvailableRoles(roles);
+            })
+            .catch(() => {
+                if (!cancelled) setAvailableRoles([]);
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [open, serverUrl]);
 
     // Pre-fill form in edit mode; reset in create mode
@@ -39,6 +58,7 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
             setSubmitError(null);
             return;
         }
+        setPasswordMode("plain");
         if (credential) {
             form.setFieldsValue({ roles: credential.roles ?? [] });
         } else {
@@ -75,13 +95,15 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                 await api.update(realmId, credential.username, updated);
                 message.success(`Roles updated for "${credential.username}"`);
             } else {
-                const passwordBytes = Array.from(new TextEncoder().encode(values.password as string));
                 const userpass: UserPass = {
                     realm: realmId,
                     username: values.username as string,
-                    password: passwordBytes,
+                    password_hash: "",
+                    password_input:
+                        passwordMode === "plain" ? { plaintext: values.password as string } : { hashed: values.hashed_password as string },
                     change_password: (values.change_password as boolean | undefined) ?? false,
                     roles: (values.roles as string[] | undefined) ?? [],
+                    extra_claims: toExtraClaims(values.extraClaims as ExtraClaimPair[] | undefined),
                 };
                 await api.create(realmId, userpass);
                 message.success(`Credential "${values.username as string}" created`);
@@ -122,27 +144,7 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                         <Form.Item name="username" label="Username" rules={[{ required: true, message: "Username is required" }]}>
                             <Input />
                         </Form.Item>
-                        <Form.Item name="password" label="Password" rules={[{ required: true, message: "Password is required" }]}>
-                            <Input.Password />
-                        </Form.Item>
-                        <Form.Item
-                            name="confirm"
-                            label="Confirm Password"
-                            dependencies={["password"]}
-                            rules={[
-                                { required: true, message: "Please confirm the password" },
-                                ({ getFieldValue }) => ({
-                                    validator(_, value) {
-                                        if (!value || getFieldValue("password") === value) {
-                                            return Promise.resolve();
-                                        }
-                                        return Promise.reject(new Error("Passwords do not match"));
-                                    },
-                                }),
-                            ]}
-                        >
-                            <Input.Password />
-                        </Form.Item>
+                        <PasswordFields mode={passwordMode} onModeChange={setPasswordMode} />
                         <Form.Item name="change_password" valuePropName="checked">
                             <Checkbox>Require password change on next login</Checkbox>
                         </Form.Item>
@@ -156,6 +158,11 @@ export const CredentialModal: React.FC<CredentialModalProps> = ({ open, credenti
                         options={availableRoles.map((r) => ({ label: r, value: r }))}
                     />
                 </Form.Item>
+                {!isEdit && (
+                    <Form.Item label="Extra claims (optional)">
+                        <ExtraClaimsEditor name="extraClaims" />
+                    </Form.Item>
+                )}
                 {submitError && (
                     <Form.Item>
                         <Alert type="error" message={submitError} showIcon />

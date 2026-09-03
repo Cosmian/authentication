@@ -33,17 +33,48 @@ fn default_certificate_max_age_seconds() -> i64 {
     365 * 24 * 3600
 }
 
+/// How a caller provides a user's password on create/update, mutually exclusive by
+/// construction. Omit `UserPass::password_input` entirely (`None`) on update to keep
+/// the existing password unchanged; it is required on create.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PasswordInput {
+    /// Plaintext UTF-8 password, hashed with Argon2 by the server before storage.
+    Plaintext(String),
+    /// A pre-computed Argon2 PHC string (e.g. `$argon2id$v=19$m=...$...$...`), stored
+    /// as-is without server-side hashing — for callers migrating already-hashed
+    /// credentials from another Argon2-based system. Must match this server's own
+    /// cost parameters.
+    Hashed(String),
+}
+
 /// Username password entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserPass {
     pub realm: String,
     pub username: String,
-    pub password: Vec<u8>,
+    /// The stored password hash, as a PHC string (e.g. `$argon2id$v=19$...`).
+    /// Server-computed and server-owned: ignored on input (see `password_input` to
+    /// set/change the password) and always emitted empty in responses, since the hash
+    /// is never returned to callers.
+    #[serde(default, skip_deserializing)]
+    pub password_hash: String,
+    /// How to set the password on create/update. Required on create; omit on update
+    /// to keep the existing password unchanged. Never present in responses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_input: Option<PasswordInput>,
     pub change_password: bool,
     /// RBAC roles assigned to this user (e.g. `["CryptoOfficer", "Auditor"]`).
     /// Emitted in the JWT `roles` claim for OPA policy evaluation.
     #[serde(default)]
     pub roles: Vec<String>,
+
+    /// Arbitrary extra claims set by the realm admin at enrollment, merged into the
+    /// session JWT's `extra` claims on login (username/password sessions only — see
+    /// `AuthPrivateClaims` for why this isn't sourced from other auth schemes) and,
+    /// when explicitly requested by the caller, into `POST /certify` certificates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra_claims: Option<HashMap<String, serde_json::Value>>,
 }
 
 /// Authentication server admins.

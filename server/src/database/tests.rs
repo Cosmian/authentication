@@ -102,9 +102,11 @@ fn create_user(realm: &str, username: &str, password: &str, change_password: boo
     UserPass {
         realm: realm.to_string(),
         username: username.to_string(),
-        password: hash_password_with_argon2(password).expect("Failed to hash password"),
+        password_hash: hash_password_with_argon2(password).expect("Failed to hash password"),
+        password_input: None,
         change_password,
         roles: Vec::new(),
+        extra_claims: None,
     }
 }
 
@@ -127,7 +129,7 @@ fn test_userpass_creation() {
 
     assert_eq!(userpass.realm, "test-realm");
     assert_eq!(userpass.username, "alice");
-    assert_ne!(userpass.password, "alice password".as_bytes()); // Password should be hashed
+    assert_ne!(userpass.password_hash, "alice password"); // Password should be hashed
     assert!(!userpass.change_password);
 }
 
@@ -296,7 +298,7 @@ async fn test_userpass_crud() {
             .expect("User not found");
 
         assert_eq!(retrieved.username, "alice");
-        assert_ne!(retrieved.password, b"password123");
+        assert_ne!(retrieved.password_hash, "password123");
 
         // Update user
         let updated = create_user(&realm_id, "alice", "new password", false);
@@ -309,7 +311,7 @@ async fn test_userpass_crud() {
             .await
             .expect("Failed to get user")
             .expect("User not found");
-        assert_ne!(retrieved.password, b"new password");
+        assert_ne!(retrieved.password_hash, "new password");
 
         // Delete user
         db.delete_userpass(&realm_id, "alice")

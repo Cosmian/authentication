@@ -7,10 +7,11 @@ afterEach(async () => {
     // React 19 + scheduler@0.27 chains setImmediate callbacks:
     // performWorkUntilDeadline → schedulePerformWorkUntilDeadline → repeat.
     // A single flush is not enough after the antd v6 upgrade which queues more
-    // async work; draining eight rounds covers all known cases (bumped from five
-    // after a recurrence in RealmContext.test.tsx on CI).
+    // async work; draining rounds covers all known cases (bumped from five to
+    // eight after a recurrence in RealmContext.test.tsx, then to sixteen after
+    // a recurrence in CredentialModal.test.tsx's Form.List-driven claim editor).
     // If "window is not defined" returns, increase the loop count.
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
         await new Promise<void>((resolve) => setImmediate(() => resolve()));
     }
     vi.restoreAllMocks();

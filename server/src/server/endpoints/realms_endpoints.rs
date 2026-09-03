@@ -1,7 +1,10 @@
 use crate::{
     AuthError,
-    database::{Database, hash_password_with_argon2},
-    models::{ADMIN_REALM, UserPass},
+    database::{AuthDbError, Database, hash_password_with_argon2, validate_argon2_phc_string},
+    models::{
+        ADMIN_REALM, PasswordInput, UserPass, reject_reserved_claim_names,
+        validate_extra_claims_size,
+    },
     server::endpoints::admin_from_request,
 };
 use actix_web::{
@@ -10,6 +13,7 @@ use actix_web::{
 };
 use cosmian_logger::info;
 use std::sync::Arc;
+use zeroize::Zeroizing;
 
 /// Create a new user password entry.
 ///
@@ -34,15 +38,42 @@ pub async fn create_userpass(
     let mut userpass = userpass.into_inner();
     userpass.realm = realm_id.clone();
 
-    // Hash the plaintext password bytes before storing.
-    // Clients always send plaintext UTF-8 bytes; the server is responsible for hashing.
-    userpass.password = hash_password_with_argon2(
-        &String::from_utf8(userpass.password)
-            .map_err(|e| AuthError::BadRequest(format!("Password is not valid UTF-8: {e}")))?,
-    )
-    .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
+    if let Some(extra_claims) = &userpass.extra_claims {
+        reject_reserved_claim_names(extra_claims.keys())?;
+        validate_extra_claims_size(extra_claims)?;
+    }
 
-    database.create_userpass(&userpass).await?;
+    match userpass.password_input.take() {
+        Some(PasswordInput::Plaintext(plaintext)) => {
+            userpass.password_hash = hash_password_with_argon2(&Zeroizing::new(plaintext))
+                .map_err(|e| AuthError::Unexpected(format!("Failed to hash password: {e}")))?;
+        }
+        Some(PasswordInput::Hashed(hashed)) => {
+            validate_argon2_phc_string(&hashed)?;
+            userpass.password_hash = hashed;
+        }
+        None => {
+            return Err(AuthError::BadRequest(
+                "'password_input' must be provided".to_string(),
+            ));
+        }
+    };
+
+    match database.create_userpass(&userpass).await {
+        Ok(()) => {}
+        // A conflicting (realm, username) is always rejected, even on a byte-for-byte
+        // resubmission: telling the two cases apart requires verifying the submitted
+        // password against the stored hash, which turns this admin-authenticated,
+        // unrate-limited endpoint into a password-guessing oracle. Clients that need
+        // idempotent provisioning should use PUT instead.
+        Err(AuthDbError::Conflict(_)) => {
+            return Err(AuthError::Conflict(format!(
+                "credentials for '{}' already exist in realm '{}' — use PUT to update them",
+                userpass.username, realm_id
+            )));
+        }
+        Err(e) => return Err(e.into()),
+    }
 
     // Auto-link: when creating a credential in the admin realm, if an admin
     // exists with a matching id, set its `userpass` field to enable login.
@@ -59,6 +90,8 @@ pub async fn create_userpass(
         requester.id, userpass.username, realm_id
     );
 
+    // Never return the stored password hash to callers — matches get_userpass.
+    userpass.password_hash = String::new();
     Ok(HttpResponse::Created().json(userpass))
 }
 
@@ -84,7 +117,7 @@ pub async fn get_userpass(
     match database.get_userpass(&realm, &username).await? {
         Some(mut userpass) => {
             // Never return the stored password hash to callers.
-            userpass.password = Vec::new();
+            userpass.password_hash = String::new();
             Ok(HttpResponse::Ok().json(userpass))
         }
         None => Err(AuthError::BadRequest(format!(
@@ -118,25 +151,58 @@ pub async fn update_userpass(
     userpass.realm = realm.clone();
     userpass.username = username.clone();
 
-    // Hash the new password if one was provided; otherwise preserve the existing hash by
-    // only updating the metadata fields (roles, change_password).
-    // Clients send password: [] when only updating roles/flags (GET always returns []).
-    if userpass.password.is_empty() {
-        database
-            .update_userpass_metadata(&realm, &username, userpass.change_password, &userpass.roles)
-            .await?;
-    } else {
-        userpass.password =
-            hash_password_with_argon2(&String::from_utf8(userpass.password).map_err(|e| {
-                AuthError::BadRequest(format!("Password is not valid UTF-8: {e}"))
-            })?)?;
-        database.update_userpass(&userpass).await?;
+    if let Some(extra_claims) = &userpass.extra_claims {
+        reject_reserved_claim_names(extra_claims.keys())?;
+        validate_extra_claims_size(extra_claims)?;
+    }
+
+    // Hash the new plaintext password / validate-and-store the new pre-hashed password if
+    // either was provided; otherwise preserve the existing hash by only updating the
+    // metadata fields (roles, change_password). Clients omit `password_input` when only
+    // updating roles/flags.
+    match userpass.password_input.take() {
+        None => {
+            // `update_userpass_metadata` only persists roles/change_password — it has no
+            // column to write extra_claims through. Silently dropping a genuine change
+            // there would report success while not applying it, so only allow this path
+            // when extra_claims is absent or unchanged from what's already stored.
+            if let Some(requested) = &userpass.extra_claims {
+                let existing = database.get_userpass(&realm, &username).await?;
+                let unchanged =
+                    existing.is_some_and(|e| e.extra_claims.as_ref() == Some(requested));
+                if !unchanged {
+                    return Err(AuthError::BadRequest(
+                        "extra_claims cannot be changed without also providing 'password_input' in the same request".to_string(),
+                    ));
+                }
+            }
+            database
+                .update_userpass_metadata(
+                    &realm,
+                    &username,
+                    userpass.change_password,
+                    &userpass.roles,
+                )
+                .await?;
+        }
+        Some(PasswordInput::Plaintext(plaintext_password)) => {
+            userpass.password_hash =
+                hash_password_with_argon2(&Zeroizing::new(plaintext_password))?;
+            database.update_userpass(&userpass).await?;
+        }
+        Some(PasswordInput::Hashed(hashed)) => {
+            validate_argon2_phc_string(&hashed)?;
+            userpass.password_hash = hashed;
+            database.update_userpass(&userpass).await?;
+        }
     }
     info!(
         "update_userpass: '{}' updated credentials for '{}' in realm '{}'",
         requester.id, username, realm
     );
 
+    // Never return the stored password hash to callers — matches get_userpass.
+    userpass.password_hash = String::new();
     Ok(HttpResponse::Ok().json(userpass))
 }
 

@@ -114,13 +114,14 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                 // Update userpass credential if a new password was provided
                 if (values.password) {
                     const credentialsApi = createCredentialsApi(serverUrl);
-                    const passwordBytes = Array.from(new TextEncoder().encode(values.password as string));
+                    const passwordInput = { plaintext: values.password as string };
                     if (admin!.userpass) {
                         // Update existing credential
                         await credentialsApi.update(SUPER_ADMIN_REALM_ID, adminId, {
                             realm: SUPER_ADMIN_REALM_ID,
                             username: adminId,
-                            password: passwordBytes,
+                            password_hash: "",
+                            password_input: passwordInput,
                             change_password: (values.change_password as boolean | undefined) ?? false,
                             roles: [],
                         });
@@ -129,7 +130,8 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                         await credentialsApi.create(SUPER_ADMIN_REALM_ID, {
                             realm: SUPER_ADMIN_REALM_ID,
                             username: adminId,
-                            password: passwordBytes,
+                            password_hash: "",
+                            password_input: passwordInput,
                             change_password: (values.change_password as boolean | undefined) ?? false,
                             roles: [],
                         });
@@ -143,11 +145,11 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                 // Create userpass credential if a password was provided
                 if (values.password) {
                     const credentialsApi = createCredentialsApi(serverUrl);
-                    const passwordBytes = Array.from(new TextEncoder().encode(values.password as string));
                     await credentialsApi.create(SUPER_ADMIN_REALM_ID, {
                         realm: SUPER_ADMIN_REALM_ID,
                         username: adminId,
-                        password: passwordBytes,
+                        password_hash: "",
+                        password_input: { plaintext: values.password as string },
                         change_password: (values.change_password as boolean | undefined) ?? false,
                         roles: [],
                     });

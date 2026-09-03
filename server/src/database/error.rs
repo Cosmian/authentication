@@ -19,12 +19,34 @@ pub enum AuthDbError {
 
     #[error("Invalid credentials")]
     InvalidCredentials,
+
+    #[error("{0}")]
+    Conflict(String),
 }
 
 pub type AuthDbResult<T> = Result<T, AuthDbError>;
 
+impl AuthDbError {
+    /// Maps a `sqlx::Error` from an INSERT into a uniquely-keyed table to `Conflict`
+    /// when it's a unique/primary-key violation, or `Sql` otherwise — so callers can
+    /// distinguish "this row already exists" from a genuine database failure without
+    /// parsing backend-specific error text.
+    pub fn from_insert_error(e: sqlx::Error, conflict_message: impl Into<String>) -> Self {
+        if e.as_database_error()
+            .is_some_and(|db_err| db_err.is_unique_violation())
+        {
+            Self::Conflict(conflict_message.into())
+        } else {
+            Self::Sql(e)
+        }
+    }
+}
+
 impl From<AuthDbError> for crate::AuthError {
     fn from(e: AuthDbError) -> Self {
-        crate::AuthError::Db(e.to_string())
+        match e {
+            AuthDbError::Conflict(msg) => crate::AuthError::Conflict(msg),
+            other => crate::AuthError::Db(other.to_string()),
+        }
     }
 }

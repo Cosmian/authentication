@@ -60,6 +60,7 @@ totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
 url = { workspace = true }
 uuid = { workspace = true }
 x509-cert = { workspace = true }
+zeroize = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

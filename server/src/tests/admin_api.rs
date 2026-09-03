@@ -1270,9 +1270,9 @@ async fn test_get_adminpass_returns_empty_password() -> AuthResult<()> {
     assert_eq!(retrieved.username, username, "username must round-trip");
     assert_eq!(retrieved.realm, realm_id, "realm must round-trip");
     assert!(
-        retrieved.password.is_empty(),
-        "password hash must not be returned to callers; expected empty Vec<u8>, got {} bytes",
-        retrieved.password.len()
+        retrieved.password_hash.is_empty(),
+        "password hash must not be returned to callers; expected empty string, got {} bytes",
+        retrieved.password_hash.len()
     );
 
     ctx.stop_server().await

@@ -109,15 +109,16 @@ pub trait Database: Send + Sync {
             let app_user_pass = UserPass {
                 realm: ADMIN_REALM.to_string(),
                 username: APP_REALM_ADMIN_USERNAME.to_string(),
-                password: hash_password_with_argon2(APP_REALM_ADMIN_INITIAL_PASSWORD).map_err(
-                    |e| {
+                password_hash: hash_password_with_argon2(APP_REALM_ADMIN_INITIAL_PASSWORD)
+                    .map_err(|e| {
                         AuthDbError::Init(format!(
                             "failed to set the app admin initial password: {e}"
                         ))
-                    },
-                )?,
+                    })?,
+                password_input: None,
                 change_password: true,
                 roles: Vec::new(),
+                extra_claims: None,
             };
             self.create_userpass(&app_user_pass).await?;
             // create the admin in the admin table

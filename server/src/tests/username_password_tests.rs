@@ -1,14 +1,16 @@
 use crate::{
-    AuthResult, AuthScheme, AuthenticationNextStep, Realm, RealmAuthParams, UsernamePasswordParams,
+    AuthError, AuthResult, AuthScheme, AuthenticationNextStep, Realm, RealmAuthParams,
+    UsernamePasswordParams,
     client::AuthClientScheme,
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
-    models::{ADMIN_REALM, UserPass},
+    models::{ADMIN_REALM, PasswordInput, UserPass},
     tests::{
         helpers::{authenticate_as_admin, create_userpass},
         init_test_logging, start_default_test_server,
     },
 };
 use cosmian_logger::info;
+use std::collections::HashMap;
 
 #[actix_web::test]
 async fn test_valid_basic_auth() -> AuthResult<()> {
@@ -193,9 +195,11 @@ fn make_expired_userpass(realm: &str, username: &str, password: &str) -> AuthRes
     Ok(UserPass {
         realm: realm.to_string(),
         username: username.to_string(),
-        password: password.as_bytes().to_vec(),
+        password_hash: String::new(),
+        password_input: Some(PasswordInput::Plaintext(password.to_string())),
         change_password: true,
         roles: Vec::new(),
+        extra_claims: None,
     })
 }
 
@@ -597,9 +601,11 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
     let roles_only = UserPass {
         realm: realm_id.to_string(),
         username: username.to_string(),
-        password: Vec::new(), // empty — server must keep the existing hash
+        password_hash: String::new(),
+        password_input: None, // absent — server must keep the existing hash
         change_password: false,
         roles: vec!["Auditor".to_string()],
+        extra_claims: None,
     };
     admin
         .update_admin_credentials_in_realm(realm_id, username, &roles_only)
@@ -619,6 +625,34 @@ async fn test_update_userpass_then_authenticate() -> AuthResult<()> {
     assert!(result.session_id.is_some(), "Expected a session ID");
     assert!(cookie.is_some(), "Expected a session cookie");
     info!("Password preserved correctly after roles-only update");
+
+    ctx.stop_server().await
+}
+
+/// `extra_claims` containing a reserved claim name (one `ClientClaims`/`CertificateClaims`
+/// already set themselves via a typed field) must be rejected at enrollment — never silently
+/// stored to later shadow that claim in an issued session JWT.
+#[actix_web::test]
+async fn test_create_userpass_rejects_reserved_extra_claim_name() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let admin = authenticate_as_admin(&ctx).await?;
+
+    let mut userpass = create_userpass(ADMIN_REALM, "reserved_claim_user", "pw1", false)?;
+    userpass.extra_claims = Some(HashMap::from([(
+        "as_rid".to_string(),
+        serde_json::json!("evil-realm"),
+    )]));
+
+    let err = admin
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
+        .await
+        .expect_err("a reserved claim name in extra_claims must be rejected");
+
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400")),
+        "Expected 400, got: {err:?}"
+    );
 
     ctx.stop_server().await
 }

@@ -34,11 +34,15 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
             .finally(() => setLoading(false));
     }, [realmId, serverUrl, refreshKey]);
 
-    const handleResetPassword = async (password: number[]) => {
+    const handleResetPassword = async (password: string) => {
         if (!resetTarget) return;
         try {
             const api = createCredentialsApi(serverUrl);
-            await api.update(realmId, resetTarget.username, { ...resetTarget, password });
+            await api.update(realmId, resetTarget.username, {
+                ...resetTarget,
+                password_hash: "",
+                password_input: { plaintext: password },
+            });
             message.success(`Password reset for "${resetTarget.username}"`);
             setResetTarget(null);
             const data = await api.list(realmId);
@@ -182,10 +186,10 @@ const CredentialsPage: React.FC = () => {
         fetchCredentials();
     }, [fetchCredentials]);
 
-    const handleResetPassword = async (password: number[]) => {
+    const handleResetPassword = async (password: string) => {
         if (!resetTarget) return;
         const api = createCredentialsApi(serverUrl);
-        const updated: UserPass = { ...resetTarget, password };
+        const updated: UserPass = { ...resetTarget, password_hash: "", password_input: { plaintext: password } };
         await api.update(selectedRealm, resetTarget.username, updated);
         message.success(`Password reset for "${resetTarget.username}"`);
         setResetTarget(null);
@@ -196,7 +200,7 @@ const CredentialsPage: React.FC = () => {
         const api = createCredentialsApi(serverUrl);
         const updated: UserPass = {
             ...record,
-            password: [],
+            password_hash: "",
             change_password: !record.change_password,
         };
         try {
