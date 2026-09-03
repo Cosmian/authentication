@@ -574,7 +574,7 @@ fn render_login(flow_token: &str, error: Option<&str>) -> HttpResponse {
         .unwrap_or_default();
     let body = format!(
         "<div class=\"card\">\
-         <div class=\"logo\"><span class=\"logo-text\">Auth Server</span></div>\
+         <div class=\"logo\"><span class=\"logo-text\">Authentication Verifier</span></div>\
          <h1>Sign in</h1>\
          {err_html}\
          <form method=\"post\" action=\"/oidc/authorize/login\">\
@@ -611,7 +611,7 @@ fn render_consent(flow_token: &str, flow: &FlowClaims) -> HttpResponse {
         .collect::<String>();
     let body = format!(
         "<div class=\"card\">\
-         <div class=\"logo\"><span class=\"logo-text\">Auth Server</span></div>\
+         <div class=\"logo\"><span class=\"logo-text\">Authentication Verifier</span></div>\
          <h1>Authorize access</h1>\
          <p style=\"text-align:center;margin:0 0 1.25rem\">\
            <span class=\"consent-app\">{app}</span> is requesting access to your account.\
@@ -639,7 +639,7 @@ fn render_consent(flow_token: &str, flow: &FlowClaims) -> HttpResponse {
 fn render_error_page(message: &str) -> HttpResponse {
     let body = format!(
         "<div class=\"card\">\
-         <div class=\"logo\"><span class=\"logo-text\">Auth Server</span></div>\
+         <div class=\"logo\"><span class=\"logo-text\">Authentication Verifier</span></div>\
          <h1>Authorization error</h1>\
          <div class=\"err\">{ICON_ERR}<span>{}</span></div>\
          <footer>Cosmian Authentication Server</footer>\
