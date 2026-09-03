@@ -56,6 +56,18 @@
   `[auth_verifier]` (Option B) KMS config patterns.
 - Added ADR `adr/2026-08-11-oidc-provider-in-auth-verifier.md` documenting the
   architectural decision to embed the OIDC OP directly in auth-verifier.
+- Added three mermaid sequence diagrams to `oidc.md` (Authorization Code + PKCE
+  end-to-end including the KMS Web UI's BFF session-cookie pattern and the
+  authenticated KMIP call, refresh-token rotation with reuse detection, and
+  client_credentials) so the currently-implemented flows are visually
+  documented rather than only described in prose.
+- Added a "Known limitations" section to `oidc.md` capturing the outcome of a
+  scoped gaps review (rate limiting and structured audit logging on `/oidc/*`
+  endpoints as near-term security hardening; RP-Initiated Logout, access-token
+  revocation and safe signing-key rotation as follow-ups; consent-skip and
+  operator branding as low-priority UX items; upstream federation, SCIM,
+  dynamic client registration, PAR/FAPI and email-based password reset flagged
+  as candidates for a dedicated future ADR rather than scheduled work).
 
 ## Features
 
@@ -92,7 +104,6 @@
   view across all realms for super-admins.
 - The one-time secret modal dynamically uses the server URL as the OIDC issuer in
   the generated KMS config snippet instead of a hardcoded value.
-
 
 ## Features
 
