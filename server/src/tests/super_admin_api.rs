@@ -8,7 +8,7 @@
 //!    automatically sent on every call.
 
 use crate::{
-    AuthResult,
+    AuthError, AuthResult,
     models::ADMIN_REALM,
     tests::{
         helpers::{
@@ -176,6 +176,29 @@ async fn test_create_realm() -> AuthResult<()> {
         "create_realm returned expected result: {:?}",
         result.unwrap()
     );
+
+    ctx.stop_server().await
+}
+
+/// Creating a realm whose ID already exists must return a clean `409 Conflict`,
+/// not a `500` leaking the underlying database error.
+#[actix_web::test]
+async fn test_create_duplicate_realm_fails() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    // The `_` admin realm is always seeded — trying to create it again must fail.
+    let result = client
+        .create_realm_as_super_admin(&test_realm(ADMIN_REALM))
+        .await;
+
+    let err = result.expect_err("Expected an error when creating a duplicate realm");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("409")),
+        "Expected a 409 Conflict, got: {err:?}"
+    );
+    info!("create_duplicate_realm returned expected error: {err:?}");
 
     ctx.stop_server().await
 }
@@ -368,6 +391,40 @@ async fn test_userpass_crud_by_super_admin() -> AuthResult<()> {
         .await;
     assert!(result.is_err(), "Expected not-found after deletion");
     info!("userpass CRUD roundtrip complete");
+
+    ctx.stop_server().await
+}
+
+/// Re-provisioning credentials for an existing `(realm, username)` pair must
+/// return a clean `409 Conflict`, not a `500` leaking the underlying database
+/// error — and must not double as a password oracle by distinguishing a
+/// byte-for-byte resubmission from a genuine conflict.
+#[actix_web::test]
+async fn test_create_duplicate_userpass_fails() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    let userpass = create_user(
+        ADMIN_REALM,
+        "duplicate_userpass_test",
+        "initial_pass",
+        false,
+    )?;
+    client
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
+        .await?;
+
+    let result = client
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
+        .await;
+
+    let err = result.expect_err("Expected an error when re-provisioning existing credentials");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("409")),
+        "Expected a 409 Conflict, got: {err:?}"
+    );
+    info!("create_duplicate_userpass returned expected error: {err:?}");
 
     ctx.stop_server().await
 }
