@@ -395,6 +395,40 @@ async fn test_userpass_crud_by_super_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
+/// Re-provisioning credentials for an existing `(realm, username)` pair must
+/// return a clean `409 Conflict`, not a `500` leaking the underlying database
+/// error — and must not double as a password oracle by distinguishing a
+/// byte-for-byte resubmission from a genuine conflict.
+#[actix_web::test]
+async fn test_create_duplicate_userpass_fails() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    let userpass = create_user(
+        ADMIN_REALM,
+        "duplicate_userpass_test",
+        "initial_pass",
+        false,
+    )?;
+    client
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
+        .await?;
+
+    let result = client
+        .create_admin_credentials_in_realm(ADMIN_REALM, &userpass)
+        .await;
+
+    let err = result.expect_err("Expected an error when re-provisioning existing credentials");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("409")),
+        "Expected a 409 Conflict, got: {err:?}"
+    );
+    info!("create_duplicate_userpass returned expected error: {err:?}");
+
+    ctx.stop_server().await
+}
+
 // ── list_all_userpass requires super admin ────────────────────────────────────
 
 /// `GET /admins/userpass` is in the `/admins` scope which hosts super-admin-only

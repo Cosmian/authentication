@@ -75,10 +75,10 @@ async fn test_create_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// Creating a user whose ID already exists must return a clean `409 Conflict`,
+/// Creating an admin whose ID already exists must return a clean `409 Conflict`,
 /// not a `500` leaking the underlying database error.
 #[actix_web::test]
-async fn test_create_duplicate_user_fails() -> AuthResult<()> {
+async fn test_create_duplicate_admin_fails() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
     let client = authenticate_as_admin(&ctx).await?;
@@ -88,12 +88,12 @@ async fn test_create_duplicate_user_fails() -> AuthResult<()> {
         .create_admin_as_super_admin(&test_admin(APP_REALM_ADMIN_USERNAME))
         .await;
 
-    let err = result.expect_err("Expected an error when creating a duplicate user");
+    let err = result.expect_err("Expected an error when creating a duplicate admin");
     assert!(
         matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("409")),
         "Expected a 409 Conflict, got: {err:?}"
     );
-    info!("create_duplicate_user returned expected error: {err:?}");
+    info!("create_duplicate_admin returned expected error: {err:?}");
 
     ctx.stop_server().await
 }
