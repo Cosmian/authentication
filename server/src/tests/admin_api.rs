@@ -7,7 +7,7 @@
 //! 3. Exercises one scenario against the `/users` scope.
 
 use crate::{
-    AuthResult, AuthenticationNextStep, Realm, RealmAuthParams,
+    AuthError, AuthResult, AuthenticationNextStep, Realm, RealmAuthParams,
     client::AuthClientScheme,
     database::APP_REALM_ADMIN_USERNAME,
     models::ADMIN_REALM,
@@ -75,7 +75,8 @@ async fn test_create_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// Creating a user whose ID already exists must return an error.
+/// Creating a user whose ID already exists must return a clean `409 Conflict`,
+/// not a `500` leaking the underlying database error.
 #[actix_web::test]
 async fn test_create_duplicate_user_fails() -> AuthResult<()> {
     init_test_logging(None);
@@ -87,14 +88,12 @@ async fn test_create_duplicate_user_fails() -> AuthResult<()> {
         .create_admin_as_super_admin(&test_admin(APP_REALM_ADMIN_USERNAME))
         .await;
 
+    let err = result.expect_err("Expected an error when creating a duplicate user");
     assert!(
-        result.is_err(),
-        "Expected an error when creating a duplicate user"
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("409")),
+        "Expected a 409 Conflict, got: {err:?}"
     );
-    info!(
-        "create_duplicate_user returned expected error: {:?}",
-        result
-    );
+    info!("create_duplicate_user returned expected error: {err:?}");
 
     ctx.stop_server().await
 }

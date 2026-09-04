@@ -264,7 +264,13 @@ impl Database for SqliteDatabase {
         .bind(realm.session_max_stale_age_seconds)
         .bind(realm.certificate_max_age_seconds)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            crate::database::AuthDbError::from_insert_error(
+                e,
+                format!("realm '{}' already exists", realm.id),
+            )
+        })?;
 
         Ok(())
     }
@@ -705,7 +711,13 @@ impl Database for SqliteDatabase {
         .bind(&admin.totp_secret)
         .bind(&admin.totp_auth_url)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            crate::database::AuthDbError::from_insert_error(
+                e,
+                format!("admin '{}' already exists", admin.id),
+            )
+        })?;
 
         // Insert into user_realms join table
         for realm_id in &admin.realms {

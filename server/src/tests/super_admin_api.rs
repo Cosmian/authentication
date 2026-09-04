@@ -8,7 +8,7 @@
 //!    automatically sent on every call.
 
 use crate::{
-    AuthResult,
+    AuthError, AuthResult,
     models::ADMIN_REALM,
     tests::{
         helpers::{
@@ -176,6 +176,29 @@ async fn test_create_realm() -> AuthResult<()> {
         "create_realm returned expected result: {:?}",
         result.unwrap()
     );
+
+    ctx.stop_server().await
+}
+
+/// Creating a realm whose ID already exists must return a clean `409 Conflict`,
+/// not a `500` leaking the underlying database error.
+#[actix_web::test]
+async fn test_create_duplicate_realm_fails() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    // The `_` admin realm is always seeded — trying to create it again must fail.
+    let result = client
+        .create_realm_as_super_admin(&test_realm(ADMIN_REALM))
+        .await;
+
+    let err = result.expect_err("Expected an error when creating a duplicate realm");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("409")),
+        "Expected a 409 Conflict, got: {err:?}"
+    );
+    info!("create_duplicate_realm returned expected error: {err:?}");
 
     ctx.stop_server().await
 }
