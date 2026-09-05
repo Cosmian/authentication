@@ -53,7 +53,7 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
     }),
 }));
 
-vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify("0.3.0"), { status: 200 }));
+vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify("0.4.0"), { status: 200 }));
 
 describe("MainLayout", () => {
     it("should render header, sidebar, and footer", async () => {

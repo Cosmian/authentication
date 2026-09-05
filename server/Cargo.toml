@@ -54,7 +54,7 @@ sqlx = { workspace = true, features = [
 ], optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-auth_client = { path = "../client", version = "0.3.0", features = ["_server"] }
+auth_client = { path = "../client", version = "0.4.0", features = ["_server"] }
 toml = { workspace = true }
 totp-rs = { workspace = true, features = ["otpauth", "gen_secret"] }
 url = { workspace = true }
