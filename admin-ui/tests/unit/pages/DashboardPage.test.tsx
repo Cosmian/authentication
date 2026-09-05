@@ -54,7 +54,7 @@ const defaultRealmContext = {
 describe("DashboardPage", () => {
     beforeEach(() => {
         vi.mocked(useRealm).mockReturnValue(defaultRealmContext);
-        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ version: "mock-0.3.0" }), { status: 200 }));
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ version: "mock-0.4.0" }), { status: 200 }));
     });
 
     it("should render the dashboard heading in established mode", () => {
