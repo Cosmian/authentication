@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Build the admin UI production bundle"
+set -euo pipefail
+cd "${MISE_CONFIG_ROOT}/admin-ui"
+
+pnpm build

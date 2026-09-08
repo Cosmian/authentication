@@ -1,0 +1,15 @@
+# mise (https://mise.jdx.dev) task runner config for the authentication repo.
+# This is a thin wrapper over the existing .github/scripts/* + Nix build/test
+# pipeline — it does NOT replace Nix or rust-toolchain.toml. Rust stays pinned
+# there; mise only pins the admin-ui Node/pnpm toolchain and exposes
+# discoverable `mise run <task>` entrypoints that delegate to the same scripts
+# CI already uses.
+
+[tools]
+node = "22"
+"npm:pnpm" = "9"
+
+[task_config]
+# Tasks always run from the repo root, regardless of the caller's cwd.
+dir = "{{config_root}}"
+includes = [".mise/tasks"]

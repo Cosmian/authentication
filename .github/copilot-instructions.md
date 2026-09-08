@@ -78,6 +78,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 ```
 
+Discoverable `mise run …` shortcuts (see `mise.toml`, `.mise/tasks/`) wrap the
+same `.github/scripts/nix.sh`-driven test/package/docker/UI commands used by
+CI — run `mise tasks` for the full list. They don't replace Nix or
+`rust-toolchain.toml`.
+
 ## Security advisory ledger
 
 `SECURITY.md` at the repo root is a hand-maintained vulnerability-disclosure

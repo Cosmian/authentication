@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Run all available backend tests (delegates to .github/scripts/nix.sh test)"
+set -euo pipefail
+source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
+
+print_status "Running all backend tests"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" test "$@"

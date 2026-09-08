@@ -1,0 +1,17 @@
+host_name = "0.0.0.0"
+host_port = 8443
+
+# Point this at the Admin UI you built in step 3 (use the ABSOLUTE path).
+admin_ui_path = "/home/lcordier/Workspace/authentication/admin-ui/dist"
+
+[log]
+level = "info"
+
+[tls_params]
+server_private_key = "server.key.pem"
+server_certificate = "server.cert.pem"
+server_ca_chain    = "ca.cert.pem"
+
+[database_params]
+backend        = "sqlite"
+connection_url = "sqlite://auth_verifier.db"

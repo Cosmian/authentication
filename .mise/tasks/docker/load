@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Build and load the Docker image into the local Docker daemon (delegates to .github/scripts/nix.sh docker --load)"
+set -euo pipefail
+source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
+
+print_status "Building and loading Docker image"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" docker --load "$@"

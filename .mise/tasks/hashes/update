@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+#MISE description="Regenerate expected binary hashes. Usage: mise run hashes:update -- [--link static|dynamic]"
+set -euo pipefail
+source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
+
+LINK_ARGS=()
+if [ "${1:-}" = "--link" ] || [ "${1:-}" = "-l" ]; then
+  LINK_ARGS=(--link "${2:?missing value for --link}")
+  shift 2
+fi
+
+print_status "Updating expected hashes (${LINK_ARGS[1]:-static} link)"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" "${LINK_ARGS[@]}" update-hashes "$@"

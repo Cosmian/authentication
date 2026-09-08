@@ -56,6 +56,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
       - name: Warm Nix store
         run: |
           sed -n 's/.*url *= *"\(https:\/\/[^"]*\.tar\.gz\)".*/\1/p' default.nix | sort -u | while read -r url; do
@@ -104,7 +107,7 @@ jobs:
       - name: Build and load Docker image
         id: build
         run: |
-          bash .github/scripts/nix.sh docker --load
+          mise run docker:load
         env:
           NIX_CURL_FLAGS: --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
 
@@ -161,7 +164,7 @@ jobs:
         env:
           DOCKER_IMAGE_NAME: ${{ steps.pick_test_tag.outputs.test_tag }}
         run: |
-          bash .github/scripts/test/test_docker_image.sh
+          mise run test:docker-image
 
       - name: Select tag for output
         id: pick
