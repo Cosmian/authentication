@@ -224,6 +224,8 @@ jobs:
 
       - name: Install mise
         uses: jdx/mise-action@v2
+        with:
+          version: 2026.9.2
 
       - name: Download package artifacts
         uses: actions/download-artifact@v8
