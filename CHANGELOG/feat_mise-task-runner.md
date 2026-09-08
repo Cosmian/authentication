@@ -6,6 +6,7 @@
 
 - Install `mise` via `jdx/mise-action@v2` in `packaging-docker.yml`, `packaging.yml`, and `packaging-tests.yml`, and replace the four script-by-path invocations (`nix.sh docker --load`, `test_docker_image.sh`, `nix.sh --link … package`, `verify_running_ui.sh`) with the equivalent `mise run …` commands so local and CI invocations match.
 - Pin `jdx/mise-action@v2` to mise `2026.9.2` in all three packaging workflows so the action stops resolving the advertised `2026.9.3` VERSION whose release binaries are not published yet, fixing the `curl: (22) 404` failure in the `Install mise` step.
+- Update the expected admin-ui pnpm deps hash (`nix/expected-hashes/admin-ui.pnpm.*.sha256`) after a `pnpm-lock.yaml` change, fixing the fixed-output-derivation hash mismatch that broke the admin-ui Nix build.
 
 ## Docs
 
