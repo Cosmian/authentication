@@ -105,6 +105,13 @@ impl Admin {
         self.realms.contains(&ADMIN_REALM.to_string())
     }
 
+    /// Static, DB-less check: does this admin directly belong to `realm` (or
+    /// to the super-admin realm)? This alone is not sufficient to authorize
+    /// most server-side realm/admin/userpass operations — those additionally
+    /// require the realm to have no admin of its own yet when the requester
+    /// is only a super admin, not a direct member. Use it for client-side
+    /// hints (e.g. "should I show this button"), not as an authorization
+    /// decision on its own.
     pub fn can_administer_realm(&self, realm: &str) -> bool {
         self.realms.contains(&ADMIN_REALM.to_string()) || self.realms.contains(&realm.to_string())
     }

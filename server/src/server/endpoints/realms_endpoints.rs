@@ -5,7 +5,7 @@ use crate::{
         ADMIN_REALM, PasswordInput, UserPass, reject_reserved_claim_names,
         validate_extra_claims_size,
     },
-    server::endpoints::admin_from_request,
+    server::endpoints::{admin_from_request, can_manage_realm},
 };
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -28,7 +28,7 @@ pub async fn create_userpass(
     let realm_id = realm.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm_id) {
+    if !can_manage_realm(&requester, &realm_id, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its credentials",
             realm_id
@@ -107,7 +107,7 @@ pub async fn get_userpass(
     let (realm, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm) {
+    if !can_manage_realm(&requester, &realm, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its credentials",
             realm
@@ -140,7 +140,7 @@ pub async fn update_userpass(
     let (realm, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm) {
+    if !can_manage_realm(&requester, &realm, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its credentials",
             realm
@@ -218,7 +218,7 @@ pub async fn delete_userpass(
     let (realm, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm) {
+    if !can_manage_realm(&requester, &realm, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its credentials",
             realm
@@ -257,7 +257,7 @@ pub async fn list_userpass_by_realm(
     let realm_id = realm.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm_id) {
+    if !can_manage_realm(&requester, &realm_id, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its credentials",
             realm_id
@@ -285,5 +285,12 @@ pub async fn list_all_userpass(
 
     let userpass_list = database.list_all_userpass().await?;
 
-    Ok(HttpResponse::Ok().json(userpass_list))
+    let mut visible = Vec::with_capacity(userpass_list.len());
+    for entry in userpass_list {
+        if can_manage_realm(&requester, &entry.realm, &database).await? {
+            visible.push(entry);
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(visible))
 }

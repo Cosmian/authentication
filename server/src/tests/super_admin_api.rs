@@ -12,7 +12,8 @@ use crate::{
     models::ADMIN_REALM,
     tests::{
         helpers::{
-            authenticate_as_admin, create_and_authenticate_realm_admin, create_userpass, test_realm,
+            authenticate_as_admin, create_and_authenticate_realm_admin, create_userpass,
+            test_admin, test_realm,
         },
         init_test_logging, start_default_test_server,
     },
@@ -207,11 +208,39 @@ async fn test_create_duplicate_realm_fails() -> AuthResult<()> {
 
 /// A realm admin (non-super-admin) must not be able to update any realm (HTTP 403).
 #[actix_web::test]
-async fn test_update_realm_requires_super_admin() -> AuthResult<()> {
+async fn test_update_own_realm_by_realm_admin_succeeds() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_update_guard").await?;
+    // Once a realm has its own admin, that admin — not the super admin — owns
+    // updating its config.
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_update_owner").await?;
+    let mut realm = realm_admin.get_realm_as_super_admin("realm_update_owner").await?;
+    let updated_max_age = realm.session_max_age_seconds + 100;
+    realm.session_max_age_seconds = updated_max_age;
+
+    let updated = realm_admin
+        .update_realm_as_super_admin("realm_update_owner", &realm)
+        .await?;
+
+    assert_eq!(
+        updated.session_max_age_seconds, updated_max_age,
+        "Realm admin's update must be applied"
+    );
+    info!("Realm admin successfully updated their own realm");
+
+    ctx.stop_server().await
+}
+
+/// A realm admin must not be able to update a realm they do not administer
+/// (HTTP 403), even once it has its own admin.
+#[actix_web::test]
+async fn test_update_realm_forbidden_for_foreign_realm_admin() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    create_and_authenticate_realm_admin(&ctx, "realm_update_guard").await?;
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_update_other").await?;
     let realm = test_realm("realm_update_guard");
 
     let result = realm_admin
@@ -220,25 +249,46 @@ async fn test_update_realm_requires_super_admin() -> AuthResult<()> {
 
     assert!(
         result.is_err(),
-        "Expected an error when a non-super-admin tries to update a realm"
+        "Expected an error when a realm admin tries to update a realm they don't administer"
     );
     let msg = result.unwrap_err().to_string();
     assert!(
         msg.contains("403"),
         "Expected HTTP 403 in error message, got: {msg}"
     );
-    info!("update_realm correctly rejected non-super-admin with 403");
+    info!("update_realm correctly rejected foreign realm admin with 403");
 
     ctx.stop_server().await
 }
 
-/// A realm admin must not be able to delete any realm (HTTP 403).
+/// A realm admin can now delete their own realm once they administer it.
 #[actix_web::test]
-async fn test_delete_realm_requires_super_admin() -> AuthResult<()> {
+async fn test_delete_own_realm_by_realm_admin_succeeds() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_delete_guard").await?;
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_delete_owner").await?;
+
+    realm_admin
+        .delete_realm_as_super_admin("realm_delete_owner")
+        .await?;
+
+    let result = realm_admin.get_realm_as_super_admin("realm_delete_owner").await;
+    assert!(result.is_err(), "Realm must be gone after self-deletion");
+    info!("Realm admin successfully deleted their own realm");
+
+    ctx.stop_server().await
+}
+
+/// A realm admin must not be able to delete a realm they do not administer
+/// (HTTP 403), even once it has its own admin.
+#[actix_web::test]
+async fn test_delete_realm_forbidden_for_foreign_realm_admin() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    create_and_authenticate_realm_admin(&ctx, "realm_delete_guard").await?;
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_delete_other").await?;
 
     let result = realm_admin
         .delete_realm_as_super_admin("realm_delete_guard")
@@ -246,14 +296,14 @@ async fn test_delete_realm_requires_super_admin() -> AuthResult<()> {
 
     assert!(
         result.is_err(),
-        "Expected an error when a non-super-admin tries to delete a realm"
+        "Expected an error when a realm admin tries to delete a realm they don't administer"
     );
     let msg = result.unwrap_err().to_string();
     assert!(
         msg.contains("403"),
         "Expected HTTP 403 in error message, got: {msg}"
     );
-    info!("delete_realm correctly rejected non-super-admin with 403");
+    info!("delete_realm correctly rejected foreign realm admin with 403");
 
     ctx.stop_server().await
 }
@@ -326,6 +376,39 @@ async fn test_userpass_endpoints_require_realm_admin() -> AuthResult<()> {
     let msg = result.unwrap_err().to_string();
     assert!(msg.contains("403"), "Expected HTTP 403, got: {msg}");
     info!("userpass endpoint correctly rejected realm admin with 403");
+
+    ctx.stop_server().await
+}
+
+/// Once a realm has its own admin, the super admin can no longer manage its
+/// userpass credentials — only that realm's own admin(s) can.
+#[actix_web::test]
+async fn test_userpass_endpoints_forbidden_for_super_admin_once_realm_claimed() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "claimed_userpass_realm").await?;
+    let super_admin = authenticate_as_admin(&ctx).await?;
+
+    let userpass = create_user("claimed_userpass_realm", "some_user", "some_pass", false)?;
+    let result = super_admin
+        .create_admin_credentials_in_realm("claimed_userpass_realm", &userpass)
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Expected an error when the super admin creates credentials in an already-claimed realm"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("403"), "Expected HTTP 403, got: {msg}");
+
+    // The realm's own admin can still do it.
+    realm_admin
+        .create_admin_credentials_in_realm("claimed_userpass_realm", &userpass)
+        .await?;
+    info!(
+        "Super admin correctly locked out of a claimed realm's userpass; realm admin still can act"
+    );
 
     ctx.stop_server().await
 }
@@ -612,4 +695,40 @@ async fn test_realm_admin_cannot_operate_on_other_realms() -> AuthResult<()> {
         "Realm admin for realm_a correctly received 403 when trying to create credentials in realm_b"
     );
     Ok(())
+}
+
+// ── Realm-claim lifecycle ──────────────────────────────────────────────────────
+
+/// The realm-claim rule is dynamic, not a one-way flag: once a realm's last
+/// admin removes themselves, the realm becomes admin-less again and the super
+/// admin immediately regains bootstrap access to it.
+#[actix_web::test]
+async fn test_realm_access_restored_after_last_admin_removed() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "unclaim_realm").await?;
+    let radmin_id = "unclaim_realm_radmin_user";
+
+    // While the realm has an admin, the super admin cannot create another one.
+    let super_admin = authenticate_as_admin(&ctx).await?;
+    let mut blocked = test_admin("unclaim_blocked");
+    blocked.realms = vec!["unclaim_realm".to_string()];
+    let result = super_admin.create_admin_as_super_admin(&blocked).await;
+    assert!(
+        result.is_err(),
+        "Expected an error creating an admin in an already-claimed realm"
+    );
+
+    // The realm admin removes themselves — the realm becomes admin-less.
+    realm_admin
+        .remove_admin_from_realm(radmin_id, "unclaim_realm")
+        .await?;
+
+    // The super admin now regains bootstrap access.
+    let created = super_admin.create_admin_as_super_admin(&blocked).await?;
+    assert_eq!(created.id, "unclaim_blocked");
+    info!("Super admin regained access to 'unclaim_realm' after its last admin was removed");
+
+    ctx.stop_server().await
 }

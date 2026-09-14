@@ -45,9 +45,11 @@ pub use approle::{
 mod kubernetes;
 pub use kubernetes::{k8s_create_role, k8s_delete_role, k8s_get_role, k8s_list_roles, k8s_login};
 
-use crate::{AuthError, models::Admin};
+use crate::{AuthError, database::Database, models::Admin};
 use actix_web::HttpMessage;
 use actix_web::HttpRequest;
+use actix_web::web::Data;
+use std::sync::Arc;
 
 /// Helper function to extract the authenticated admin from the request extensions
 pub fn admin_from_request(req: &HttpRequest) -> Result<Admin, AuthError> {
@@ -55,6 +57,56 @@ pub fn admin_from_request(req: &HttpRequest) -> Result<Admin, AuthError> {
         .get::<Admin>()
         .cloned()
         .ok_or_else(|| AuthError::Session("No authenticated admin found in request".to_string()))
+}
+
+// ── Realm-claim authorization ───────────────────────────────────────────────
+
+/// Whether `requester` may administer `realm_id`.
+///
+/// Direct membership (`requester.realms` contains `realm_id`) always grants
+/// access. A super admin who is not a direct member may act on the realm only
+/// while it has no admin of its own yet (bootstrap). Once any admin is scoped
+/// to the realm, only that realm's own admins may act on it — including
+/// reading it — and the super admin loses access until it becomes
+/// admin-less again.
+pub async fn can_manage_realm(
+    requester: &Admin,
+    realm_id: &str,
+    database: &Data<Arc<dyn Database>>,
+) -> Result<bool, AuthError> {
+    if requester.realms.iter().any(|r| r == realm_id) {
+        return Ok(true);
+    }
+    if !requester.is_super_admin() {
+        return Ok(false);
+    }
+    let claimed = database
+        .list_admins()
+        .await?
+        .iter()
+        .any(|a| a.realms.iter().any(|r| r == realm_id));
+    Ok(!claimed)
+}
+
+/// Whether `requester` may act on an admin resource scoped to `realms`.
+///
+/// An admin with an empty `realms` list is unaffiliated with any realm and
+/// may only be managed by a super admin. Otherwise every realm in the list
+/// must pass [`can_manage_realm`] (exclusive-ownership rule).
+pub async fn can_manage_admin_realms(
+    requester: &Admin,
+    realms: &[String],
+    database: &Data<Arc<dyn Database>>,
+) -> Result<bool, AuthError> {
+    if realms.is_empty() {
+        return Ok(requester.is_super_admin());
+    }
+    for r in realms {
+        if !can_manage_realm(requester, r, database).await? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 // ── Shared app token helper ─────────────────────────────────────────────────
