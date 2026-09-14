@@ -215,7 +215,9 @@ async fn test_update_own_realm_by_realm_admin_succeeds() -> AuthResult<()> {
     // Once a realm has its own admin, that admin — not the super admin — owns
     // updating its config.
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_update_owner").await?;
-    let mut realm = realm_admin.get_realm_as_super_admin("realm_update_owner").await?;
+    let mut realm = realm_admin
+        .get_realm_as_super_admin("realm_update_owner")
+        .await?;
     let updated_max_age = realm.session_max_age_seconds + 100;
     realm.session_max_age_seconds = updated_max_age;
 
@@ -273,7 +275,9 @@ async fn test_delete_own_realm_by_realm_admin_succeeds() -> AuthResult<()> {
         .delete_realm_as_super_admin("realm_delete_owner")
         .await?;
 
-    let result = realm_admin.get_realm_as_super_admin("realm_delete_owner").await;
+    let result = realm_admin
+        .get_realm_as_super_admin("realm_delete_owner")
+        .await;
     assert!(result.is_err(), "Realm must be gone after self-deletion");
     info!("Realm admin successfully deleted their own realm");
 
