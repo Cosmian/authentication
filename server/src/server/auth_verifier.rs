@@ -77,7 +77,11 @@ use std::{
 
 /// Build a `Cors` middleware for *admin* scopes.
 ///
-/// When `allowed_origins` is non-empty, only those origins are allowed.
+/// When `allowed_origins` is non-empty, only those origins are allowed, and
+/// credentialed requests are supported (`Access-Control-Allow-Credentials`)
+/// so a cross-origin admin UI can use the session cookie these scopes are
+/// authenticated with (`CookieAuthSameServer`). This is safe from a wildcard
+/// standpoint: origins are always listed explicitly here, never sent as `*`.
 /// When empty (the default), the scope uses same-origin policy and rejects
 /// all cross-origin preflight requests.
 fn build_admin_cors(allowed_origins: &[String]) -> Cors {
@@ -85,7 +89,10 @@ fn build_admin_cors(allowed_origins: &[String]) -> Cors {
         // No cross-origin access — only same-origin requests are permitted.
         Cors::default()
     } else {
-        let mut cors = Cors::default().allow_any_method().allow_any_header();
+        let mut cors = Cors::default()
+            .allow_any_method()
+            .allow_any_header()
+            .supports_credentials();
         for origin in allowed_origins {
             cors = cors.allowed_origin(origin);
         }
