@@ -7,6 +7,8 @@ pub use context::TestsContext;
 
 mod certify_tests;
 
+mod cors_tests;
+
 mod cookie_auth_tests;
 
 mod dummy_idp;
