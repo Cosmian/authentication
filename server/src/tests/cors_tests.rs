@@ -1,11 +1,19 @@
 //! Regression tests for `build_admin_cors` (see `server/auth_verifier.rs`).
 //!
 //! `/whoami` and the other `CookieAuthSameServer`-protected scopes are
-//! cookie-authenticated, so a cross-origin admin UI needs
-//! `Access-Control-Allow-Credentials: true` on the response — otherwise the
-//! browser refuses to let JS read the response even though the request
-//! itself succeeds server-side. These tests exercise the raw HTTP response
-//! headers directly (not the typed `AuthClient`, which doesn't expose them).
+//! cookie-authenticated, so a *same-site* cross-origin admin UI (e.g. a
+//! different subdomain) needs `Access-Control-Allow-Credentials: true` on
+//! the response — otherwise the browser refuses to let JS read the response
+//! even though the request itself succeeds server-side. These tests
+//! exercise the raw HTTP response headers directly (not the typed
+//! `AuthClient`, which doesn't expose them), and manually attach the
+//! session cookie to the request to isolate that CORS-header behavior.
+//!
+//! This does **not** cover genuinely cross-*site* deployments: the `_ea_`
+//! cookie is `SameSite=Strict`, so a real browser withholds it on a
+//! cross-site `fetch` regardless of these headers — manually setting the
+//! `Cookie` header here sidesteps that browser-enforced policy on purpose,
+//! to test the CORS-header logic in isolation.
 
 use crate::{
     AuthError, AuthResult,
@@ -36,6 +44,11 @@ fn test_http_client() -> AuthResult<reqwest::Client> {
 /// must carry `Access-Control-Allow-Credentials: true`, echoing the caller's
 /// origin — otherwise the browser blocks the response from being read
 /// cross-origin even though the request itself succeeds server-side.
+///
+/// The session cookie is attached manually below to isolate this CORS-header
+/// behavior from `SameSite` enforcement (a real browser would only attach
+/// the `SameSite=Strict` `_ea_` cookie automatically for a same-site caller;
+/// see the module doc for what this test does and doesn't cover).
 #[actix_web::test]
 async fn test_whoami_cross_origin_includes_credentials_header() -> AuthResult<()> {
     let origin = "https://admin-ui.example.com";

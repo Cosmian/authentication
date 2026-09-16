@@ -82,6 +82,14 @@ use std::{
 /// so a cross-origin admin UI can use the session cookie these scopes are
 /// authenticated with (`CookieAuthSameServer`). This is safe from a wildcard
 /// standpoint: origins are always listed explicitly here, never sent as `*`.
+///
+/// Note this only helps a *same-site* cross-origin UI (e.g. a different
+/// subdomain): the `_ea_` session cookie is `SameSite=Strict`
+/// (`session/cookies.rs`), so browsers withhold it on genuinely cross-*site*
+/// requests regardless of this CORS configuration — `Access-Control-Allow-*`
+/// headers and `SameSite` are independent browser mechanisms, and this
+/// function only addresses the former.
+///
 /// When empty (the default), the scope uses same-origin policy and rejects
 /// all cross-origin preflight requests.
 fn build_admin_cors(allowed_origins: &[String]) -> Cors {
