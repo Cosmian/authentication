@@ -275,7 +275,13 @@ async fn test_delete_own_realm_by_realm_admin_succeeds() -> AuthResult<()> {
         .delete_realm_as_super_admin("realm_delete_owner")
         .await?;
 
-    let result = realm_admin
+    // Verified with the super admin, not `realm_admin`: the super admin
+    // permanently keeps `get_realm` access regardless of claim status, so
+    // its result unambiguously reflects whether the realm still exists —
+    // unlike `realm_admin`, whose own authorization to the (possibly still
+    // claimed-looking) realm id could itself be in question here.
+    let super_admin = authenticate_as_admin(&ctx).await?;
+    let result = super_admin
         .get_realm_as_super_admin("realm_delete_owner")
         .await;
     assert!(result.is_err(), "Realm must be gone after self-deletion");

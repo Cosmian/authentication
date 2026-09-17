@@ -3,7 +3,10 @@ use crate::{
     client::AuthClientScheme,
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
     models::ADMIN_REALM,
-    tests::start_default_test_server,
+    tests::{
+        helpers::{authenticate_as_admin, create_and_authenticate_realm_admin},
+        start_default_test_server,
+    },
 };
 use cosmian_logger::info;
 
@@ -283,6 +286,63 @@ async fn test_login_after_totp_disabled_succeeds() -> AuthResult<()> {
     );
     assert!(result.session_id.is_some(), "Expected a session ID");
     assert!(cookie.is_some(), "Expected a session cookie");
+
+    ctx.stop_server().await
+}
+
+/// Once a realm has its own admin, the super admin is denied all three TOTP
+/// management endpoints (generate, verify, disable) for that realm — only
+/// the realm's own admin may manage its TOTP settings. The existing TOTP
+/// tests above only exercise the `_` realm, where the super admin is a
+/// direct member and this claim-aware branch never triggers.
+#[actix_web::test]
+async fn test_totp_endpoints_forbidden_for_super_admin_once_realm_claimed() -> AuthResult<()> {
+    let ctx = start_default_test_server().await?;
+
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "totp_claimed_realm").await?;
+    let super_admin = authenticate_as_admin(&ctx).await?;
+
+    let result = super_admin
+        .generate_totp("totp_claimed_realm", "someone", None)
+        .await;
+    assert!(
+        result.is_err(),
+        "Expected an error generating TOTP for a super admin on a claimed realm"
+    );
+    assert!(result.unwrap_err().to_string().contains("403"));
+
+    let result = super_admin
+        .verify_and_enable_totp(
+            "totp_claimed_realm",
+            "someone",
+            "fake_secret",
+            "000000",
+            None,
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "Expected an error verifying TOTP for a super admin on a claimed realm"
+    );
+    assert!(result.unwrap_err().to_string().contains("403"));
+
+    let result = super_admin
+        .disable_totp("totp_claimed_realm", "someone")
+        .await;
+    assert!(
+        result.is_err(),
+        "Expected an error disabling TOTP for a super admin on a claimed realm"
+    );
+    assert!(result.unwrap_err().to_string().contains("403"));
+
+    info!("Super admin correctly denied generate/verify/disable TOTP once the realm was claimed");
+
+    // The realm's own admin still can.
+    let generated = realm_admin
+        .generate_totp("totp_claimed_realm", "someone", None)
+        .await?;
+    assert!(!generated.secret_base32.is_empty());
+    info!("Realm admin still able to generate TOTP for their own realm");
 
     ctx.stop_server().await
 }

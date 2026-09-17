@@ -29,13 +29,26 @@ tags:
   - name: Sessions
     description: Session store management
   - name: Realms
-    description: Realm CRUD — super admin only for write operations
+    description: |
+      Realm CRUD. Creation is super-admin-only. Once a realm has its own
+      admin, only that realm's own admin(s) may update its config — the
+      super admin loses that access, retaining only `GET`/`DELETE` on the
+      realm as a permanent safety net. See `authorization_and_administration.md`
+      for the full realm-claim model.
   - name: Admins
-    description: Admin account management
+    description: |
+      Admin account management. Subject to the exclusive-ownership rule,
+      claim-aware for super admins — see `authorization_and_administration.md`.
   - name: Credentials
-    description: Username/password credential management per realm
+    description: |
+      Username/password credential management per realm. Requires
+      administering the realm; a super admin qualifies only while the realm
+      has no admin of its own yet (claim-aware).
   - name: TOTP
-    description: Two-factor authentication management
+    description: |
+      Two-factor authentication management. Requires administering the
+      realm; a super admin qualifies only while the realm has no admin of
+      its own yet (claim-aware).
   - name: App Token
     description: |
       App token self-service endpoints (`/auth/token/...`).
@@ -1516,7 +1529,11 @@ paths:
     get:
       tags: [Realms]
       summary: Get a realm by ID
-      description: Realm admins may only retrieve realms they administer.
+      description: |
+        Realm admins may only retrieve realms they administer. The super admin
+        always may, regardless of whether the realm has its own admin(s) —
+        this is one of the two operations permanently exempt from the
+        realm-claim rule (the other being DELETE on this same path).
       operationId: getRealm
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -1538,7 +1555,12 @@ paths:
 
     put:
       tags: [Realms]
-      summary: Replace a realm's configuration (super admin only)
+      summary: Replace a realm's configuration
+      description: |
+        Allowed for the super admin only while the realm has no admin of its
+        own yet (bootstrap). Once the realm has been claimed by an admin,
+        only that realm's own admin(s) may update its config — the super
+        admin is forbidden, even though it can still `GET`/`DELETE` the realm.
       operationId: updateRealm
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -1566,7 +1588,12 @@ paths:
 
     delete:
       tags: [Realms]
-      summary: Delete a realm and all associated data (super admin only)
+      summary: Delete a realm and all associated data
+      description: |
+        Available to the super admin at all times, regardless of whether the
+        realm has its own admin(s) — a permanent safety net so an abandoned
+        realm can always be cleaned up. The realm's own admin(s), once it has
+        any, may also delete it themselves.
       operationId: deleteRealm
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -1586,6 +1613,10 @@ paths:
     get:
       tags: [Realms]
       summary: List all userpass credentials across all realms (super admin only)
+      description: |
+        The result is filtered: entries in a realm the requester can no
+        longer manage (claimed by another realm's admin) are omitted, even
+        though the endpoint itself is gated to super admins.
       operationId: listAllUserpass
       security:
         - cookieAuth: []
@@ -1613,8 +1644,11 @@ paths:
       tags: [Admins]
       summary: Create an admin
       description: |
-        Super admins may create any admin. Realm admins may create an admin only if every
-        realm in the new admin's realms list is one they administer.
+        Realm admins may create an admin only if every realm in the new admin's
+        realms list is one they administer. Super admins may do the same, but
+        only for realms that have no admin of their own yet — once a realm is
+        claimed, only that realm's own admin(s) may add more. An admin with an
+        empty realms list (unaffiliated) may only be created by a super admin.
       operationId: createAdmin
       security:
         - cookieAuth: []
@@ -1650,6 +1684,10 @@ paths:
     get:
       tags: [Admins]
       summary: List all admins (super admin only)
+      description: |
+        The result is filtered: admins scoped to a realm the requester can no
+        longer manage (claimed by that realm's own admin) are omitted, even
+        though the endpoint itself is gated to super admins.
       operationId: listAdmins
       security:
         - cookieAuth: []
@@ -1671,6 +1709,13 @@ paths:
     get:
       tags: [Admins]
       summary: Get an admin by ID
+      description: |
+        Subject to the exclusive-ownership rule: the requester must administer
+        every realm the target belongs to. For a super admin this only holds
+        while none of those realms has been claimed by another admin (an
+        unaffiliated target with an empty realms list is the only case where
+        a super admin can still reach it unconditionally). See
+        `authorization_and_administration.md`.
       operationId: getAdmin
       parameters:
         - $ref: '#/components/parameters/adminId'
@@ -1695,8 +1740,10 @@ paths:
       summary: Replace an admin record
       description: |
         The admin_id path parameter is authoritative — the id field in the body is overwritten.
-        Realm admins are subject to the exclusive-ownership rule on both current and incoming
-        realms lists (prevents privilege escalation).
+        Both the current and the incoming realms lists are subject to the exclusive-ownership
+        rule (prevents privilege escalation via a crafted body). This applies to super admins
+        too: for a non-empty realms list, a super admin qualifies only while every realm in it
+        is unclaimed — see `authorization_and_administration.md`.
       operationId: updateAdmin
       parameters:
         - $ref: '#/components/parameters/adminId'
@@ -1725,7 +1772,10 @@ paths:
     delete:
       tags: [Admins]
       summary: Delete an admin record
-      description: Associated userpass credentials are cascade-deleted.
+      description: |
+        Associated userpass credentials are cascade-deleted. Subject to the
+        same exclusive-ownership rule as GET (see above); deleting a
+        nonexistent admin is a super-admin-only idempotent no-op.
       operationId: deleteAdmin
       parameters:
         - $ref: '#/components/parameters/adminId'
@@ -1745,6 +1795,15 @@ paths:
     put:
       tags: [Admins]
       summary: Add a realm to an admin's realms list
+      description: |
+        The requester must administer realm_id — a super admin qualifies only
+        while that realm has no admin of its own yet. The target admin must
+        also be one the requester already exclusively owns: either
+        unaffiliated (empty realms, onboarding an admin nobody has claimed
+        yet) or every realm it currently belongs to must itself be one the
+        requester administers. This prevents a realm admin from unilaterally
+        handing their realm to an admin who also serves a foreign realm they
+        don't control. A no-op if the admin is already a member.
       operationId: addAdminToRealm
       parameters:
         - $ref: '#/components/parameters/adminId'
@@ -1768,6 +1827,12 @@ paths:
     delete:
       tags: [Admins]
       summary: Remove a realm from an admin's realms list
+      description: |
+        The requester must administer realm_id — a super admin qualifies only
+        while that realm has no admin of its own yet. The target admin must
+        also be one the requester already exclusively owns: every realm it
+        currently belongs to must itself be one the requester administers
+        (same rule as addAdminToRealm). A no-op if the admin is not a member.
       operationId: removeAdminFromRealm
       parameters:
         - $ref: '#/components/parameters/adminId'

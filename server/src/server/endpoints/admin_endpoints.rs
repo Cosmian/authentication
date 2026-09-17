@@ -21,13 +21,16 @@ use crate::{
     AuthError,
     database::Database,
     models::Admin,
-    server::endpoints::{admin_from_request, can_manage_admin_realms, can_manage_realm},
+    server::endpoints::{
+        admin_from_request, can_manage_admin_realms, can_manage_realm, realm_manageable_given_claims,
+    },
 };
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
     web::{Data, Json, Path},
 };
 use cosmian_logger::info;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Create a new admin.
@@ -235,12 +238,27 @@ pub async fn list_admins(
 
     let admins = database.list_admins().await?;
 
-    let mut visible = Vec::with_capacity(admins.len());
-    for admin in admins {
-        if can_manage_admin_realms(&requester, &admin.realms, &database).await? {
-            visible.push(admin);
-        }
-    }
+    // Compute the claimed-realm set once from the list already fetched above,
+    // instead of calling `database.list_admins()` again for every admin in
+    // it (each of which could itself re-scan every realm it has).
+    let claimed_realms: HashSet<String> = admins
+        .iter()
+        .flat_map(|a| a.realms.iter().cloned())
+        .collect();
+
+    let visible: Vec<_> = admins
+        .into_iter()
+        .filter(|admin| {
+            if admin.realms.is_empty() {
+                requester.is_super_admin()
+            } else {
+                admin
+                    .realms
+                    .iter()
+                    .all(|r| realm_manageable_given_claims(&requester, r, &claimed_realms))
+            }
+        })
+        .collect();
 
     Ok(HttpResponse::Ok().json(visible))
 }
@@ -248,7 +266,12 @@ pub async fn list_admins(
 /// Grant an admin membership in a realm.
 ///
 /// The requester must be an administrator of `realm_id`, or a super admin
-/// acting on a realm that has no admin of its own yet.
+/// acting on a realm that has no admin of its own yet. The target admin must
+/// also be one the requester already exclusively owns — i.e. either
+/// unaffiliated (empty `realms`, onboarding an admin nobody has claimed yet)
+/// or every realm it currently belongs to must itself be one the requester
+/// administers. This prevents a realm admin from unilaterally handing their
+/// realm to an admin who also serves a foreign realm they don't control.
 /// If the admin is already a member, the request is a no-op.
 ///
 /// Full URL: `PUT /admins/{id}/realms/{realm_id}`
@@ -273,6 +296,13 @@ pub async fn add_admin_to_realm(
         .await?
         .ok_or_else(|| AuthError::BadRequest(format!("Admin '{}' not found", admin_id)))?;
 
+    if !admin.realms.is_empty() && !can_manage_admin_realms(&requester, &admin.realms, &database).await? {
+        return Err(AuthError::Forbidden(format!(
+            "Cannot modify admin '{}': it belongs to a realm you don't administer",
+            admin_id
+        )));
+    }
+
     if !admin.realms.contains(&realm_id) {
         admin.realms.push(realm_id.clone());
         database.update_admin(&admin).await?;
@@ -288,7 +318,12 @@ pub async fn add_admin_to_realm(
 /// Revoke an admin's membership in a realm.
 ///
 /// The requester must be an administrator of `realm_id`, or a super admin
-/// acting on a realm that has no admin of its own yet.
+/// acting on a realm that has no admin of its own yet. The target admin must
+/// also be one the requester already exclusively owns — every realm it
+/// currently belongs to must itself be one the requester administers (see
+/// [`add_admin_to_realm`]). This prevents a realm admin from modifying the
+/// membership of an admin who also serves a foreign realm they don't
+/// control.
 /// If the admin is not a member, the request is a no-op.
 ///
 /// Full URL: `DELETE /admins/{id}/realms/{realm_id}`
@@ -312,6 +347,13 @@ pub async fn remove_admin_from_realm(
         .get_admin(&admin_id)
         .await?
         .ok_or_else(|| AuthError::BadRequest(format!("Admin '{}' not found", admin_id)))?;
+
+    if !can_manage_admin_realms(&requester, &admin.realms, &database).await? {
+        return Err(AuthError::Forbidden(format!(
+            "Cannot modify admin '{}': it belongs to a realm you don't administer",
+            admin_id
+        )));
+    }
 
     let before = admin.realms.len();
     admin.realms.retain(|r| r != &realm_id);

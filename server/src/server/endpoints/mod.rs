@@ -49,6 +49,7 @@ use crate::{AuthError, database::Database, models::Admin};
 use actix_web::HttpMessage;
 use actix_web::HttpRequest;
 use actix_web::web::Data;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 /// Helper function to extract the authenticated admin from the request extensions
@@ -107,6 +108,19 @@ pub async fn can_manage_admin_realms(
         }
     }
     Ok(true)
+}
+
+/// Pure, DB-less version of [`can_manage_realm`] for batch/list contexts
+/// where the set of currently-claimed realms has already been computed once
+/// (e.g. from a `list_admins()` call the caller already made) — avoids one
+/// `database.list_admins()` round trip per item being filtered.
+pub fn realm_manageable_given_claims(
+    requester: &Admin,
+    realm_id: &str,
+    claimed_realms: &HashSet<String>,
+) -> bool {
+    requester.realms.iter().any(|r| r == realm_id)
+        || (requester.is_super_admin() && !claimed_realms.contains(realm_id))
 }
 
 // ── Shared app token helper ─────────────────────────────────────────────────
