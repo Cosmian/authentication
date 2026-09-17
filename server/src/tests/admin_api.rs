@@ -13,8 +13,9 @@ use crate::{
     models::ADMIN_REALM,
     tests::{
         helpers::{
-            authenticate_as_admin, create_and_authenticate_realm_admin, create_userpass,
-            create_multi_realm_target_and_foreign_realm_admin, test_admin, test_realm,
+            authenticate_as_admin, create_and_authenticate_realm_admin,
+            create_multi_realm_target_and_foreign_realm_admin, create_userpass, test_admin,
+            test_realm,
         },
         init_test_logging, start_default_test_server,
     },
@@ -400,7 +401,9 @@ async fn test_list_admins_omits_claimed_realm_admins() -> AuthResult<()> {
 
     let super_admin = authenticate_as_admin(&ctx).await?;
     let unaffiliated = test_admin("list_unaffiliated_target");
-    super_admin.create_admin_as_super_admin(&unaffiliated).await?;
+    super_admin
+        .create_admin_as_super_admin(&unaffiliated)
+        .await?;
 
     let admins = super_admin.list_admins_as_super_admin().await?;
 
@@ -587,7 +590,9 @@ async fn test_get_admin_forbidden_for_super_admin_once_realm_claimed() -> AuthRe
     realm_admin.create_admin_as_super_admin(&target).await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let result = super_admin.get_admin_as_super_admin("get_claimed_target").await;
+    let result = super_admin
+        .get_admin_as_super_admin("get_claimed_target")
+        .await;
 
     assert!(
         result.is_err(),

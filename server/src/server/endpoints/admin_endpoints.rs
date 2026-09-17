@@ -22,7 +22,8 @@ use crate::{
     database::Database,
     models::Admin,
     server::endpoints::{
-        admin_from_request, can_manage_admin_realms, can_manage_realm, realm_manageable_given_claims,
+        admin_from_request, can_manage_admin_realms, can_manage_realm,
+        realm_manageable_given_claims,
     },
 };
 use actix_web::{
@@ -296,7 +297,9 @@ pub async fn add_admin_to_realm(
         .await?
         .ok_or_else(|| AuthError::BadRequest(format!("Admin '{}' not found", admin_id)))?;
 
-    if !admin.realms.is_empty() && !can_manage_admin_realms(&requester, &admin.realms, &database).await? {
+    if !admin.realms.is_empty()
+        && !can_manage_admin_realms(&requester, &admin.realms, &database).await?
+    {
         return Err(AuthError::Forbidden(format!(
             "Cannot modify admin '{}': it belongs to a realm you don't administer",
             admin_id

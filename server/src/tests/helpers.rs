@@ -199,9 +199,7 @@ pub async fn create_multi_realm_target_and_foreign_realm_admin(
 
     // The target already directly belongs to realm_a, so it may grant the
     // solo admin membership in it.
-    target_client
-        .add_admin_to_realm(&solo_id, realm_a)
-        .await?;
+    target_client.add_admin_to_realm(&solo_id, realm_a).await?;
 
     let solo_client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
         username: solo_username,
