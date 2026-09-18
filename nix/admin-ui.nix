@@ -17,6 +17,41 @@ let
     && baseName != "dist"
     && baseName != ".git";
 
+  # Inside Nix's real Linux build sandbox, pnpm 9.12.3 loses the `overrides:`
+  # block when it parses pnpm-lock.yaml into its internal Lockfile object:
+  # `ctx.wantedLockfile.overrides` comes back `undefined` even though the
+  # file on disk is untouched and package.json's `pnpm.overrides` parses
+  # fine right next to it. Verified extensively (identical pnpm.cjs bytes,
+  # identical file content, identical Node 22.10.0 build, sandbox on/off,
+  # fresh isolated state, CPU load) — none of it reproduces outside this
+  # exact GitHub Actions Linux sandbox, so the root cause is some
+  # environment specific to it that we could not pin down. The effect is a
+  # false-positive ERR_PNPM_LOCKFILE_CONFIG_MISMATCH on "overrides" that
+  # aborts every Linux packaging build with `--frozen-lockfile`.
+  #
+  # Work around it by patching a writable copy of pnpm.cjs to self-heal
+  # `wantedLockfile.overrides` from the current package.json overrides
+  # whenever it comes back missing, right before pnpm's own consistency
+  # check runs. This mirrors what pnpm's own code already does a few lines
+  # later in the non-frozen-install path; we're just doing it earlier. A
+  # genuine mismatch (lockfile has overrides that actually differ from
+  # package.json) still throws normally, since this only fires when
+  # `wantedLockfile.overrides` is `undefined`, not merely different.
+  patchPnpmForOverridesBug = ''
+    export PATH="${pkgs.nodejs_22}/bin:$PATH"
+    PNPM_REAL=$(readlink -f "$(command -v pnpm)")
+    PNPM_LIBEXEC=$(dirname "$(dirname "$PNPM_REAL")")
+    WORKDIR=$(mktemp -d)
+    cp -r "$PNPM_LIBEXEC" "$WORKDIR/pnpm"
+    chmod -R u+w "$WORKDIR/pnpm"
+    PATCHED_CJS="$WORKDIR/pnpm/dist/pnpm.cjs"
+    sed -i "/createOverridesMapFromParsed)(opts.parsedOverrides)/a if (ctx.wantedLockfile.overrides === undefined) { if (overridesMap) { if (Object.keys(overridesMap).length > 0) { ctx.wantedLockfile.overrides = overridesMap; } } }" "$PATCHED_CJS"
+    mkdir -p "$WORKDIR/bin"
+    printf '#!/bin/sh\nexec node "%s" "$@"\n' "$PATCHED_CJS" > "$WORKDIR/bin/pnpm"
+    chmod +x "$WORKDIR/bin/pnpm"
+    export PATH="$WORKDIR/bin:$PATH"
+  '';
+
   # Fetch and cache the pnpm offline store for reproducible installs.
   # pnpm_9 supports lockfile format 9.0 used by admin-ui/pnpm-lock.yaml.
   pnpmDeps = pkgs.pnpm_9.fetchDeps {
@@ -28,33 +63,7 @@ let
       filter = sourceFilter;
     };
 
-    # pnpm.fetchDeps hardcodes its own nativeBuildInputs — nodejs is not
-    # among them. Put nodejs on PATH to fix it.
-    #
-    # TEMPORARY DIAGNOSTIC (round 3): confirmed `ctx.wantedLockfile.overrides`
-    # is undefined in the real Nix sandbox while `package.json`'s overrides
-    # parse fine — reproduced neither with a pristine npm-published pnpm nor
-    # by removing pnpm's dist/worker.js locally. Dump more of wantedLockfile
-    # (keys, lockfileVersion, settings, importers count) to see whether the
-    # whole object is malformed or just the `overrides` field specifically.
-    # Remove this whole block once understood.
-    prePnpmInstall = ''
-      export PATH="${pkgs.nodejs_22}/bin:$PATH"
-
-      PNPM_REAL=$(readlink -f "$(command -v pnpm)")
-      PNPM_LIBEXEC=$(dirname "$(dirname "$PNPM_REAL")")
-      WORKDIR=$(mktemp -d)
-      cp -r "$PNPM_LIBEXEC" "$WORKDIR/pnpm"
-      chmod -R u+w "$WORKDIR/pnpm"
-      PATCHED_CJS="$WORKDIR/pnpm/dist/pnpm.cjs"
-      sed -i "/createOverridesMapFromParsed)(opts.parsedOverrides)/a console.error('DEBUG_OVERRIDES lockfile=' + JSON.stringify(ctx.wantedLockfile.overrides) + ' current=' + JSON.stringify(overridesMap)); console.error('DEBUG_WANTEDLOCKFILE keys=' + JSON.stringify(Object.keys(ctx.wantedLockfile)) + ' lockfileVersion=' + JSON.stringify(ctx.wantedLockfile.lockfileVersion) + ' settings=' + JSON.stringify(ctx.wantedLockfile.settings) + ' importersCount=' + Object.keys(ctx.wantedLockfile.importers || {}).length); console.error('DEBUG_CTX keys=' + JSON.stringify(Object.keys(ctx)) + ' lockfileDir=' + JSON.stringify(ctx.lockfileDir) + ' wantedLockfileIsAutofixable=' + JSON.stringify(ctx.existsNonEmptyWantedLockfile));" "$PATCHED_CJS"
-      mkdir -p "$WORKDIR/bin"
-      printf '#!/bin/sh\nexec node "%s" "$@"\n' "$PATCHED_CJS" > "$WORKDIR/bin/pnpm"
-      chmod +x "$WORKDIR/bin/pnpm"
-      export PATH="$WORKDIR/bin:$PATH"
-      echo "DEBUG using patched pnpm at: $WORKDIR/bin/pnpm"
-      grep -c "DEBUG_OVERRIDES" "$PATCHED_CJS" || echo "DEBUG patch did not match!"
-    '';
+    prePnpmInstall = patchPnpmForOverridesBug;
 
     hash =
       let
@@ -107,8 +116,13 @@ stdenv.mkDerivation {
   # Node 22.x releases (ABI 127), so the binary runs fine on 22.10.0.
   # Telling pnpm to evaluate engine constraints against 22.12.0 makes it
   # include the binding during the offline install step.
+  #
+  # Also apply the same wantedLockfile.overrides self-heal as pnpmDeps above
+  # — this second `pnpm install` (run by configHook) goes through the same
+  # frozen-lockfile consistency check and is exposed to the same bug.
   prePnpmInstall = ''
     export npm_config_node_version="22.12.0"
+    ${patchPnpmForOverridesBug}
   '';
 
   # No native binaries — skip the strip/file-detection phase which requires
