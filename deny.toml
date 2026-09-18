@@ -249,9 +249,12 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
 
 [sources.allow-org]
+# No git-sourced dependencies are used (allow-git is empty above); these are
+# intentionally left empty rather than filled with a placeholder org, which
+# previously made `cargo deny check` warn that each was "not encountered".
 # 1 or more github.com organizations to allow git sources for
-github = [""]
+github = []
 # 1 or more gitlab.com organizations to allow git sources for
-gitlab = [""]
+gitlab = []
 # 1 or more bitbucket.org organizations to allow git sources for
-bitbucket = [""]
+bitbucket = []

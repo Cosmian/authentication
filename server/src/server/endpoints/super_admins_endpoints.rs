@@ -1,4 +1,4 @@
-use crate::server::endpoints::admin_from_request;
+use crate::server::endpoints::{admin_from_request, can_manage_realm};
 use crate::{AuthError, database::Database, models::Realm};
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -74,6 +74,10 @@ pub async fn get_realm(
 
 /// Update an existing realm
 ///
+/// The requester must administer the realm: either be a direct member, or be
+/// a super admin acting on a realm that has no admin of its own yet. Once a
+/// realm has ≥1 admin, only that realm's own admins may update its config.
+///
 /// # Arguments
 /// * `id` - The realm ID to update
 /// * `realm` - The updated realm data
@@ -91,10 +95,11 @@ pub async fn update_realm(
     let realm_id = id.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.is_super_admin() {
-        return Err(AuthError::Forbidden(
-            "Only super admins can update realms".to_string(),
-        ));
+    if !can_manage_realm(&requester, &realm_id, &database).await? {
+        return Err(AuthError::Forbidden(format!(
+            "Only administrators of realm '{}' can update it",
+            realm_id
+        )));
     }
 
     let mut realm = realm.into_inner();
@@ -112,6 +117,11 @@ pub async fn update_realm(
 
 /// Delete a realm by ID
 ///
+/// Unlike [`update_realm`], deletion is always available to a super admin,
+/// regardless of whether the realm already has its own admin(s) — this is the
+/// safety net that lets an abandoned realm be cleaned up even if its admins
+/// never do it themselves. The realm's own admins may also delete it.
+///
 /// # Arguments
 /// * `id` - The realm ID to delete
 /// * `database` - Shared database connection
@@ -127,10 +137,11 @@ pub async fn delete_realm(
     let realm_id = id.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.is_super_admin() {
-        return Err(AuthError::Forbidden(
-            "Only super admins can delete realms".to_string(),
-        ));
+    if !requester.can_administer_realm(&realm_id) {
+        return Err(AuthError::Forbidden(format!(
+            "Only administrators of realm '{}' (or a super admin) can delete it",
+            realm_id
+        )));
     }
 
     info!(

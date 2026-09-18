@@ -89,6 +89,21 @@ pub async fn create_and_authenticate_realm_admin(
         .create_realm_as_super_admin(&test_realm(realm_id))
         .await?;
 
+    authenticate_new_realm_admin(ctx, realm_id).await
+}
+
+/// Like [`create_and_authenticate_realm_admin`], but for a realm that
+/// already exists (e.g. one created earlier in the test while still
+/// unclaimed) — does not attempt to create the realm itself, so it can be
+/// used without hitting the duplicate-realm `409 Conflict`.
+///
+/// The returned client session is **not** a super admin.
+pub async fn authenticate_new_realm_admin(
+    ctx: &TestsContext,
+    realm_id: &str,
+) -> AuthResult<AuthClient> {
+    let super_admin = authenticate_as_admin(ctx).await?;
+
     let username = format!("{realm_id}_radmin");
     let password = "realm_admin_pass";
     let userpass = create_userpass(ADMIN_REALM, &username, password, false)?;
@@ -116,4 +131,89 @@ pub async fn create_and_authenticate_realm_admin(
     assert!(cookie.is_some(), "Expected session cookie for realm admin");
     info!("Authenticated as realm admin for '{}'", realm_id);
     Ok(client)
+}
+
+/// Build a "multi-realm target" admin spanning `realm_a` and `realm_b`
+/// (created while both are still unclaimed, so a super admin may do it in
+/// one call) plus a genuinely separate admin exclusively scoped to
+/// `realm_a` — used by tests asserting that a realm admin cannot act on an
+/// admin that also belongs to a foreign realm they don't control.
+///
+/// Once `target_id` exists with `realm_a` in its `realms`, `realm_a` counts
+/// as claimed — no one but an existing admin of `realm_a` (i.e. the target
+/// itself) can grant further admins membership in it. So the target is
+/// given login credentials and used, via `add_admin_to_realm`, to admit the
+/// separate "solo" admin into `realm_a` — the only way to construct this
+/// state once the exclusive-ownership rule closes bootstrap access to an
+/// already-claimed realm.
+///
+/// Returns a client authenticated as the solo admin (a real, independent
+/// admin of `realm_a` that does not control `realm_b`).
+pub async fn create_multi_realm_target_and_foreign_realm_admin(
+    ctx: &TestsContext,
+    realm_a: &str,
+    realm_b: &str,
+    target_id: &str,
+) -> AuthResult<AuthClient> {
+    let super_admin = authenticate_as_admin(ctx).await?;
+    super_admin
+        .create_realm_as_super_admin(&test_realm(realm_a))
+        .await?;
+    super_admin
+        .create_realm_as_super_admin(&test_realm(realm_b))
+        .await?;
+
+    let target_username = format!("{target_id}_login");
+    let target_password = "target_login_pass";
+    let target_userpass = create_userpass(ADMIN_REALM, &target_username, target_password, false)?;
+    super_admin
+        .create_admin_credentials_in_realm(ADMIN_REALM, &target_userpass)
+        .await?;
+
+    let mut target = test_admin(target_id);
+    target.realms = vec![realm_a.to_string(), realm_b.to_string()];
+    target.userpass = Some(target_username.clone());
+    super_admin.create_admin_as_super_admin(&target).await?;
+
+    let target_client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: target_username,
+        password: target_password.to_string(),
+    });
+    let (result, cookie) = target_client.login(ADMIN_REALM, None).await?;
+    assert!(
+        matches!(result.next_step, AuthenticationNextStep::Authenticated),
+        "Expected Authenticated after target login"
+    );
+    assert!(cookie.is_some(), "Expected session cookie for target");
+
+    let solo_id = format!("{realm_a}_solo_admin");
+    let solo_username = format!("{solo_id}_login");
+    let solo_password = "solo_login_pass";
+    let solo_userpass = create_userpass(ADMIN_REALM, &solo_username, solo_password, false)?;
+    super_admin
+        .create_admin_credentials_in_realm(ADMIN_REALM, &solo_userpass)
+        .await?;
+    let mut solo_admin = test_admin(&solo_id);
+    solo_admin.userpass = Some(solo_username.clone());
+    super_admin.create_admin_as_super_admin(&solo_admin).await?;
+
+    // The target already directly belongs to realm_a, so it may grant the
+    // solo admin membership in it.
+    target_client.add_admin_to_realm(&solo_id, realm_a).await?;
+
+    let solo_client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: solo_username,
+        password: solo_password.to_string(),
+    });
+    let (result, cookie) = solo_client.login(ADMIN_REALM, None).await?;
+    assert!(
+        matches!(result.next_step, AuthenticationNextStep::Authenticated),
+        "Expected Authenticated after solo admin login"
+    );
+    assert!(cookie.is_some(), "Expected session cookie for solo admin");
+    info!(
+        "Authenticated as a solo admin of '{}', separate from multi-realm target '{}'",
+        realm_a, target_id
+    );
+    Ok(solo_client)
 }

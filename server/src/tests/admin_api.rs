@@ -13,8 +13,9 @@ use crate::{
     models::ADMIN_REALM,
     tests::{
         helpers::{
-            authenticate_as_admin, create_and_authenticate_realm_admin, create_userpass,
-            test_admin, test_realm,
+            authenticate_as_admin, create_and_authenticate_realm_admin,
+            create_multi_realm_target_and_foreign_realm_admin, create_userpass, test_admin,
+            test_realm,
         },
         init_test_logging, start_default_test_server,
     },
@@ -380,6 +381,45 @@ async fn test_list_admins_requires_super_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
+/// Once a realm has its own admin, `list_admins` (called by the super
+/// admin) omits admins exclusively scoped to that realm, but still
+/// includes an unaffiliated admin (empty `realms`) — the filtering mirrors
+/// `get_admin`'s claimed-realm boundary (review finding: only the gate on
+/// the endpoint was tested, not what the returned list actually contains).
+#[actix_web::test]
+async fn test_list_admins_omits_claimed_realm_admins() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "list_claimed_realm").await?;
+
+    let mut claimed_target = test_admin("list_claimed_target");
+    claimed_target.realms = vec!["list_claimed_realm".to_string()];
+    realm_admin
+        .create_admin_as_super_admin(&claimed_target)
+        .await?;
+
+    let super_admin = authenticate_as_admin(&ctx).await?;
+    let unaffiliated = test_admin("list_unaffiliated_target");
+    super_admin
+        .create_admin_as_super_admin(&unaffiliated)
+        .await?;
+
+    let admins = super_admin.list_admins_as_super_admin().await?;
+
+    assert!(
+        !admins.iter().any(|a| a.id == "list_claimed_target"),
+        "Expected the claimed-realm admin to be omitted from the super admin's list"
+    );
+    assert!(
+        admins.iter().any(|a| a.id == "list_unaffiliated_target"),
+        "Expected the unaffiliated admin to remain visible"
+    );
+    info!("list_admins correctly filtered out the claimed-realm admin");
+
+    ctx.stop_server().await
+}
+
 // ── Realm membership management ───────────────────────────────────────────────
 
 /// A realm admin can add a user to their realm.
@@ -415,11 +455,12 @@ async fn test_remove_admin_from_realm_by_realm_admin() -> AuthResult<()> {
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "removal_realm").await?;
 
-    // First add, then remove
-    let super_admin = authenticate_as_admin(&ctx).await?;
+    // First add, then remove. "removal_realm" already has an admin (the realm
+    // admin above), so only that realm admin — not the super admin — may
+    // create further admins scoped to it.
     let mut admin = test_admin("removal_target");
     admin.realms = vec!["removal_realm".to_string()];
-    super_admin.create_admin_as_super_admin(&admin).await?;
+    realm_admin.create_admin_as_super_admin(&admin).await?;
 
     let updated = realm_admin
         .remove_admin_from_realm("removal_target", "removal_realm")
@@ -515,29 +556,14 @@ async fn test_get_admin_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    let super_admin = authenticate_as_admin(&ctx).await?;
     let mut admin = test_admin("get_ra_target");
     admin.realms = vec!["get_ra_realm".to_string()];
 
-    // Create the realm first, then the user
-    create_and_authenticate_realm_admin(&ctx, "get_ra_realm").await?;
-    super_admin.create_admin_as_super_admin(&admin).await?;
-
-    // A fresh client authenticated as realm admin for "get_ra_realm"
-    let realm_admin = {
-        let scheme = crate::client::AuthClientScheme::UsernamePassword {
-            username: "get_ra_realm_radmin".to_string(),
-            password: "realm_admin_pass".to_string(),
-        };
-        let client = ctx.get_test_client(scheme);
-        let (result, cookie) = client.login(ADMIN_REALM, None).await?;
-        assert!(matches!(
-            result.next_step,
-            crate::AuthenticationNextStep::Authenticated
-        ));
-        assert!(cookie.is_some());
-        client
-    };
+    // Create the realm and its first admin first — "get_ra_realm" is then
+    // claimed, so only that realm admin (not the super admin) may create
+    // further admins scoped to it.
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "get_ra_realm").await?;
+    realm_admin.create_admin_as_super_admin(&admin).await?;
 
     let fetched = realm_admin
         .get_admin_as_super_admin("get_ra_target")
@@ -548,28 +574,50 @@ async fn test_get_admin_by_realm_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
+/// Once a realm has its own admin, the super admin is denied `GET
+/// /admins/{id}` for an admin exclusively scoped to that realm — even in
+/// the simple, single-realm case (review finding: only the multi-realm
+/// denial was covered, not this more basic claimed-realm boundary).
+#[actix_web::test]
+async fn test_get_admin_forbidden_for_super_admin_once_realm_claimed() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "get_claimed_realm").await?;
+
+    let mut target = test_admin("get_claimed_target");
+    target.realms = vec!["get_claimed_realm".to_string()];
+    realm_admin.create_admin_as_super_admin(&target).await?;
+
+    let super_admin = authenticate_as_admin(&ctx).await?;
+    let result = super_admin
+        .get_admin_as_super_admin("get_claimed_target")
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Expected an error when the super admin gets an admin in an already-claimed realm"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("403"), "Expected HTTP 403, got: {msg}");
+    info!("Super admin correctly denied GET /admins/{{id}} once the realm was claimed");
+
+    ctx.stop_server().await
+}
+
 /// A realm admin cannot get a user that also belongs to another realm.
 #[actix_web::test]
 async fn test_get_admin_by_realm_admin_forbidden_multi_realm() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    // create_and_authenticate_realm_admin creates "get_multi_ra_realm"
-    let realm_admin = create_and_authenticate_realm_admin(&ctx, "get_multi_ra_realm").await?;
-
-    let super_admin = authenticate_as_admin(&ctx).await?;
-
-    // Create the second realm so the user can be assigned to both
-    super_admin
-        .create_realm_as_super_admin(&test_realm("another_realm_x"))
-        .await?;
-
-    let mut admin = test_admin("get_multi_realm_target");
-    admin.realms = vec![
-        "get_multi_ra_realm".to_string(),
-        "another_realm_x".to_string(),
-    ];
-    super_admin.create_admin_as_super_admin(&admin).await?;
+    let realm_admin = create_multi_realm_target_and_foreign_realm_admin(
+        &ctx,
+        "get_multi_ra_realm",
+        "another_realm_x",
+        "get_multi_realm_target",
+    )
+    .await?;
 
     let result = realm_admin
         .get_admin_as_super_admin("get_multi_realm_target")
@@ -594,36 +642,26 @@ async fn test_delete_admin_by_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    let super_admin = authenticate_as_admin(&ctx).await?;
-
-    // Ensure the realm exists first by setting up a realm admin for it
-    create_and_authenticate_realm_admin(&ctx, "delete_ra_realm").await?;
+    // Ensure the realm exists first by setting up a realm admin for it. Once
+    // claimed, only that realm admin (not the super admin) may create
+    // further admins scoped to it.
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "delete_ra_realm").await?;
 
     let mut admin = test_admin("delete_ra_target");
     admin.realms = vec!["delete_ra_realm".to_string()];
-    super_admin.create_admin_as_super_admin(&admin).await?;
-
-    let realm_admin = {
-        let scheme = crate::client::AuthClientScheme::UsernamePassword {
-            username: "delete_ra_realm_radmin".to_string(),
-            password: "realm_admin_pass".to_string(),
-        };
-        let client = ctx.get_test_client(scheme);
-        let (result, cookie) = client.login(ADMIN_REALM, None).await?;
-        assert!(matches!(
-            result.next_step,
-            crate::AuthenticationNextStep::Authenticated
-        ));
-        assert!(cookie.is_some());
-        client
-    };
+    realm_admin.create_admin_as_super_admin(&admin).await?;
 
     realm_admin
         .delete_admin_as_super_admin("delete_ra_target")
         .await?;
 
-    // Must be gone
-    let result = super_admin
+    // Must be gone — verified with `realm_admin`, not the super admin: the
+    // super admin is locked out of "delete_ra_realm" regardless of whether
+    // the delete actually happened (it's claimed), so its result would be
+    // ambiguous. `realm_admin` still directly owns the realm, so its
+    // authorization always succeeds; a "not found" here unambiguously means
+    // the record is gone, not that the caller lacks access.
+    let result = realm_admin
         .get_admin_as_super_admin("delete_ra_target")
         .await;
     assert!(
@@ -641,22 +679,13 @@ async fn test_delete_admin_by_realm_admin_forbidden_multi_realm() -> AuthResult<
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    // create_and_authenticate_realm_admin creates "del_multi_ra_realm"
-    let realm_admin = create_and_authenticate_realm_admin(&ctx, "del_multi_ra_realm").await?;
-
-    let super_admin = authenticate_as_admin(&ctx).await?;
-
-    // Create the second realm so the user can be assigned to both
-    super_admin
-        .create_realm_as_super_admin(&test_realm("another_realm_y"))
-        .await?;
-
-    let mut admin = test_admin("del_multi_realm_target");
-    admin.realms = vec![
-        "del_multi_ra_realm".to_string(),
-        "another_realm_y".to_string(),
-    ];
-    super_admin.create_admin_as_super_admin(&admin).await?;
+    let realm_admin = create_multi_realm_target_and_foreign_realm_admin(
+        &ctx,
+        "del_multi_ra_realm",
+        "another_realm_y",
+        "del_multi_realm_target",
+    )
+    .await?;
 
     let result = realm_admin
         .delete_admin_as_super_admin("del_multi_realm_target")
@@ -705,6 +734,74 @@ async fn test_add_admin_to_realm_unauthorized() -> AuthResult<()> {
         "Expected HTTP 403 in error message, got: {msg}"
     );
     info!("add_user_to_realm correctly rejected cross-realm attempt with 403");
+
+    ctx.stop_server().await
+}
+
+/// A realm admin must not be able to extend their own realm onto an admin
+/// that already exclusively belongs to a foreign realm — otherwise they
+/// could unilaterally hand their realm's authority to an admin they don't
+/// control (review finding: `add_admin_to_realm` checked the realm side but
+/// not the target admin's exclusive ownership).
+#[actix_web::test]
+async fn test_add_admin_to_realm_forbidden_for_foreign_owned_target() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    let realm_admin = create_and_authenticate_realm_admin(&ctx, "own_realm").await?;
+
+    // A different realm, administered by someone else, already exclusively
+    // owns the target admin.
+    let foreign_realm_admin = create_and_authenticate_realm_admin(&ctx, "foreign_realm").await?;
+    let mut target = test_admin("foreign_owned_target");
+    target.realms = vec!["foreign_realm".to_string()];
+    foreign_realm_admin
+        .create_admin_as_super_admin(&target)
+        .await?;
+
+    let result = realm_admin
+        .add_admin_to_realm("foreign_owned_target", "own_realm")
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Expected an error when adding a realm to an admin owned by a foreign realm"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("403"), "Expected HTTP 403, got: {msg}");
+    info!("add_admin_to_realm correctly denied extending a foreign-owned admin");
+
+    ctx.stop_server().await
+}
+
+/// A realm admin must not be able to modify the realm membership of an
+/// admin that also belongs to a realm they don't administer, even to
+/// remove a realm they *do* administer (same exclusive-ownership rule as
+/// `get_admin`/`update_admin`/`delete_admin`).
+#[actix_web::test]
+async fn test_remove_admin_from_realm_forbidden_for_foreign_owned_target() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+
+    let realm_a_admin = create_multi_realm_target_and_foreign_realm_admin(
+        &ctx,
+        "remove_realm_a",
+        "remove_realm_b",
+        "remove_multi_target",
+    )
+    .await?;
+
+    let result = realm_a_admin
+        .remove_admin_from_realm("remove_multi_target", "remove_realm_a")
+        .await;
+
+    assert!(
+        result.is_err(),
+        "Expected an error removing a realm from an admin that also belongs to a foreign realm"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains("403"), "Expected HTTP 403, got: {msg}");
+    info!("remove_admin_from_realm correctly denied touching a foreign-co-owned admin");
 
     ctx.stop_server().await
 }
@@ -758,10 +855,11 @@ async fn test_update_admin_by_realm_admin() -> AuthResult<()> {
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "update_ra_realm").await?;
 
-    let super_admin = authenticate_as_admin(&ctx).await?;
+    // "update_ra_realm" is already claimed, so only its own realm admin (not
+    // the super admin) may create further admins scoped to it.
     let mut admin = test_admin("update_ra_target");
     admin.realms = vec!["update_ra_realm".to_string()];
-    super_admin.create_admin_as_super_admin(&admin).await?;
+    realm_admin.create_admin_as_super_admin(&admin).await?;
 
     // Realm admin updates the user (realm membership must be preserved in the body)
     let mut update_body = test_admin("update_ra_target");
@@ -782,21 +880,19 @@ async fn test_update_admin_by_realm_admin_forbidden_multi_realm() -> AuthResult<
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    // create_and_authenticate_realm_admin creates "update_multi_ra_realm"
-    let realm_admin = create_and_authenticate_realm_admin(&ctx, "update_multi_ra_realm").await?;
-
-    let super_admin = authenticate_as_admin(&ctx).await?;
-    super_admin
-        .create_realm_as_super_admin(&test_realm("another_realm_z"))
-        .await?;
+    let realm_admin = create_multi_realm_target_and_foreign_realm_admin(
+        &ctx,
+        "update_multi_ra_realm",
+        "another_realm_z",
+        "update_multi_realm_target",
+    )
+    .await?;
 
     let mut admin = test_admin("update_multi_realm_target");
     admin.realms = vec![
         "update_multi_ra_realm".to_string(),
         "another_realm_z".to_string(),
     ];
-    super_admin.create_admin_as_super_admin(&admin).await?;
-
     let result = realm_admin
         .update_admin_as_super_admin("update_multi_realm_target", &admin)
         .await;
@@ -824,10 +920,11 @@ async fn test_add_admin_to_realm_prevents_super_admin_escalation() -> AuthResult
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "escal_realm").await?;
 
     // The victim user currently belongs only to the realm the admin controls.
-    let super_admin = authenticate_as_admin(&ctx).await?;
+    // "escal_realm" is already claimed, so only its own realm admin (not the
+    // super admin) may create further admins scoped to it.
     let mut victim = test_admin("escal_victim");
     victim.realms = vec!["escal_realm".to_string()];
-    super_admin.create_admin_as_super_admin(&victim).await?;
+    realm_admin.create_admin_as_super_admin(&victim).await?;
 
     // Attempt to add the victim to the super-admin realm "_".
     let result = realm_admin
@@ -885,10 +982,11 @@ async fn test_update_admin_cannot_escalate_via_body() -> AuthResult<()> {
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "body_escal_realm").await?;
 
-    let super_admin = authenticate_as_admin(&ctx).await?;
+    // "body_escal_realm" is already claimed, so only its own realm admin (not
+    // the super admin) may create further admins scoped to it.
     let mut victim = test_admin("body_escal_victim");
     victim.realms = vec!["body_escal_realm".to_string()];
-    super_admin.create_admin_as_super_admin(&victim).await?;
+    realm_admin.create_admin_as_super_admin(&victim).await?;
 
     // Craft a body that would silently promote the user to super admin.
     let mut escalated_body = test_admin("body_escal_victim");
@@ -924,9 +1022,11 @@ async fn test_update_admin_cannot_add_foreign_realm_via_body() -> AuthResult<()>
         .create_realm_as_super_admin(&test_realm("foreign_realm_q"))
         .await?;
 
+    // "body_foreign_realm" is already claimed, so only its own realm admin
+    // (not the super admin) may create further admins scoped to it.
     let mut victim = test_admin("body_foreign_victim");
     victim.realms = vec!["body_foreign_realm".to_string()];
-    super_admin.create_admin_as_super_admin(&victim).await?;
+    realm_admin.create_admin_as_super_admin(&victim).await?;
 
     // Body quietly adds a realm the admin doesn't control.
     let mut sneaky_body = test_admin("body_foreign_victim");
@@ -968,10 +1068,11 @@ async fn test_realm_admin_self_removal_revokes_access() -> AuthResult<()> {
 
     let realm_admin = create_and_authenticate_realm_admin(&ctx, "self_remove_realm").await?;
 
-    let super_admin = authenticate_as_admin(&ctx).await?;
+    // "self_remove_realm" is already claimed, so only its own realm admin
+    // (not the super admin) may create further admins scoped to it.
     let mut target = test_admin("self_remove_target");
     target.realms = vec!["self_remove_realm".to_string()];
-    super_admin.create_admin_as_super_admin(&target).await?;
+    realm_admin.create_admin_as_super_admin(&target).await?;
 
     // The realm admin user object is named "{realm_id}_radmin_user" by the helper.
     let ra_admin_id = "self_remove_realm_radmin_user";

@@ -1,7 +1,7 @@
 use crate::{
     AuthError,
     database::Database,
-    server::endpoints::admin_from_request,
+    server::endpoints::{admin_from_request, can_manage_realm},
     totp::{create_totp_secret, realm_params_to_totp_params},
 };
 use actix_web::{
@@ -29,7 +29,7 @@ pub async fn totp_generate(
     let realm_id = realm.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm_id) {
+    if !can_manage_realm(&requester, &realm_id, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its TOTP settings",
             realm_id
@@ -84,7 +84,7 @@ pub async fn totp_verify(
     let realm_id = realm.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm_id) {
+    if !can_manage_realm(&requester, &realm_id, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its TOTP settings",
             realm_id
@@ -145,7 +145,7 @@ pub async fn totp_disable(
     let (realm_id, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !requester.can_administer_realm(&realm_id) {
+    if !can_manage_realm(&requester, &realm_id, &database).await? {
         return Err(AuthError::Forbidden(format!(
             "Only administrators of realm '{}' can manage its TOTP settings",
             realm_id
