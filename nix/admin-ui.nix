@@ -30,8 +30,29 @@ let
 
     # pnpm.fetchDeps hardcodes its own nativeBuildInputs — nodejs is not
     # among them. Put nodejs on PATH to fix it.
+    #
+    # TEMPORARY DIAGNOSTIC (round 2): the PATH fix above removed the
+    # "node: command not found" warning but ERR_PNPM_LOCKFILE_CONFIG_MISMATCH
+    # on "overrides" still fires. Patch a writable copy of pnpm.cjs to print
+    # the exact lockfile-vs-current overrides objects right before pnpm
+    # compares them, so we can see what's actually different instead of
+    # guessing. Remove this whole block once understood.
     prePnpmInstall = ''
       export PATH="${pkgs.nodejs_22}/bin:$PATH"
+
+      PNPM_REAL=$(readlink -f "$(command -v pnpm)")
+      PNPM_LIBEXEC=$(dirname "$(dirname "$PNPM_REAL")")
+      WORKDIR=$(mktemp -d)
+      cp -r "$PNPM_LIBEXEC" "$WORKDIR/pnpm"
+      chmod -R u+w "$WORKDIR/pnpm"
+      PATCHED_CJS="$WORKDIR/pnpm/dist/pnpm.cjs"
+      sed -i "/createOverridesMapFromParsed)(opts.parsedOverrides)/a console.error('DEBUG_OVERRIDES lockfile=' + JSON.stringify(ctx.wantedLockfile.overrides) + ' current=' + JSON.stringify(overridesMap) + ' parsedOverrides=' + JSON.stringify(opts.parsedOverrides));" "$PATCHED_CJS"
+      mkdir -p "$WORKDIR/bin"
+      printf '#!/bin/sh\nexec node "%s" "$@"\n' "$PATCHED_CJS" > "$WORKDIR/bin/pnpm"
+      chmod +x "$WORKDIR/bin/pnpm"
+      export PATH="$WORKDIR/bin:$PATH"
+      echo "DEBUG using patched pnpm at: $WORKDIR/bin/pnpm"
+      grep -c "DEBUG_OVERRIDES" "$PATCHED_CJS" || echo "DEBUG patch did not match!"
     '';
 
     hash =
