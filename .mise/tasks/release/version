@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Print the workspace version from Cargo.toml (delegates to .github/scripts/release/get_version.sh)"
+set -euo pipefail
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/release/get_version.sh" "$@"

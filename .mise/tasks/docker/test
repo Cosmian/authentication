@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Build, load, and smoke-test the Docker image (delegates to .github/scripts/nix.sh docker --load --test)"
+set -euo pipefail
+source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
+
+print_status "Building, loading, and testing Docker image"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" docker --load --test "$@"

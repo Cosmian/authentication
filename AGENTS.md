@@ -34,6 +34,30 @@ cargo run --bin auth_verifier -- auth_verifier.toml
 curl -s http://localhost:8443/health
 ```
 
+### Task runner (`mise`)
+
+Nix-driven test/package/docker scripts are also reachable through
+[mise](https://mise.jdx.dev) task shortcuts (`mise.toml`, `.mise/tasks/`).
+These delegate to the same `.github/scripts/*` used directly above and by
+CI — they add discoverability, not new behavior. Run `mise tasks` for the
+full list.
+
+```bash
+mise run test:sqlite                        # == bash .github/scripts/nix.sh test sqlite
+mise run test:psql
+mise run package -- --link static deb       # == bash .github/scripts/nix.sh --link static package deb
+mise run docker:load
+mise run docker:test
+mise run ui:lint                            # admin-ui: eslint + prettier + tsc
+mise run ui:test                            # admin-ui: unit tests
+mise run ui:build
+mise run ui:e2e
+```
+
+`mise` only pins the admin-ui Node/pnpm toolchain (`[tools]` in `mise.toml`).
+Rust stays pinned in `rust-toolchain.toml`, and Nix remains the actual build
+engine — `mise` does not replace either.
+
 ### Pre-commit hooks
 
 Always install and never bypass pre-commit hooks:
@@ -84,6 +108,10 @@ nix/                Nix build expressions and expected vendor hashes
 default.nix         — top-level Nix derivation (pins nixpkgs, builds auth-verifier)
 shell.nix           — Nix development shell
 Cargo.toml          — workspace manifest
+mise.toml           — mise task runner config ([tools], [task_config])
+.mise/
+  lib/common.sh     — shared bash helpers for mise tasks
+  tasks/            — task entrypoints (test/, package, docker/, release/, hashes/, ui/)
 ```
 
 ---

@@ -12,6 +12,11 @@ and testing against a real backend.
 | Rust toolchain | Managed by `rust-toolchain.toml` at the workspace root — `rustup` installs the pinned version automatically |
 | pnpm           | `npm install -g pnpm` or see [pnpm.io](https://pnpm.io/installation)                                        |
 
+Alternatively, install [mise](https://mise.jdx.dev) at the workspace root and
+run `mise install` — it pins the Node/pnpm versions declared in `mise.toml`
+and exposes `mise run ui:lint`, `ui:test`, `ui:build`, `ui:e2e` as shortcuts
+for the `pnpm` commands below.
+
 ---
 
 ## 1. Build the auth server

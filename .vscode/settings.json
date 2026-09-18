@@ -1,5 +1,9 @@
 {
     "cSpell.words": [
         "cosmian"
-    ]
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "mise": true,
+        "git check-ignore": true
+    }
 }

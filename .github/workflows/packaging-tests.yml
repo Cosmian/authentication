@@ -222,6 +222,11 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          version: 2026.9.2
+
       - name: Download package artifacts
         uses: actions/download-artifact@v8
         with:
@@ -323,5 +328,5 @@ jobs:
             sudo journalctl -u cosmian_auth_verifier --no-pager -n 100 || true
             exit 1
           fi
-          bash .github/scripts/test/verify_running_ui.sh https://127.0.0.1:8080
+          mise run test:verify-ui -- https://127.0.0.1:8080
           sudo systemctl stop cosmian_auth_verifier

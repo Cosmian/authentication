@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="Lint and format-check the admin UI (eslint + prettier + tsc)"
+set -euo pipefail
+cd "${MISE_CONFIG_ROOT}/admin-ui"
+
+pnpm eslint . --max-warnings 0
+pnpm prettier . --check
+pnpm tsc -b --noEmit

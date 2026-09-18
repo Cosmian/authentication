@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Functional tests for a running auth_verifier Docker image (set DOCKER_IMAGE_NAME env)"
+set -euo pipefail
+source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
+
+print_status "Testing Docker image ${DOCKER_IMAGE_NAME:-cosmian-auth-verifier:latest}"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/test/test_docker_image.sh" "$@"

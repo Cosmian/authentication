@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Verify a running server's admin UI is served correctly. Usage: mise run test:verify-ui -- [BASE_URL]"
+set -euo pipefail
+source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
+
+print_status "Verifying admin UI"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/test/verify_running_ui.sh" "$@"
