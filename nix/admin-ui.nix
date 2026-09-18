@@ -28,6 +28,27 @@ let
       filter = sourceFilter;
     };
 
+    # TEMPORARY DIAGNOSTIC — remove once ERR_PNPM_LOCKFILE_CONFIG_MISMATCH is understood.
+    # Dumps exactly what pnpm sees inside the sandbox right before the frozen install.
+    prePnpmInstall = ''
+      echo "=== admin-ui pnpm diagnostic ==="
+      pnpm --version || true
+      node --version || true
+      whoami || true
+      id || true
+      echo "--- package.json pnpm.overrides ---"
+      sed -n '/"pnpm"/,/^    }/p' package.json
+      echo "--- pnpm-lock.yaml overrides block ---"
+      sed -n '/^overrides:/,/^$/p' pnpm-lock.yaml
+      echo "--- pnpm-lock.yaml settings block ---"
+      sed -n '/^settings:/,/^$/p' pnpm-lock.yaml
+      echo "--- pnpm-workspace.yaml ---"
+      cat pnpm-workspace.yaml || true
+      echo "--- env (filtered) ---"
+      env | sort | grep -Ei 'npm|node|pnpm|home|registry|lang|lc_' || true
+      echo "=== end diagnostic ==="
+    '';
+
     hash =
       let
         platformSuffix =
