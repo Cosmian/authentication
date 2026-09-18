@@ -31,12 +31,13 @@ let
     # pnpm.fetchDeps hardcodes its own nativeBuildInputs — nodejs is not
     # among them. Put nodejs on PATH to fix it.
     #
-    # TEMPORARY DIAGNOSTIC (round 2): the PATH fix above removed the
-    # "node: command not found" warning but ERR_PNPM_LOCKFILE_CONFIG_MISMATCH
-    # on "overrides" still fires. Patch a writable copy of pnpm.cjs to print
-    # the exact lockfile-vs-current overrides objects right before pnpm
-    # compares them, so we can see what's actually different instead of
-    # guessing. Remove this whole block once understood.
+    # TEMPORARY DIAGNOSTIC (round 3): confirmed `ctx.wantedLockfile.overrides`
+    # is undefined in the real Nix sandbox while `package.json`'s overrides
+    # parse fine — reproduced neither with a pristine npm-published pnpm nor
+    # by removing pnpm's dist/worker.js locally. Dump more of wantedLockfile
+    # (keys, lockfileVersion, settings, importers count) to see whether the
+    # whole object is malformed or just the `overrides` field specifically.
+    # Remove this whole block once understood.
     prePnpmInstall = ''
       export PATH="${pkgs.nodejs_22}/bin:$PATH"
 
@@ -46,7 +47,7 @@ let
       cp -r "$PNPM_LIBEXEC" "$WORKDIR/pnpm"
       chmod -R u+w "$WORKDIR/pnpm"
       PATCHED_CJS="$WORKDIR/pnpm/dist/pnpm.cjs"
-      sed -i "/createOverridesMapFromParsed)(opts.parsedOverrides)/a console.error('DEBUG_OVERRIDES lockfile=' + JSON.stringify(ctx.wantedLockfile.overrides) + ' current=' + JSON.stringify(overridesMap) + ' parsedOverrides=' + JSON.stringify(opts.parsedOverrides));" "$PATCHED_CJS"
+      sed -i "/createOverridesMapFromParsed)(opts.parsedOverrides)/a console.error('DEBUG_OVERRIDES lockfile=' + JSON.stringify(ctx.wantedLockfile.overrides) + ' current=' + JSON.stringify(overridesMap)); console.error('DEBUG_WANTEDLOCKFILE keys=' + JSON.stringify(Object.keys(ctx.wantedLockfile)) + ' lockfileVersion=' + JSON.stringify(ctx.wantedLockfile.lockfileVersion) + ' settings=' + JSON.stringify(ctx.wantedLockfile.settings) + ' importersCount=' + Object.keys(ctx.wantedLockfile.importers || {}).length); console.error('DEBUG_CTX keys=' + JSON.stringify(Object.keys(ctx)) + ' lockfileDir=' + JSON.stringify(ctx.lockfileDir) + ' wantedLockfileIsAutofixable=' + JSON.stringify(ctx.existsNonEmptyWantedLockfile));" "$PATCHED_CJS"
       mkdir -p "$WORKDIR/bin"
       printf '#!/bin/sh\nexec node "%s" "$@"\n' "$PATCHED_CJS" > "$WORKDIR/bin/pnpm"
       chmod +x "$WORKDIR/bin/pnpm"
