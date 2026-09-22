@@ -92,7 +92,7 @@ components:
     AuthScheme:
       type: string
       description: Wire representation of the authentication scheme.
-      enum: [up, jwt, cc, f2, dc]
+      enum: [up, jwt, cc, f2, dc, sa]
 
     AuthenticatedClientScheme:
       type: object
@@ -103,7 +103,7 @@ components:
           example: alice
         auth_scheme:
           type: string
-          enum: [UsernamePassword, Jwt, ClientCertificate, Fido2, DigitalCredentials]
+          enum: [UsernamePassword, Jwt, ClientCertificate, Fido2, DigitalCredentials, Saml]
       example:
         username: alice
         auth_scheme: UsernamePassword
@@ -171,9 +171,75 @@ components:
           default: 30
           example: 30
 
+    SamlParams:
+      type: object
+      required: [sp_entity_id, sp_acs_url, default_return_url]
+      properties:
+        idp_entity_id:
+          type: string
+          description: IdP entityID (the required <Issuer> on responses); server-derived from metadata_xml.
+        idp_sso_url:
+          type: string
+          format: uri
+          description: IdP HTTP-Redirect Single Sign-On Service URL; server-derived from metadata_xml.
+        idp_signing_certificates:
+          type: array
+          items:
+            type: string
+          description: PEM-encoded IdP signing certificate(s); server-derived from metadata_xml.
+        idp_nameid_format:
+          type: string
+          nullable: true
+          description: Expected/requested <NameID> Format URI.
+        metadata_xml:
+          type: string
+          nullable: true
+          description: Raw IdP metadata XML supplied by the admin; the IdP fields above are derived from it.
+        sp_entity_id:
+          type: string
+          description: This SP's entityID, advertised in published SP metadata.
+        sp_acs_url:
+          type: string
+          format: uri
+          description: This SP's Assertion Consumer Service URL (/saml/{realm_id}/acs).
+        sp_signing_key:
+          type: string
+          nullable: true
+          description: Reference to the server-configured AuthnRequest signing key; unset uses the server default.
+        subject_attribute:
+          type: string
+          nullable: true
+          description: SAML attribute whose single value becomes the session subject; when unset the <NameID> is used.
+        normalize_subject_case:
+          type: boolean
+          default: false
+          description: Lowercase the resolved subject before use.
+        role_attribute:
+          type: string
+          nullable: true
+          description: SAML attribute whose values populate the JWT roles claim (pass-through).
+        attribute_claim_map:
+          type: object
+          additionalProperties:
+            type: string
+          description: Allowlist mapping SAML attribute name to session JWT extra-claim name.
+        allowed_return_origins:
+          type: array
+          items:
+            type: string
+          description: Allowed return-URL origins (scheme://host[:port]); any path under an approved origin is permitted.
+        default_return_url:
+          type: string
+          format: uri
+          description: Default post-login redirect URL, used when no return_to is supplied.
+
     RealmAuthParams:
       type: object
       properties:
+        saml_params:
+          allOf:
+            - $ref: '#/components/schemas/SamlParams'
+          nullable: true
         jwt_params:
           allOf:
             - $ref: '#/components/schemas/JwtParams'

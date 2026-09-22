@@ -24,11 +24,44 @@ export interface TotpRealmParams {
     step?: number;
 }
 
+/** SAML 2.0 Service Provider parameters for a realm (SP-initiated Web Browser SSO) */
+export interface SamlParams {
+    /** IdP entityID; server-derived from metadata_xml. */
+    idp_entity_id: string;
+    /** IdP HTTP-Redirect Single Sign-On Service URL; server-derived from metadata_xml. */
+    idp_sso_url: string;
+    /** PEM-encoded IdP signing certificate(s); server-derived from metadata_xml. */
+    idp_signing_certificates: string[];
+    /** Expected/requested <NameID> Format URI. */
+    idp_nameid_format?: string;
+    /** Raw IdP metadata XML supplied by the admin; the IdP fields above are derived from it. */
+    metadata_xml?: string;
+    /** This SP's entityID, advertised in published SP metadata. */
+    sp_entity_id: string;
+    /** This SP's Assertion Consumer Service URL (/saml/{realm_id}/acs). */
+    sp_acs_url: string;
+    /** Reference to the server-configured AuthnRequest signing key; unset = server default. */
+    sp_signing_key?: string;
+    /** SAML attribute whose single value becomes the subject; when unset the <NameID> is used. */
+    subject_attribute?: string;
+    /** Lowercase the resolved subject before use. */
+    normalize_subject_case: boolean;
+    /** SAML attribute whose values populate the JWT roles claim (pass-through). */
+    role_attribute?: string;
+    /** Allowlist: SAML attribute name → session JWT extra-claim name. */
+    attribute_claim_map: Record<string, string>;
+    /** Allowed return-URL origins (scheme://host[:port]); any path under an approved origin. */
+    allowed_return_origins: string[];
+    /** Default post-login redirect URL, used when no return_to is supplied. */
+    default_return_url: string;
+}
+
 /** Authentication parameters for a realm */
 export interface RealmAuthParams {
     jwt_params: JwtParams | null;
     username_password_params: UsernamePasswordParams | null;
     totp_params: TotpRealmParams | null;
+    saml_params: SamlParams | null;
 }
 
 /** Realm configuration */
@@ -40,7 +73,7 @@ export interface Realm {
 }
 
 /** Authentication scheme identifiers */
-export type AuthScheme = "up" | "jwt" | "cc" | "f2" | "dc";
+export type AuthScheme = "up" | "jwt" | "cc" | "f2" | "dc" | "sa";
 
 /** Admin account */
 export interface Admin {

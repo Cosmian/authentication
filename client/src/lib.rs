@@ -56,4 +56,4 @@ pub use models::{
 };
 
 mod params;
-pub use params::{IdpParams, JwtParams, RealmAuthParams, TotpRealmParams, UsernamePasswordParams};
+pub use params::{IdpParams, JwtParams, RealmAuthParams, SamlParams, TotpRealmParams, UsernamePasswordParams};

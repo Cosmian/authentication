@@ -9,3 +9,6 @@ pub use totp_params::TotpRealmParams;
 
 mod realm_auth_params;
 pub use realm_auth_params::RealmAuthParams;
+
+mod saml_params;
+pub use saml_params::SamlParams;

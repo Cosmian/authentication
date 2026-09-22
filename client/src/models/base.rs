@@ -134,6 +134,9 @@ pub enum AuthScheme {
 
     #[serde(rename = "cc")]
     ClientCertificate,
+
+    #[serde(rename = "sa")]
+    Saml,
 }
 
 /// The Data of a Session stored in the session store.
