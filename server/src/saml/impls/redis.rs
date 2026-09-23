@@ -50,10 +50,9 @@ impl SamlRequestStore for RedisSamlRequestStore {
         })?;
         // TTL bounds the request lifetime; Redis purges it automatically once it lapses.
         let ttl = (request.expires_at - Utc::now().timestamp()).max(1);
-        let _: () = conn
-            .set_ex(&key, json, ttl as u64)
-            .await
-            .map_err(|e| AuthError::Generic(format!("Failed to store SAML pending request: {e}")))?;
+        let _: () = conn.set_ex(&key, json, ttl as u64).await.map_err(|e| {
+            AuthError::Generic(format!("Failed to store SAML pending request: {e}"))
+        })?;
         Ok(())
     }
 

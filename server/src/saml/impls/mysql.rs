@@ -169,7 +169,9 @@ impl SamlRequestStore for MySqlSamlRequestStore {
             .execute(&self.pool)
             .await
             .map_err(|e| {
-                AuthError::Generic(format!("Failed to delete expired SAML pending requests: {e}"))
+                AuthError::Generic(format!(
+                    "Failed to delete expired SAML pending requests: {e}"
+                ))
             })?;
         sqlx::query("DELETE FROM saml_seen_assertion WHERE expires_at <= ?")
             .bind(now)

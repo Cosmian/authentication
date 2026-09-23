@@ -161,7 +161,9 @@ impl SamlRequestStore for SqliteSamlRequestStore {
             .execute(&self.pool)
             .await
             .map_err(|e| {
-                AuthError::Generic(format!("Failed to delete expired SAML pending requests: {e}"))
+                AuthError::Generic(format!(
+                    "Failed to delete expired SAML pending requests: {e}"
+                ))
             })?;
         sqlx::query("DELETE FROM saml_seen_assertion WHERE expires_at <= ?")
             .bind(now)
@@ -232,7 +234,13 @@ mod tests {
         let taken = store.take_pending_request("id-1", "realm-b").await.unwrap();
         assert_eq!(taken, None);
         // And it remains available to its own realm (was not consumed by the wrong-realm attempt).
-        assert!(store.take_pending_request("id-1", "realm-a").await.unwrap().is_some());
+        assert!(
+            store
+                .take_pending_request("id-1", "realm-a")
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -244,7 +252,10 @@ mod tests {
             .await
             .unwrap();
 
-        let taken = store.take_pending_request("id-old", "realm-a").await.unwrap();
+        let taken = store
+            .take_pending_request("id-old", "realm-a")
+            .await
+            .unwrap();
         assert_eq!(taken, None);
     }
 
@@ -253,11 +264,26 @@ mod tests {
         let store = store().await;
         let future = Utc::now().timestamp() + 300;
 
-        assert!(store.record_assertion_id("assertion-1", future).await.unwrap());
+        assert!(
+            store
+                .record_assertion_id("assertion-1", future)
+                .await
+                .unwrap()
+        );
         // Second time the same id is seen → replay.
-        assert!(!store.record_assertion_id("assertion-1", future).await.unwrap());
+        assert!(
+            !store
+                .record_assertion_id("assertion-1", future)
+                .await
+                .unwrap()
+        );
         // A different id is still accepted.
-        assert!(store.record_assertion_id("assertion-2", future).await.unwrap());
+        assert!(
+            store
+                .record_assertion_id("assertion-2", future)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -272,17 +298,45 @@ mod tests {
             .store_pending_request(&sample("stale", "realm-a", now - 1))
             .await
             .unwrap();
-        store.record_assertion_id("assertion-fresh", now + 300).await.unwrap();
-        store.record_assertion_id("assertion-stale", now - 1).await.unwrap();
+        store
+            .record_assertion_id("assertion-fresh", now + 300)
+            .await
+            .unwrap();
+        store
+            .record_assertion_id("assertion-stale", now - 1)
+            .await
+            .unwrap();
 
         store.delete_expired().await.unwrap();
 
         // The fresh pending request survives; the stale one is gone.
-        assert!(store.take_pending_request("fresh", "realm-a").await.unwrap().is_some());
-        assert!(store.take_pending_request("stale", "realm-a").await.unwrap().is_none());
+        assert!(
+            store
+                .take_pending_request("fresh", "realm-a")
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            store
+                .take_pending_request("stale", "realm-a")
+                .await
+                .unwrap()
+                .is_none()
+        );
         // The stale assertion id was purged, so it is accepted again (no longer a known replay);
         // the fresh one is still remembered.
-        assert!(store.record_assertion_id("assertion-stale", now + 300).await.unwrap());
-        assert!(!store.record_assertion_id("assertion-fresh", now + 300).await.unwrap());
+        assert!(
+            store
+                .record_assertion_id("assertion-stale", now + 300)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .record_assertion_id("assertion-fresh", now + 300)
+                .await
+                .unwrap()
+        );
     }
 }

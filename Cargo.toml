@@ -36,6 +36,7 @@ redis = { version = "0.32.6", features = ["aio", "tokio-comp", "bb8"] }
 rand = { version = "0.9" }
 reqwest = { version = "0.13.2" }
 rustls = "0.23.35"
+samael = { version = "0.0.22", features = ["xmlsec"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.9"
