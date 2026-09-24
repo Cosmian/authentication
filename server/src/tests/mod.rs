@@ -32,6 +32,9 @@ mod sessions_api;
 
 mod sessions_store;
 
+#[cfg(feature = "saml")]
+mod saml_request_store;
+
 mod super_admin_api;
 
 mod test_server;

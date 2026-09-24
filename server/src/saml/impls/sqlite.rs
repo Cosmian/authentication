@@ -4,7 +4,7 @@ use sqlx::{Row, SqlitePool};
 
 use crate::{
     AuthError, AuthResult,
-    saml::request_store::{PendingSamlRequest, SamlRequestStore},
+    saml::request_store::{PendingSamlRequest, SamlRequestStore, ensure_unexpired},
 };
 
 /// SQLite-backed store for pending SAML `AuthnRequest`s and the assertion replay cache.
@@ -75,6 +75,7 @@ impl SqliteSamlRequestStore {
 #[async_trait]
 impl SamlRequestStore for SqliteSamlRequestStore {
     async fn store_pending_request(&self, request: &PendingSamlRequest) -> AuthResult<()> {
+        ensure_unexpired(request.expires_at, "SAML pending request")?;
         sqlx::query(
             r#"
             INSERT INTO saml_pending_request (request_id, realm_id, return_url, created_at, expires_at)
@@ -139,6 +140,7 @@ impl SamlRequestStore for SqliteSamlRequestStore {
     }
 
     async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool> {
+        ensure_unexpired(expires_at, "SAML assertion id")?;
         // INSERT OR IGNORE relies on the PRIMARY KEY: the first insert for an assertion id wins
         // (1 row affected); a replay collides and affects 0 rows. `rows_affected` therefore
         // distinguishes a newly-recorded id from a replay without a separate read.
@@ -173,170 +175,5 @@ impl SamlRequestStore for SqliteSamlRequestStore {
                 AuthError::Generic(format!("Failed to delete expired SAML assertion ids: {e}"))
             })?;
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
-
-    async fn store() -> SqliteSamlRequestStore {
-        // max_connections(1) keeps the single in-memory database alive across queries — each
-        // `sqlite::memory:` connection is otherwise its own separate database.
-        let pool = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .expect("in-memory SQLite pool");
-        let store = SqliteSamlRequestStore::new(pool);
-        store.init().await.expect("init schema");
-        store
-    }
-
-    fn sample(request_id: &str, realm_id: &str, expires_at: i64) -> PendingSamlRequest {
-        PendingSamlRequest {
-            request_id: request_id.to_string(),
-            realm_id: realm_id.to_string(),
-            return_url: "https://app.example.com/home".to_string(),
-            created_at: 1_000,
-            expires_at,
-        }
-    }
-
-    #[tokio::test]
-    async fn take_returns_the_stored_request_then_consumes_it() {
-        let store = store().await;
-        let future = Utc::now().timestamp() + 300;
-        store
-            .store_pending_request(&sample("id-1", "realm-a", future))
-            .await
-            .unwrap();
-
-        let taken = store.take_pending_request("id-1", "realm-a").await.unwrap();
-        assert_eq!(taken, Some(sample("id-1", "realm-a", future)));
-
-        // Single-use: a second take of the same request id finds nothing.
-        let again = store.take_pending_request("id-1", "realm-a").await.unwrap();
-        assert_eq!(again, None);
-    }
-
-    #[tokio::test]
-    async fn take_rejects_a_wrong_realm() {
-        let store = store().await;
-        let future = Utc::now().timestamp() + 300;
-        store
-            .store_pending_request(&sample("id-1", "realm-a", future))
-            .await
-            .unwrap();
-
-        // A request initiated by realm-a must not be consumable by realm-b's ACS.
-        let taken = store.take_pending_request("id-1", "realm-b").await.unwrap();
-        assert_eq!(taken, None);
-        // And it remains available to its own realm (was not consumed by the wrong-realm attempt).
-        assert!(
-            store
-                .take_pending_request("id-1", "realm-a")
-                .await
-                .unwrap()
-                .is_some()
-        );
-    }
-
-    #[tokio::test]
-    async fn take_rejects_an_expired_request() {
-        let store = store().await;
-        let past = Utc::now().timestamp() - 1;
-        store
-            .store_pending_request(&sample("id-old", "realm-a", past))
-            .await
-            .unwrap();
-
-        let taken = store
-            .take_pending_request("id-old", "realm-a")
-            .await
-            .unwrap();
-        assert_eq!(taken, None);
-    }
-
-    #[tokio::test]
-    async fn record_assertion_id_detects_replay() {
-        let store = store().await;
-        let future = Utc::now().timestamp() + 300;
-
-        assert!(
-            store
-                .record_assertion_id("assertion-1", future)
-                .await
-                .unwrap()
-        );
-        // Second time the same id is seen → replay.
-        assert!(
-            !store
-                .record_assertion_id("assertion-1", future)
-                .await
-                .unwrap()
-        );
-        // A different id is still accepted.
-        assert!(
-            store
-                .record_assertion_id("assertion-2", future)
-                .await
-                .unwrap()
-        );
-    }
-
-    #[tokio::test]
-    async fn delete_expired_purges_only_expired_entries() {
-        let store = store().await;
-        let now = Utc::now().timestamp();
-        store
-            .store_pending_request(&sample("fresh", "realm-a", now + 300))
-            .await
-            .unwrap();
-        store
-            .store_pending_request(&sample("stale", "realm-a", now - 1))
-            .await
-            .unwrap();
-        store
-            .record_assertion_id("assertion-fresh", now + 300)
-            .await
-            .unwrap();
-        store
-            .record_assertion_id("assertion-stale", now - 1)
-            .await
-            .unwrap();
-
-        store.delete_expired().await.unwrap();
-
-        // The fresh pending request survives; the stale one is gone.
-        assert!(
-            store
-                .take_pending_request("fresh", "realm-a")
-                .await
-                .unwrap()
-                .is_some()
-        );
-        assert!(
-            store
-                .take_pending_request("stale", "realm-a")
-                .await
-                .unwrap()
-                .is_none()
-        );
-        // The stale assertion id was purged, so it is accepted again (no longer a known replay);
-        // the fresh one is still remembered.
-        assert!(
-            store
-                .record_assertion_id("assertion-stale", now + 300)
-                .await
-                .unwrap()
-        );
-        assert!(
-            !store
-                .record_assertion_id("assertion-fresh", now + 300)
-                .await
-                .unwrap()
-        );
     }
 }

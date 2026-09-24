@@ -7,6 +7,18 @@ use actix_web::{
 use cosmian_logger::info;
 use std::sync::Arc;
 
+/// Without the `saml` feature there are no SAML endpoints and no way to validate SAML
+/// settings, so they are refused instead of being stored unvalidated.
+#[cfg(not(feature = "saml"))]
+fn reject_saml_params(realm: &Realm) -> Result<(), AuthError> {
+    if realm.auth_params.saml_params.is_some() {
+        return Err(AuthError::BadRequest(
+            "SAML is not enabled on this server (built without the `saml` feature)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Create a new realm
 ///
 /// # Arguments
@@ -29,6 +41,9 @@ pub async fn create_realm(
             "Only super admins can create realms".to_string(),
         ));
     }
+
+    #[cfg(not(feature = "saml"))]
+    reject_saml_params(&realm)?;
 
     info!(
         "create_realm: authenticated admin '{}' is creating realm '{}'",
@@ -105,6 +120,9 @@ pub async fn update_realm(
     let mut realm = realm.into_inner();
     // Ensure the ID in the path matches the ID in the payload
     realm.id = realm_id;
+
+    #[cfg(not(feature = "saml"))]
+    reject_saml_params(&realm)?;
 
     info!(
         "update_realm: '{}' is updating realm '{}'",

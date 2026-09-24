@@ -87,3 +87,31 @@ jobs:
       - name: Run unit tests
         run: |
           cargo test --workspace --lib -- --nocapture
+
+  cargo-saml:
+    name: Cargo SAML (Nix) - ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Bundled xmlsec (nix/xmlsec-static.nix) is only verified on Linux x86_64 so far.
+        runner: [ubuntu-24.04]
+
+    steps:
+      - name: Nix installation
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            connect-timeout = 15
+            stalled-download-timeout = 15
+            narinfo-cache-negative-ttl = 0
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Static analysis (saml feature)
+        run: nix-shell --run "cargo clippy --workspace --all-targets --features auth_verifier/saml -- -D warnings"
+
+      - name: Run unit tests (saml feature)
+        run: nix-shell --run "cargo test --workspace --lib --features auth_verifier/saml -- --nocapture"

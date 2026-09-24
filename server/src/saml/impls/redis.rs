@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::{
     AuthError, AuthResult,
-    saml::request_store::{PendingSamlRequest, SamlRequestStore},
+    saml::request_store::{PendingSamlRequest, SamlRequestStore, ensure_unexpired},
 };
 
 /// Redis/ValKey-backed store for pending SAML requests and the assertion replay cache.
@@ -49,8 +49,8 @@ impl SamlRequestStore for RedisSamlRequestStore {
             AuthError::Generic(format!("Failed to serialize SAML pending request: {e}"))
         })?;
         // TTL bounds the request lifetime; Redis purges it automatically once it lapses.
-        let ttl = (request.expires_at - Utc::now().timestamp()).max(1);
-        let _: () = conn.set_ex(&key, json, ttl as u64).await.map_err(|e| {
+        let ttl = ensure_unexpired(request.expires_at, "SAML pending request")?;
+        let _: () = conn.set_ex(&key, json, ttl).await.map_err(|e| {
             AuthError::Generic(format!("Failed to store SAML pending request: {e}"))
         })?;
         Ok(())
@@ -64,7 +64,8 @@ impl SamlRequestStore for RedisSamlRequestStore {
         let mut conn = self.conn().await?;
         let key = Self::pending_key(realm_id, request_id);
         // GETDEL is atomic fetch-and-delete (Redis 6.2+), enforcing single use; the realm is
-        // part of the key, and expired requests are already gone via TTL.
+        // part of the key. TTLs are whole seconds, so expiry is re-checked like the SQL
+        // backends do rather than trusting the TTL alone.
         let json: Option<String> = redis::cmd("GETDEL")
             .arg(&key)
             .query_async(&mut conn)
@@ -74,18 +75,21 @@ impl SamlRequestStore for RedisSamlRequestStore {
         match json {
             None => Ok(None),
             Some(json) => {
-                let request = serde_json::from_str(&json).map_err(|e| {
+                let request: PendingSamlRequest = serde_json::from_str(&json).map_err(|e| {
                     AuthError::Generic(format!("Failed to deserialize SAML pending request: {e}"))
                 })?;
+                if request.expires_at <= Utc::now().timestamp() {
+                    return Ok(None);
+                }
                 Ok(Some(request))
             }
         }
     }
 
     async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool> {
+        let ttl = ensure_unexpired(expires_at, "SAML assertion id")?;
         let mut conn = self.conn().await?;
         let key = Self::seen_key(assertion_id);
-        let ttl = (expires_at - Utc::now().timestamp()).max(1);
         // `SET key 1 NX EX ttl` sets only if the key is absent: a reply of OK means newly
         // recorded, a nil reply means the id was already seen (a replay). One atomic command.
         let set: Option<String> = redis::cmd("SET")

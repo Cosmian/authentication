@@ -21,6 +21,9 @@ database = ["dep:sqlx", "sqlx?/postgres", "sqlx?/sqlite", "sqlx?/mysql"]
 swagger-ui = []
 # Serve the pre-built admin UI static files at /admin-ui
 admin-ui = ["dep:actix-files"]
+# SAML 2.0 Service Provider (SP-initiated Web Browser SSO). Needs the bundled xmlsec C
+# library provided by the Nix shell (nix/xmlsec-static.nix).
+saml = ["dep:samael"]
 
 [dependencies]
 actix-cors = { workspace = true }
@@ -46,7 +49,7 @@ reqwest = { workspace = true, features = [
     "cookies",
 ] }
 rustls = { workspace = true, optional = true }
-samael = { workspace = true }
+samael = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

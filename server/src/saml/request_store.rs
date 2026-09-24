@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::AuthResult;
+use crate::{AuthError, AuthResult};
 
 /// A stored SP-initiated `<AuthnRequest>` awaiting its matching `<Response>`.
 ///
@@ -28,7 +29,8 @@ pub struct PendingSamlRequest {
 /// assertion IDs (for replay defense).
 #[async_trait]
 pub trait SamlRequestStore: Send + Sync {
-    /// Persist a pending SP-initiated `AuthnRequest`, keyed by its `request_id`.
+    /// Persist a pending SP-initiated `AuthnRequest`, keyed by its `request_id`. Fails if it
+    /// has already expired.
     async fn store_pending_request(&self, request: &PendingSamlRequest) -> AuthResult<()>;
 
     /// Atomically fetch and delete the pending request for `request_id` in `realm_id`,
@@ -41,10 +43,24 @@ pub trait SamlRequestStore: Send + Sync {
     ) -> AuthResult<Option<PendingSamlRequest>>;
 
     /// Record a consumed assertion ID for replay defense. Returns `true` if it was newly
-    /// recorded, `false` if it had already been seen (a replay). `expires_at` bounds how
-    /// long the entry must be retained (typically the assertion's `NotOnOrAfter` + skew).
+    /// recorded, `false` if it had already been seen (a replay). Fails if `expires_at` has
+    /// already passed. `expires_at` must cover every instant at which the assertion could still
+    /// be accepted (its `NotOnOrAfter` plus the validator's clock-skew allowance), because the
+    /// entry may be forgotten after that.
     async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool>;
 
     /// Delete expired pending requests and replay-cache entries. Called periodically.
     async fn delete_expired(&self) -> AuthResult<()>;
+}
+
+/// Returns the remaining lifetime in seconds (always >= 1), or an error if `expires_at` has
+/// passed: expired state is never stored, so no backend can hand it back or drop it early.
+pub(super) fn ensure_unexpired(expires_at: i64, what: &str) -> AuthResult<u64> {
+    let remaining = expires_at - Utc::now().timestamp();
+    if remaining <= 0 {
+        return Err(AuthError::Generic(format!(
+            "refusing to store an already-expired {what}"
+        )));
+    }
+    Ok(remaining as u64)
 }

@@ -4,7 +4,7 @@ use sqlx::{PgPool, Row, postgres::PgRow};
 
 use crate::{
     AuthError, AuthResult,
-    saml::request_store::{PendingSamlRequest, SamlRequestStore},
+    saml::request_store::{PendingSamlRequest, SamlRequestStore, ensure_unexpired},
 };
 
 /// PostgreSQL-backed store for pending SAML requests and the assertion replay cache.
@@ -95,6 +95,7 @@ fn row_to_pending(row: PgRow) -> AuthResult<PendingSamlRequest> {
 #[async_trait]
 impl SamlRequestStore for PostgresSamlRequestStore {
     async fn store_pending_request(&self, request: &PendingSamlRequest) -> AuthResult<()> {
+        ensure_unexpired(request.expires_at, "SAML pending request")?;
         sqlx::query(
             r#"
             INSERT INTO saml_pending_request (request_id, realm_id, return_url, created_at, expires_at)
@@ -138,6 +139,7 @@ impl SamlRequestStore for PostgresSamlRequestStore {
     }
 
     async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool> {
+        ensure_unexpired(expires_at, "SAML assertion id")?;
         // ON CONFLICT DO NOTHING: the first insert for an assertion id wins (1 row affected);
         // a replay conflicts and affects 0 rows.
         let result = sqlx::query(

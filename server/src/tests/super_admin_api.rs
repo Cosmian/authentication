@@ -204,6 +204,57 @@ async fn test_create_duplicate_realm_fails() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
+/// Without the `saml` feature, create and update must refuse SAML settings with a 400
+/// rather than store configuration that nothing can validate or use.
+#[cfg(not(feature = "saml"))]
+#[actix_web::test]
+async fn test_saml_params_rejected_without_saml_feature() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    let mut new_realm = test_realm("realm_with_saml");
+    new_realm.auth_params.saml_params = Some(crate::SamlParams::default());
+    let err = client
+        .create_realm_as_super_admin(&new_realm)
+        .await
+        .expect_err("Expected create_realm to refuse SAML settings");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400")),
+        "Expected a 400 Bad Request on create, got: {err:?}"
+    );
+
+    let mut existing = client.get_realm_as_super_admin(ADMIN_REALM).await?;
+    existing.auth_params.saml_params = Some(crate::SamlParams::default());
+    let err = client
+        .update_realm_as_super_admin(ADMIN_REALM, &existing)
+        .await
+        .expect_err("Expected update_realm to refuse SAML settings");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400")),
+        "Expected a 400 Bad Request on update, got: {err:?}"
+    );
+
+    assert!(
+        client
+            .get_realm_as_super_admin("realm_with_saml")
+            .await
+            .is_err(),
+        "The refused realm must not have been created"
+    );
+    assert!(
+        client
+            .get_realm_as_super_admin(ADMIN_REALM)
+            .await?
+            .auth_params
+            .saml_params
+            .is_none(),
+        "The refused update must not have been stored"
+    );
+
+    ctx.stop_server().await
+}
+
 // ── Authorization enforcement ────────────────────────────────────────────────
 
 /// A realm admin (non-super-admin) must not be able to update any realm (HTTP 403).
