@@ -33,6 +33,10 @@ mod sessions_api;
 mod sessions_store;
 
 #[cfg(feature = "saml")]
+mod saml_flow;
+#[cfg(feature = "saml")]
+pub mod saml_idp;
+#[cfg(feature = "saml")]
 mod saml_request_store;
 
 mod super_admin_api;

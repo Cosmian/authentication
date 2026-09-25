@@ -75,6 +75,17 @@ use std::{
     sync::{Arc, mpsc},
 };
 
+/// State for the `/saml` scope, present only when built with `saml` and `saml_sp_params` is set.
+#[cfg(feature = "saml")]
+type SamlScopeState = Option<Arc<crate::saml::SamlState>>;
+#[cfg(not(feature = "saml"))]
+type SamlScopeState = NoSaml;
+
+/// Placeholder for the SAML scope state in builds without the `saml` feature.
+#[cfg(not(feature = "saml"))]
+#[derive(Clone)]
+struct NoSaml;
+
 /// Build a `Cors` middleware for *admin* scopes.
 ///
 /// When `allowed_origins` is non-empty, only those origins are allowed, and
@@ -171,7 +182,7 @@ async fn prepare_auth_verifier(
     // Check the SAML signing key before anything else, so a bad key stops the server
     // instead of failing the first SAML login.
     #[cfg(feature = "saml")]
-    let _saml_sp_signing_key = params
+    let saml_sp_signing_key = params
         .saml_sp_params
         .as_ref()
         .map(crate::saml::load_sp_signing_key)
@@ -212,11 +223,29 @@ async fn prepare_auth_verifier(
         .stale_session_collector_config
         .clone()
         .unwrap_or_default();
+    #[cfg(feature = "saml")]
+    let saml_cleanup_interval = collector_config.cleanup_interval_seconds;
     let (session_store, collector_handle) = crate::session::create_session_store_with_collector(
         &session_store_params,
         collector_config,
     )
     .await?;
+
+    // SAML's pending requests and replay cache live next to the sessions.
+    #[cfg(feature = "saml")]
+    let saml_state: SamlScopeState = match saml_sp_signing_key {
+        Some(signing_key) => Some(Arc::new(
+            crate::saml::SamlState::start(
+                signing_key,
+                &session_store_params,
+                saml_cleanup_interval,
+            )
+            .await?,
+        )),
+        None => None,
+    };
+    #[cfg(not(feature = "saml"))]
+    let saml_state: SamlScopeState = NoSaml;
 
     let jwks_manager = JwksManager::new(params.proxy_params.as_ref()).await;
 
@@ -311,6 +340,7 @@ async fn prepare_auth_verifier(
             jwks_data.clone(),
             cert_jwt_config.clone(),
             cert_jwks_data.clone(),
+            saml_state.clone(),
         )
     });
     let http_server = http_server
@@ -373,6 +403,7 @@ fn build_app(
     jwks_data: Arc<JwksData>,
     cert_jwt_config: Option<Arc<JwtTokenConfig>>,
     cert_jwks_data: Option<Arc<JwksData>>,
+    saml_state: SamlScopeState,
 ) -> App<
     impl ServiceFactory<
         ServiceRequest,
@@ -393,6 +424,8 @@ fn build_app(
         server_params.login_rate_limit_per_second,
         server_params.login_rate_limit_burst,
     );
+    #[cfg(feature = "saml")]
+    let saml_rate_limit = login_rate_limit.clone();
 
     // Create an `App` instance and configure the passed data and the various scopes
     let app = App::new()
@@ -619,6 +652,24 @@ fn build_app(
         // bare 404 with an empty body; here we fail closed but *loudly*, with the
         // same `{"errors": [...]}` envelope every other endpoint uses.
         .default_service(web::route().to(unsupported_route));
+
+    // SAML browser endpoints: no CORS (top-level navigations and form posts only), and
+    // the same per-IP rate limit as `/login`.
+    #[cfg(feature = "saml")]
+    let app = match saml_state {
+        Some(state) => app.service(
+            web::scope("/saml")
+                .app_data(Data::from(state))
+                .app_data(web::FormConfig::default().limit(crate::saml::MAX_SAML_FORM_BYTES))
+                .wrap(saml_rate_limit)
+                .service(crate::saml::saml_login)
+                .service(crate::saml::saml_acs)
+                .service(crate::saml::saml_metadata),
+        ),
+        None => app,
+    };
+    #[cfg(not(feature = "saml"))]
+    let NoSaml = saml_state;
 
     #[cfg(feature = "admin-ui")]
     let app = {

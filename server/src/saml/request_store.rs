@@ -45,7 +45,7 @@ pub trait SamlRequestStore: Send + Sync {
     /// Record a consumed assertion ID for replay defense. Returns `true` if it was newly
     /// recorded, `false` if it had already been seen (a replay). Fails if `expires_at` has
     /// already passed. `expires_at` must cover every instant at which the assertion could still
-    /// be accepted (its `NotOnOrAfter` plus the validator's clock-skew allowance), because the
+    /// be accepted (for the ACS: its `IssueInstant` plus the accepted issue delay), because the
     /// entry may be forgotten after that.
     async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool>;
 

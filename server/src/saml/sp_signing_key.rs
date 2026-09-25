@@ -10,10 +10,6 @@ const MIN_RSA_BITS: u32 = 2048;
 
 /// This server's SAML SP signing key and the certificate published for it, checked to
 /// belong together.
-#[expect(
-    dead_code,
-    reason = "the SAML endpoints that sign with it are not implemented yet"
-)]
 pub(crate) struct SamlSpSigningKey {
     pub(crate) private_key: PKey<Private>,
     pub(crate) certificate: X509,

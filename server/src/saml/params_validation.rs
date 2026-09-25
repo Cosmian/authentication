@@ -19,7 +19,7 @@ use x509_cert::{
 use crate::{AuthError, AuthResult, SamlParams, reject_reserved_claim_names};
 
 const SAML2_PROTOCOL: &str = "urn:oasis:names:tc:SAML:2.0:protocol";
-const NAMEID_TRANSIENT: &str = "urn:oasis:names:tc:SAML:2.0:nameid-format:transient";
+pub(super) const NAMEID_TRANSIENT: &str = "urn:oasis:names:tc:SAML:2.0:nameid-format:transient";
 /// Largest IdP metadata accepted. Real single-IdP metadata is well under this; federation
 /// aggregates (thousands of IdPs) are not supported.
 const MAX_METADATA_BYTES: usize = 256 * 1024;
@@ -287,12 +287,13 @@ fn validate_return_urls(params: &SamlParams) -> AuthResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::helpers::{test_idp_certificate_base64, test_idp_metadata, test_saml_params};
+    use crate::tests::helpers::{
+        TEST_IDP_CERTIFICATE_PEM, test_idp_certificate_base64, test_idp_metadata, test_saml_params,
+    };
     use std::collections::HashMap;
     use x509_cert::der::DecodePem;
 
     const REALM: &str = "acme";
-    const TEST_CERT_PEM: &str = include_str!("../tests/certificates/ec/auth.server.cert.pem");
 
     fn valid_metadata() -> String {
         test_idp_metadata(HTTP_REDIRECT_BINDING, "https://idp.example.com/sso", "")
@@ -326,7 +327,8 @@ mod tests {
         assert_eq!(params.idp_signing_certificates.len(), 1);
         let reparsed = Certificate::from_pem(params.idp_signing_certificates[0].as_bytes())
             .expect("stored certificate is valid PEM");
-        let original = Certificate::from_pem(TEST_CERT_PEM.as_bytes()).expect("test certificate");
+        let original =
+            Certificate::from_pem(TEST_IDP_CERTIFICATE_PEM.as_bytes()).expect("test certificate");
         assert_eq!(reparsed, original);
     }
 

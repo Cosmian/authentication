@@ -28,21 +28,29 @@ pub fn test_realm(id: &str) -> Realm {
     }
 }
 
-/// Base64 DER of the EC test server certificate, as it appears in an `<X509Certificate>`.
+/// entityID of the test IdP (see `tests::saml_idp::TestIdp`).
+#[cfg(feature = "saml")]
+pub const TEST_IDP_ENTITY_ID: &str = "https://idp.example.com/metadata";
+
+/// Signing certificate of the test IdP (see `tests::saml_idp::TestIdp`).
+#[cfg(feature = "saml")]
+pub const TEST_IDP_CERTIFICATE_PEM: &str = include_str!("certificates/rsa/auth.user2.cert.pem");
+
+/// Base64 DER of the test IdP certificate, as it appears in an `<X509Certificate>`.
 #[cfg(feature = "saml")]
 pub fn test_idp_certificate_base64() -> String {
-    include_str!("certificates/ec/auth.server.cert.pem")
+    TEST_IDP_CERTIFICATE_PEM
         .lines()
         .filter(|line| !line.starts_with("-----"))
         .collect()
 }
 
-/// SAML 2.0 IdP metadata signing with the EC test certificate; `extra` is inserted into the
-/// `IDPSSODescriptor` (e.g. a `NameIDFormat`).
+/// SAML 2.0 metadata of the test IdP; `extra` is inserted into the `IDPSSODescriptor`
+/// (e.g. a `NameIDFormat`).
 #[cfg(feature = "saml")]
 pub fn test_idp_metadata(sso_binding: &str, sso_url: &str, extra: &str) -> String {
     format!(
-        r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="https://idp.example.com/metadata">
+        r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="{TEST_IDP_ENTITY_ID}">
   <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
     <md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{cert}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>
     {extra}

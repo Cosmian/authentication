@@ -13,6 +13,17 @@ pub(crate) use params_validation::validate_saml_params;
 mod sp_signing_key;
 pub(crate) use sp_signing_key::load_sp_signing_key;
 
+mod response_validation;
+
+mod identity_mapping;
+
+mod authn_request;
+
+mod sp_metadata;
+
+mod endpoints;
+pub(crate) use endpoints::{MAX_SAML_FORM_BYTES, SamlState, saml_acs, saml_login, saml_metadata};
+
 #[cfg(test)]
 mod tests {
     use samael::crypto::{CertificateDer, Crypto, CryptoProvider};

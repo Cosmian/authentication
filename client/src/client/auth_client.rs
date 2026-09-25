@@ -361,6 +361,29 @@ impl AuthClient {
         let v: Version = self.get("/public/version").await?;
         Ok(v.version)
     }
+
+    /// Fetch this server's SAML SP metadata XML for `realm_id` (`GET /saml/{realm_id}/metadata`),
+    /// to import into the realm's IdP. The login and ACS endpoints are browser-only.
+    pub async fn get_saml_metadata(&self, realm_id: &str) -> AuthResult<String> {
+        let url = format!("{}/saml/{}/metadata", self.base_url, realm_id);
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| AuthError::Generic(format!("GET request failed: {e}")))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|e| AuthError::Generic(format!("failed to read the response body: {e}")))?;
+        if !status.is_success() {
+            return Err(AuthError::FailedHttpStatus(format!(
+                "Request failed with status {status}: {body}"
+            )));
+        }
+        Ok(body)
+    }
 }
 
 // Realm Management API

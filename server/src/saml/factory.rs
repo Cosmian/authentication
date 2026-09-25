@@ -1,5 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
+use cosmian_logger::error;
+
 use crate::{
     AuthError, AuthResult,
     saml::{
@@ -80,4 +82,21 @@ pub async fn create_saml_request_store(
             Ok(Arc::new(RedisSamlRequestStore::new(client)))
         }
     }
+}
+
+/// Periodically purge expired pending requests and replay-cache entries (a no-op on Redis,
+/// which expires them itself).
+pub(crate) fn start_saml_request_store_cleanup(
+    store: Arc<dyn SamlRequestStore>,
+    interval_seconds: u64,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut timer = tokio::time::interval(Duration::from_secs(interval_seconds.max(1)));
+        loop {
+            timer.tick().await;
+            if let Err(e) = store.delete_expired().await {
+                error!("Failed to purge expired SAML requests: {e}");
+            }
+        }
+    })
 }
