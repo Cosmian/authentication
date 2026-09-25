@@ -7,6 +7,12 @@ pub use impls::SqliteSamlRequestStore;
 mod factory;
 pub use factory::create_saml_request_store;
 
+mod params_validation;
+pub(crate) use params_validation::validate_saml_params;
+
+mod sp_signing_key;
+pub(crate) use sp_signing_key::load_sp_signing_key;
+
 #[cfg(test)]
 mod tests {
     use samael::crypto::{CertificateDer, Crypto, CryptoProvider};

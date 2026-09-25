@@ -1,4 +1,5 @@
 use crate::server::endpoints::{admin_from_request, can_manage_realm};
+use crate::server::parameters::ServerParams;
 use crate::{AuthError, database::Database, models::Realm};
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -7,10 +8,26 @@ use actix_web::{
 use cosmian_logger::info;
 use std::sync::Arc;
 
+/// Validate a realm's SAML settings and fill in the IdP fields from its metadata. SAML
+/// realms need the server's SP signing key, so they are refused while none is configured.
+#[cfg(feature = "saml")]
+fn check_saml_params(realm: &mut Realm, server_params: &ServerParams) -> Result<(), AuthError> {
+    let Some(params) = realm.auth_params.saml_params.as_mut() else {
+        return Ok(());
+    };
+    if server_params.saml_sp_params.is_none() {
+        return Err(AuthError::BadRequest(
+            "SAML needs a server signing key: set `saml_sp_params` in the server configuration"
+                .to_string(),
+        ));
+    }
+    crate::saml::validate_saml_params(params, &realm.id)
+}
+
 /// Without the `saml` feature there are no SAML endpoints and no way to validate SAML
 /// settings, so they are refused instead of being stored unvalidated.
 #[cfg(not(feature = "saml"))]
-fn reject_saml_params(realm: &Realm) -> Result<(), AuthError> {
+fn check_saml_params(realm: &mut Realm, _server_params: &ServerParams) -> Result<(), AuthError> {
     if realm.auth_params.saml_params.is_some() {
         return Err(AuthError::BadRequest(
             "SAML is not enabled on this server (built without the `saml` feature)".to_string(),
@@ -32,8 +49,9 @@ pub async fn create_realm(
     req: HttpRequest,
     realm: Json<Realm>,
     database: Data<Arc<dyn Database>>,
+    server_params: Data<Arc<ServerParams>>,
 ) -> Result<HttpResponse, AuthError> {
-    let realm = realm.into_inner();
+    let mut realm = realm.into_inner();
     let requester = admin_from_request(&req)?;
 
     if !requester.is_super_admin() {
@@ -42,8 +60,7 @@ pub async fn create_realm(
         ));
     }
 
-    #[cfg(not(feature = "saml"))]
-    reject_saml_params(&realm)?;
+    check_saml_params(&mut realm, &server_params)?;
 
     info!(
         "create_realm: authenticated admin '{}' is creating realm '{}'",
@@ -106,6 +123,7 @@ pub async fn update_realm(
     id: Path<String>,
     realm: Json<Realm>,
     database: Data<Arc<dyn Database>>,
+    server_params: Data<Arc<ServerParams>>,
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = id.into_inner();
     let requester = admin_from_request(&req)?;
@@ -121,8 +139,7 @@ pub async fn update_realm(
     // Ensure the ID in the path matches the ID in the payload
     realm.id = realm_id;
 
-    #[cfg(not(feature = "saml"))]
-    reject_saml_params(&realm)?;
+    check_saml_params(&mut realm, &server_params)?;
 
     info!(
         "update_realm: '{}' is updating realm '{}'",

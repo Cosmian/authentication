@@ -22,8 +22,8 @@ swagger-ui = []
 # Serve the pre-built admin UI static files at /admin-ui
 admin-ui = ["dep:actix-files"]
 # SAML 2.0 Service Provider (SP-initiated Web Browser SSO). Needs the bundled xmlsec C
-# library provided by the Nix shell (nix/xmlsec-static.nix).
-saml = ["dep:samael"]
+# library provided by the Nix shell (nix/xmlsec-static.nix). openssl: samael's key type.
+saml = ["dep:samael", "dep:openssl"]
 
 [dependencies]
 actix-cors = { workspace = true }

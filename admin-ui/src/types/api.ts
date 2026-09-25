@@ -40,8 +40,6 @@ export interface SamlParams {
     sp_entity_id: string;
     /** This SP's Assertion Consumer Service URL (/saml/{realm_id}/acs). */
     sp_acs_url: string;
-    /** Reference to the server-configured AuthnRequest signing key; unset = server default. */
-    sp_signing_key?: string;
     /** SAML attribute whose single value becomes the subject; when unset the <NameID> is used. */
     subject_attribute?: string;
     /** Lowercase the resolved subject before use. */

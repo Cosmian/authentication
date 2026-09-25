@@ -28,6 +28,58 @@ pub fn test_realm(id: &str) -> Realm {
     }
 }
 
+/// Base64 DER of the EC test server certificate, as it appears in an `<X509Certificate>`.
+#[cfg(feature = "saml")]
+pub fn test_idp_certificate_base64() -> String {
+    include_str!("certificates/ec/auth.server.cert.pem")
+        .lines()
+        .filter(|line| !line.starts_with("-----"))
+        .collect()
+}
+
+/// SAML 2.0 IdP metadata signing with the EC test certificate; `extra` is inserted into the
+/// `IDPSSODescriptor` (e.g. a `NameIDFormat`).
+#[cfg(feature = "saml")]
+pub fn test_idp_metadata(sso_binding: &str, sso_url: &str, extra: &str) -> String {
+    format!(
+        r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" entityID="https://idp.example.com/metadata">
+  <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <md:KeyDescriptor use="signing"><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{cert}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>
+    {extra}
+    <md:SingleSignOnService Binding="{sso_binding}" Location="{sso_url}"/>
+  </md:IDPSSODescriptor>
+</md:EntityDescriptor>"#,
+        cert = test_idp_certificate_base64()
+    )
+}
+
+/// SAML settings for `realm_id` that pass validation.
+#[cfg(feature = "saml")]
+pub fn test_saml_params(realm_id: &str) -> crate::SamlParams {
+    crate::SamlParams {
+        metadata_xml: Some(test_idp_metadata(
+            samael::metadata::HTTP_REDIRECT_BINDING,
+            "https://idp.example.com/sso",
+            "",
+        )),
+        sp_entity_id: format!("https://auth.example.com/saml/{realm_id}"),
+        sp_acs_url: format!("https://auth.example.com/saml/{realm_id}/acs"),
+        allowed_return_origins: vec!["https://app.example.com".to_string()],
+        default_return_url: "https://app.example.com/home".to_string(),
+        ..Default::default()
+    }
+}
+
+/// SAML SP signing key configuration using the RSA-4096 test server key and certificate.
+#[cfg(feature = "saml")]
+pub fn test_saml_sp_params() -> crate::server::parameters::SamlSpParams {
+    let rsa_dir = format!("{}/src/tests/certificates/rsa", env!("CARGO_MANIFEST_DIR"));
+    crate::server::parameters::SamlSpParams {
+        saml_rsa_private_key: format!("{rsa_dir}/auth.server.key.pem"),
+        saml_certificate: format!("{rsa_dir}/auth.server.cert.pem"),
+    }
+}
+
 pub fn test_admin(id: &str) -> Admin {
     Admin {
         id: id.to_string(),

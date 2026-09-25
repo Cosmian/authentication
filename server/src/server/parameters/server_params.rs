@@ -3,7 +3,8 @@ use jsonwebtoken::{DecodingKey, EncodingKey};
 use crate::{
     AuthError,
     server::parameters::{
-        CertificateJwtParams, DatabaseParams, ProxyParams, SessionJwtParams, TlsParams,
+        CertificateJwtParams, DatabaseParams, ProxyParams, SamlSpParams, SessionJwtParams,
+        TlsParams,
     },
     session::StaleSessionCollectorConfig,
 };
@@ -23,6 +24,10 @@ pub struct ServerParams {
     /// `session_jwt_params`. When unset, `/certify` and `/.well-known/certificate-jwks.json`
     /// are unavailable (500 / 404 respectively) but the rest of the server is unaffected.
     pub certificate_jwt_params: Option<CertificateJwtParams>,
+
+    /// Optional SAML Service Provider signing key, required before any realm can use SAML.
+    /// Checked at startup; a server built without the `saml` feature refuses to start with it.
+    pub saml_sp_params: Option<SamlSpParams>,
 
     /// Optional database parameters for all objects but the sessions -
     /// if not provided an in-memory SQLite database will be used

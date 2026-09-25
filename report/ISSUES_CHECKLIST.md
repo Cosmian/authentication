@@ -9,6 +9,7 @@
 ## BLOCKING ISSUES — Must Fix Before Merge
 
 ### ✋ Issue 1: SAML Store Factory Never Instantiated
+
 - **Severity:** P1 (Runtime non-functional)
 - **File:** `server/src/saml/factory.rs:20–22`
 - **Problem:** `create_saml_request_store()` is never called. SAML realms have no login path.
@@ -24,8 +25,9 @@
 ---
 
 ### ✋ Issue 2: SQL Cleanup Never Scheduled
+
 - **Severity:** P1 (Resource leak — unbounded table growth)
-- **Files:** 
+- **Files:**
   - `server/src/saml/impls/sqlite.rs:157–160` (delete_expired method)
   - `server/src/saml/factory.rs:17–20` (factory, no cleanup task)
 - **Problem:** Expired rows never purged. Tables grow indefinitely.
@@ -43,6 +45,7 @@
 ---
 
 ### ✋ Issue 3: Redis Returns Expired Pending Requests
+
 - **Severity:** P1 (Logic violation — accepts invalid requests)
 - **File:** `server/src/saml/impls/redis.rs:52`
 - **Problem:** `.max(1)` clamps negative TTL to 1 second. Expired requests stored + fetchable.
@@ -51,6 +54,7 @@
 - **Complexity:** Low
 
 **Option A (Recommended):**
+
 ```rust
 // In store_pending_request
 if request.expires_at <= Utc::now().timestamp() {
@@ -59,6 +63,7 @@ if request.expires_at <= Utc::now().timestamp() {
 ```
 
 **Option B (Alternative):**
+
 ```rust
 // In take_pending_request, after GETDEL
 let now = Utc::now().timestamp();
@@ -74,6 +79,7 @@ if request.expires_at <= now {
 ---
 
 ### ✋ Issue 4: Build Broken — samael+xmlsec Unconditional
+
 - **Severity:** P1 (Build breaks — blocks all CI)
 - **Files:**
   - `Cargo.toml` line 39 (samael = "0.0.22" with features = ["xmlsec"])
@@ -89,6 +95,7 @@ if request.expires_at <= now {
 - **Fix:** Gate behind feature flag OR update build infra
 
 **Option A (Recommended — Feature Flag):**
+
 ```toml
 [dependencies]
 samael = { version = "0.0.22", features = ["xmlsec"], optional = true }
@@ -96,11 +103,13 @@ samael = { version = "0.0.22", features = ["xmlsec"], optional = true }
 [features]
 saml = ["samael"]
 ```
+
 - Default: no samael, no xmlsec needed
 - Dev: `cargo build --features saml`
 - Unblocks all CI until SAML endpoints ready
 
 **Option B (Alternative — Update Build Infra):**
+
 1. Add `xmlsec1-dev` to Ubuntu runners in main_base.yml
 2. Add `libxml2-devel`, `xmlsec1-devel` to macOS via Homebrew
 3. Update nix/auth-verifier.nix (see Issue 5)
@@ -112,6 +121,7 @@ saml = ["samael"]
 ---
 
 ### ✋ Issue 5: Nix Package Build Missing xmlsec Setup
+
 - **Severity:** P1 (Build breaks — nix build fails)
 - **File:** `nix/auth-verifier.nix` (not modified in PR; needs changes)
 - **Problem:**
@@ -123,6 +133,7 @@ saml = ["samael"]
 - **Fix:** Update auth-verifier.nix OR use feature flag (Issue 4 Option A)
 
 **If continuing with unconditional samael:**
+
 ```nix
 {
   buildInputs = [
@@ -145,6 +156,7 @@ saml = ["samael"]
 ---
 
 ### ✋ Issue 6: Pre-Release Dependency Without Audit — samael 0.0.22
+
 - **Severity:** P1 (Dependency risk)
 - **File:** `Cargo.toml` line 39 (workspace root)
 - **Problem:**
@@ -164,10 +176,12 @@ saml = ["samael"]
   - Document samael's pre-release status in SECURITY.md
   - Track timeline for upgrade to stable
 - [ ] **Owner:** Pin samael and OpenSSL transitive deps
+
   ```toml
   samael = "=0.0.22"  # Exact version until stable
   openssl = "=0.10.81"  # Lock transitive
   ```
+
 - [ ] **Reviewer:** Approve security audit before merge
 
 ---
@@ -175,6 +189,7 @@ saml = ["samael"]
 ## HIGH-PRIORITY ISSUES — Strongly Recommended Before Merge
 
 ### ⚠️ Issue 7: MySQL Breaks SAML ID Case-Sensitivity
+
 - **Severity:** P2 (Data integrity — ID mismatches)
 - **File:** `server/src/saml/impls/mysql.rs:24–26`
 - **Problem:** Default collation `utf8mb4_general_ci` is case-insensitive. SAML IDs are case-sensitive.
@@ -183,10 +198,12 @@ saml = ["samael"]
   - Assertion ID replay cache collisions on case difference
   - False replay positives → valid logins rejected
 - **Fix:** Use binary collation
+
   ```sql
   request_id TEXT COLLATE utf8mb4_bin PRIMARY KEY,
   assertion_id TEXT COLLATE utf8mb4_bin PRIMARY KEY,
   ```
+
 - **Complexity:** Low (schema change only)
 
 - [ ] **Owner:** Update MySQL schema
@@ -195,6 +212,7 @@ saml = ["samael"]
 ---
 
 ### ⚠️ Issue 8: MySQL Assertion IDs Silently Truncated to 255 Chars
+
 - **Severity:** P2 (Data integrity — false replay positives)
 - **File:** `server/src/saml/impls/mysql.rs:42–45`
 - **Problem:** `VARCHAR(255)` + `INSERT IGNORE` silently truncates long IDs. SAML has no length limit.
@@ -202,6 +220,7 @@ saml = ["samael"]
   - Distinct assertions with same 255-char prefix treated as replay
   - Valid logins denied
 - **Fix:** Use TEXT or digest-based key
+
   ```sql
   -- Option 1: Full ID as TEXT
   assertion_id TEXT NOT NULL PRIMARY KEY,
@@ -210,6 +229,7 @@ saml = ["samael"]
   assertion_id_hash BLOB NOT NULL PRIMARY KEY,
   full_assertion_id TEXT NOT NULL,
   ```
+
 - **Complexity:** Medium (schema + insert logic update)
 
 - [ ] **Owner:** Update MySQL schema

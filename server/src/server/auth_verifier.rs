@@ -168,6 +168,21 @@ async fn prepare_auth_verifier(
     // Determine the address to bind the server to.
     let address = format!("{}:{}", &params.host_name, params.host_port);
 
+    // Check the SAML signing key before anything else, so a bad key stops the server
+    // instead of failing the first SAML login.
+    #[cfg(feature = "saml")]
+    let _saml_sp_signing_key = params
+        .saml_sp_params
+        .as_ref()
+        .map(crate::saml::load_sp_signing_key)
+        .transpose()?;
+    #[cfg(not(feature = "saml"))]
+    if params.saml_sp_params.is_some() {
+        return Err(crate::AuthError::Init(
+            "saml_sp_params is set but this server was built without the `saml` feature".to_owned(),
+        ));
+    }
+
     let database_params = if let Some(ref db_params) = params.database_params {
         db_params.clone()
     } else {

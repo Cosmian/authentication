@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// Stored inside [`crate::RealmAuthParams`] and serialized into the realm's `auth_params`
 /// column. The IdP-side fields (`idp_entity_id`, `idp_sso_url`, `idp_signing_certificates`,
-/// `idp_nameid_format`) are **server-derived**: they are parsed and populated from
-/// `metadata_xml` when the realm is created or updated, not supplied directly by the caller.
+/// `idp_nameid_format`) are **server-derived**: the server parses `metadata_xml` when the
+/// realm is created or updated and overwrites them, ignoring any values the caller sent.
 /// Callers provide `metadata_xml`, the SP-side fields, the identity mapping, and the
 /// return-URL policy.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -45,11 +45,6 @@ pub struct SamlParams {
     /// This SP's Assertion Consumer Service URL (`/saml/{realm_id}/acs`), advertised in
     /// our published SP metadata.
     pub sp_acs_url: String,
-
-    /// Reference to the server-configured signing key used to sign our `<AuthnRequest>` and
-    /// published in our SP metadata. `None` uses the server's default SP signing key.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub sp_signing_key: Option<String>,
 
     // ── Identity mapping — assertion → session claims ─────────────────────────────────
     /// SAML attribute whose single value becomes the session subject. When unset, the

@@ -7,6 +7,8 @@
 //! 3. Makes subsequent requests with the **same** [`AuthClient`] instance so the cookie is
 //!    automatically sent on every call.
 
+#[cfg(feature = "saml")]
+use crate::tests::helpers::test_saml_sp_params;
 use crate::{
     AuthError, AuthResult,
     models::ADMIN_REALM,
@@ -17,6 +19,10 @@ use crate::{
         },
         init_test_logging, start_default_test_server,
     },
+};
+use crate::{
+    server::parameters::SamlSpParams,
+    tests::{get_default_server_params, start_test_server},
 };
 use cosmian_logger::info;
 
@@ -250,6 +256,128 @@ async fn test_saml_params_rejected_without_saml_feature() -> AuthResult<()> {
             .saml_params
             .is_none(),
         "The refused update must not have been stored"
+    );
+
+    ctx.stop_server().await
+}
+
+/// Without the `saml` feature, a SAML signing key in the configuration stops the server
+/// from starting instead of being silently ignored.
+#[cfg(not(feature = "saml"))]
+#[actix_web::test]
+async fn test_server_refuses_saml_sp_params_without_saml_feature() -> AuthResult<()> {
+    init_test_logging(None);
+    let mut params = get_default_server_params()?;
+    params.saml_sp_params = Some(SamlSpParams {
+        saml_rsa_private_key: "unused.key.pem".to_string(),
+        saml_certificate: "unused.cert.pem".to_string(),
+    });
+    assert!(
+        start_test_server(params).await.is_err(),
+        "The server must refuse to start with saml_sp_params and no saml feature"
+    );
+    Ok(())
+}
+
+/// A SAML signing key whose certificate belongs to another key stops the server from
+/// starting.
+#[cfg(feature = "saml")]
+#[actix_web::test]
+async fn test_server_refuses_a_bad_saml_signing_key() -> AuthResult<()> {
+    init_test_logging(None);
+    let mut params = get_default_server_params()?;
+    let good = test_saml_sp_params();
+    params.saml_sp_params = Some(SamlSpParams {
+        saml_certificate: good
+            .saml_certificate
+            .replace("auth.server.cert", "auth.user1.cert"),
+        ..good
+    });
+    assert!(
+        start_test_server(params).await.is_err(),
+        "The server must refuse to start with a mismatched SAML certificate"
+    );
+    Ok(())
+}
+
+/// SAML realms need the server's SP signing key: without `saml_sp_params` they are refused
+/// with a 400 that says what to configure.
+#[cfg(feature = "saml")]
+#[actix_web::test]
+async fn test_saml_params_refused_without_sp_signing_key() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    let mut realm = test_realm("realm_saml_no_key");
+    realm.auth_params.saml_params =
+        Some(crate::tests::helpers::test_saml_params("realm_saml_no_key"));
+    let err = client
+        .create_realm_as_super_admin(&realm)
+        .await
+        .expect_err("Expected create_realm to refuse SAML without a signing key");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400") && m.contains("saml_sp_params")),
+        "Expected a 400 naming saml_sp_params, got: {err:?}"
+    );
+
+    ctx.stop_server().await
+}
+
+/// With the `saml` feature, valid SAML settings are stored with their IdP fields derived
+/// from the metadata, and invalid ones are refused with a 400 naming the field.
+#[cfg(feature = "saml")]
+#[actix_web::test]
+async fn test_saml_params_validated_on_realm_create_and_update() -> AuthResult<()> {
+    init_test_logging(None);
+    let mut server_params = get_default_server_params()?;
+    server_params.saml_sp_params = Some(test_saml_sp_params());
+    let ctx = start_test_server(server_params).await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    let mut realm = test_realm("realm_saml_valid");
+    let mut params = crate::tests::helpers::test_saml_params("realm_saml_valid");
+    params.idp_sso_url = "https://attacker.example.com/sso".to_string();
+    realm.auth_params.saml_params = Some(params);
+    client.create_realm_as_super_admin(&realm).await?;
+
+    let stored = client
+        .get_realm_as_super_admin("realm_saml_valid")
+        .await?
+        .auth_params
+        .saml_params
+        .expect("SAML settings must be stored");
+    assert_eq!(stored.idp_entity_id, "https://idp.example.com/metadata");
+    assert_eq!(
+        stored.idp_sso_url, "https://idp.example.com/sso",
+        "the SSO URL must come from the metadata, not the request"
+    );
+    assert_eq!(stored.idp_signing_certificates.len(), 1);
+
+    let mut invalid = test_realm("realm_saml_invalid");
+    let mut params = crate::tests::helpers::test_saml_params("realm_saml_invalid");
+    params.sp_acs_url = "https://auth.example.com/saml/another_realm/acs".to_string();
+    invalid.auth_params.saml_params = Some(params);
+    let err = client
+        .create_realm_as_super_admin(&invalid)
+        .await
+        .expect_err("Expected create_realm to refuse invalid SAML settings");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400") && m.contains("saml_params.sp_acs_url")),
+        "Expected a 400 naming sp_acs_url, got: {err:?}"
+    );
+
+    let mut update = client.get_realm_as_super_admin("realm_saml_valid").await?;
+    if let Some(params) = update.auth_params.saml_params.as_mut() {
+        params.metadata_xml = Some("<not-saml/>".to_string());
+    }
+    let err = client
+        .update_realm_as_super_admin("realm_saml_valid", &update)
+        .await
+        .expect_err("Expected update_realm to refuse invalid metadata");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400") && m.contains("saml_params.metadata_xml")),
+        "Expected a 400 naming metadata_xml, got: {err:?}"
     );
 
     ctx.stop_server().await

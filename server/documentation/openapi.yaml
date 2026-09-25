@@ -173,7 +173,11 @@ components:
 
     SamlParams:
       type: object
-      required: [sp_entity_id, sp_acs_url, default_return_url]
+      description: |
+        Validated when the realm is created or updated; servers built without the `saml`
+        feature, or without a configured SAML signing key, refuse it. The IdP fields are
+        always derived from `metadata_xml`, overwriting any values sent.
+      required: [metadata_xml, sp_entity_id, sp_acs_url, default_return_url]
       properties:
         idp_entity_id:
           type: string
@@ -202,10 +206,6 @@ components:
           type: string
           format: uri
           description: This SP's Assertion Consumer Service URL (/saml/{realm_id}/acs).
-        sp_signing_key:
-          type: string
-          nullable: true
-          description: Reference to the server-configured AuthnRequest signing key; unset uses the server default.
         subject_attribute:
           type: string
           nullable: true
@@ -1038,6 +1038,12 @@ components:
   responses:
     NoContent:
       description: Success — empty body.
+    BadRequest:
+      description: Invalid request body; the message names the offending field.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Missing or invalid credentials.
       content:
@@ -1554,6 +1560,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Realm'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1645,6 +1653,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Realm'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
