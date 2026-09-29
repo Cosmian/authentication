@@ -25,6 +25,7 @@ A fully commented sample configuration is provided in `auth_verifier.toml` at th
   - [TLS Configuration](#tls-configuration)
     - [Generating certificates](#generating-certificates)
   - [Session JWT Keys](#session-jwt-keys)
+  - [SAML Service Provider Key](#saml-service-provider-key)
   - [Primary Database](#primary-database)
     - [Redis](#redis)
   - [Session Store](#session-store)
@@ -138,6 +139,39 @@ Generate a dedicated JWT key pair:
 ```bash
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out jwt.key.pem
 openssl ec -in jwt.key.pem -pubout -out jwt.pub.pem
+```
+
+---
+
+## SAML Service Provider Key
+
+Required for [SAML 2.0 single sign-on](saml.md), and only accepted by servers built with the
+`saml` feature (a server without it refuses to start when this section is present). One RSA
+key signs the `AuthnRequest`s of every SAML realm; its certificate is published in the SP
+metadata that IdPs import. When the section is absent, the `/saml` routes don't exist and
+realms can't enable SAML.
+
+```toml
+[saml_sp_params]
+# Path to the RSA private key PEM file (at least 2048 bits).
+saml_rsa_private_key = "/etc/cosmian/saml-sp.key.pem"
+
+# Path to the X.509 certificate PEM file matching the key; self-signed is fine.
+saml_certificate = "/etc/cosmian/saml-sp.cert.pem"
+```
+
+| Key | Type | Required | Default |
+|-----|------|----------|---------|
+| `saml_rsa_private_key` | `String` (path) | Yes (if section present) | — |
+| `saml_certificate` | `String` (path) | Yes (if section present) | — |
+
+The server stops at startup if a file is unreadable, the key isn't RSA or is shorter than 2048
+bits, or the certificate doesn't match the key. Generate a pair:
+
+```bash
+openssl req -x509 -newkey rsa:3072 -sha256 -days 1095 -nodes \
+    -subj "/CN=auth.example.com SAML SP" \
+    -keyout saml-sp.key.pem -out saml-sp.cert.pem
 ```
 
 ---
@@ -429,3 +463,4 @@ For each realm you can configure:
 | `auth_params.totp_params` | Object | TOTP algorithm settings for per-realm config |
 | `auth_params.totp_params.algorithm` | `"SHA1"` \| `"SHA256"` \| `"SHA512"` | HMAC algorithm for TOTP codes |
 | `auth_params.totp_params.step` | `u64` | Time step in seconds (default: `30`) |
+| `auth_params.saml_params` | Object | Enable SAML 2.0 single sign-on; see [SAML 2.0 single sign-on](saml.md#step-2--configure-the-realm) for its fields |

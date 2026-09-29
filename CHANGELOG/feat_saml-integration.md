@@ -28,5 +28,6 @@
 
 ## Docs
 
+- Add a SAML 2.0 single sign-on guide (`docs/saml.md`: supported scope, build and `[saml_sp_params]` prerequisites, realm settings, IdP onboarding with the SP metadata, the login flow, identity mapping, every check applied to a response, certificate and key rotation, troubleshooting), document SAML as flow 8, the `[saml_sp_params]` section, the `/saml` endpoints and the `sa` auth scheme across the configuration, flows and API references, list SAML as implemented in the overview and README, and add a commented `[saml_sp_params]` block to the packaged and development configurations.
 - Document the `/saml/{realm_id}/login`, `/acs` and `/metadata` endpoints and a `SAML` tag in `openapi.yaml`, and proxy `/saml` from the admin UI dev and preview servers.
 - Add ADR-0003 recording why SAML uses `samael` with a statically bundled, OpenSSL-only xmlsec, why the server-side feature is behind an optional `saml` Cargo feature while the API types are not, the v1 protocol scope, the single server-wide RSA SP signing key, and the rejected alternatives and accepted risks (including that xmlsec/libxml2 security updates now ship with our releases).

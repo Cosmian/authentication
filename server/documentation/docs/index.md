@@ -13,13 +13,13 @@ The server manages client authentication in isolated realms. The following authe
 - OAuth2, OpenID Connect: JWT bearer token (RS256 / ES256, JWKS-based)
 - Client certificate (mTLS, EC P-256)
 - Two-factor authentication using TOTP (RFC 6238)
+- **SAML 2.0 single sign-on** — browser login at the realm's enterprise identity provider (optional `saml` build feature)
 - **AppRole** — machine-to-machine credentials; `role_id` + `secret_id` exchange for an opaque app token
 - **Kubernetes service-account** — Kubernetes SA JWTs for workloads running inside a cluster
 - **Token self-service** — lookup, renew, and revoke app tokens (all machine auth methods)
 
 The following methods are **planned for future implementation**:
 
-- Enterprise SSO using SAML
 - Authentication using OpenID4 Verifiable Proofs (Decentralized Identity)
 - Passwordless authentication (WebAuthn, Hardware Tokens)
 - Two-factor authentication using WebAuthn, Hardware Tokens, or OOB (SMS/Email)
@@ -142,5 +142,6 @@ Administrator clients authenticate against the special `_` realm. The API endpoi
 | [Client Library](client_library.md) | How to use the `auth_client` crate in an API server: session validation, realm management, admin and credential management, TOTP management. |
 | [Session Management](session_management.md) | Session lifecycle, validation strategies (cookie decryption, session endpoint, direct store query), session actions, stale-session cleanup. |
 | [Two-Factor Authentication](two_factor_authentication.md) | TOTP implementation: module architecture, data model, enrollment flow (`POST /realms/{realm}/totp/generate` + `POST /realms/{realm}/totp/verify`), login-flow integration (`TotpRequired` step), disable endpoint (`DELETE /realms/{realm}/totp/{username}`), per-realm configuration (algorithm and time step), code path walkthrough, and security considerations. |
+| [SAML 2.0 Single Sign-On](saml.md) | Enterprise single sign-on through the realm's SAML identity provider: build and SP signing key prerequisites, realm settings, IdP onboarding (SP metadata), the login flow, identity mapping, the security checks applied to every response, certificate rotation and troubleshooting. |
 | [Authorization and Administration](authorization_and_administration.md) | The two-tier super admin / realm admin model, the exclusive-ownership rule, endpoint authorization matrix, how to bootstrap the first admin, how to create realm admins, and known caveats. |
 | [AppRole, Kubernetes & Token Authentication](app_auth_api.md) | AppRole and Kubernetes service-account authentication, token self-service, database schema, and integration with the Cosmian KMS SPIRE crypto engines. |

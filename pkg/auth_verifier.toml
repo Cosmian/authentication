@@ -110,6 +110,18 @@ server_ca_chain = "/etc/cosmian/ca.pem" # <REQUIRED>
 # cert_ec_public_key  = "/etc/cosmian/certify.pub.pem"
 
 # -----------------------------------------------------------------------------
+# SAML 2.0 Service Provider signing key (optional)
+# -----------------------------------------------------------------------------
+# Enables SAML single sign-on (/saml/{realm_id}/...) for realms configured with
+# SAML settings. One RSA key (>= 2048 bits) signs the AuthnRequests of every
+# realm; its certificate is published in the SP metadata. Only accepted by
+# servers built with the `saml` feature: others refuse to start with it.
+
+# [saml_sp_params]
+# saml_rsa_private_key = "/etc/cosmian/saml-sp.key.pem"
+# saml_certificate     = "/etc/cosmian/saml-sp.cert.pem"
+
+# -----------------------------------------------------------------------------
 # Primary database (users, realms, credentials, …)
 # -----------------------------------------------------------------------------
 # When omitted, an SQLite file named auth_verifier.db is created in the
