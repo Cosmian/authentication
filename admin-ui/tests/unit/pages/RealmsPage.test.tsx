@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter } from "react-router";
 import RealmsPage from "../../../src/pages/RealmsPage";
 import type { Realm } from "../../../src/types/api";
+import { IDP_CERT_PEM } from "../fixtures/saml";
 
 const mockRealms: Realm[] = [
     {
@@ -93,6 +94,47 @@ describe("RealmsPage", () => {
         expect(screen.getAllByText("Password").length).toBeGreaterThan(0);
         expect(screen.getByText("JWT")).toBeInTheDocument();
         expect(screen.getByText("TOTP")).toBeInTheDocument();
+    });
+
+    it("should tag SAML realms and flag an IdP certificate close to expiry", async () => {
+        const samlRealm: Realm = {
+            id: "acme",
+            auth_params: {
+                username_password_params: null,
+                jwt_params: null,
+                totp_params: null,
+                saml_params: {
+                    idp_entity_id: "https://idp.example.com/metadata",
+                    idp_sso_url: "https://idp.example.com/sso",
+                    idp_signing_certificates: [IDP_CERT_PEM],
+                    sp_entity_id: "https://auth.example.com/saml/acme",
+                    sp_acs_url: "https://auth.example.com/saml/acme/acs",
+                    normalize_subject_case: false,
+                    attribute_claim_map: {},
+                    allowed_return_origins: ["https://app.example.com"],
+                    default_return_url: "https://app.example.com/home",
+                },
+            },
+            session_max_age_seconds: 3600,
+            session_max_stale_age_seconds: 1800,
+        };
+        vi.useFakeTimers({ toFake: ["Date"], now: new Date("2027-04-01T00:00:00Z") });
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify([samlRealm]), { status: 200 }));
+
+        try {
+            await act(async () => {
+                render(
+                    <MemoryRouter>
+                        <RealmsPage />
+                    </MemoryRouter>,
+                );
+            });
+
+            expect(screen.getByText("SAML")).toBeInTheDocument();
+            expect(screen.getByText(/Expires in 11 days/)).toBeInTheDocument();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("should show empty state when no realms exist", async () => {

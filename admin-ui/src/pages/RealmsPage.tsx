@@ -10,7 +10,10 @@ import { LoadingState } from "../components/common/LoadingState";
 import { EmptyState } from "../components/common/EmptyState";
 import { ConfirmDeleteModal } from "../components/common/ConfirmDeleteModal";
 import { RealmFormDrawer } from "../components/realms/RealmFormDrawer";
+import { CertificateExpiryTag } from "../components/realms/CertificateExpiryTag";
 import { formatDuration } from "../utils/formatDuration";
+import { expiryLevel } from "../utils/samlValidation";
+import { earliestExpiry } from "../utils/x509";
 
 const RealmsPage: React.FC = () => {
     const { serverUrl } = useAuth();
@@ -112,6 +115,9 @@ const RealmsPage: React.FC = () => {
                         if (realm.auth_params.username_password_params) methods.push("Password");
                         if (realm.auth_params.jwt_params) methods.push("JWT");
                         if (realm.auth_params.totp_params) methods.push("TOTP");
+                        if (realm.auth_params.saml_params) methods.push("SAML");
+                        const samlExpiry = earliestExpiry(realm.auth_params.saml_params?.idp_signing_certificates ?? []);
+                        const flagSamlExpiry = samlExpiry !== null && expiryLevel(samlExpiry) !== "ok";
 
                         return (
                             <Col xs={24} sm={12} lg={8} key={realm.id}>
@@ -145,6 +151,12 @@ const RealmsPage: React.FC = () => {
                                             ))}
                                             {methods.length === 0 && <Typography.Text type="secondary">No auth methods</Typography.Text>}
                                         </Space>
+                                        {flagSamlExpiry && samlExpiry && (
+                                            <div>
+                                                <Typography.Text type="secondary">IdP certificate: </Typography.Text>
+                                                <CertificateExpiryTag notAfter={samlExpiry} />
+                                            </div>
+                                        )}
                                     </div>
                                 </Card>
                             </Col>
