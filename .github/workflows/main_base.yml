@@ -94,8 +94,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Bundled xmlsec (nix/xmlsec-static.nix) is only verified on Linux x86_64 so far.
-        runner: [ubuntu-24.04]
+        # Bundled xmlsec (nix/xmlsec-static.nix) is built per platform, matching the packaging matrix.
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
 
     steps:
       - name: Nix installation

@@ -8,15 +8,35 @@ cd "$REPO_ROOT"
 source "$REPO_ROOT/.github/scripts/common.sh"
 
 LINK="static"
+VARIANT="default"
 while [ $# -gt 0 ]; do
   case "$1" in
   -l | --link)
     LINK="${2:-}"
     shift 2 || true
     ;;
+  --variant)
+    VARIANT="${2:-}"
+    shift 2 || true
+    ;;
   *) shift ;;
   esac
 done
+
+case "$VARIANT" in
+default) BUILD_TAG="$LINK" ;;
+saml)
+  if [ "$LINK" != "static" ]; then
+    echo "Error: --variant saml is only available with --link static" >&2
+    exit 1
+  fi
+  BUILD_TAG="static-saml"
+  ;;
+*)
+  echo "Error: --variant must be 'default' or 'saml'" >&2
+  exit 1
+  ;;
+esac
 
 # Only supported on macOS
 if [ "$(uname)" != "Darwin" ]; then
@@ -30,12 +50,14 @@ ensure_macos_frameworks_ldflags
 VERSION_STR=$(bash "$REPO_ROOT/.github/scripts/release/get_version.sh")
 
 # Build or reuse server binary via Nix
-if [ "$LINK" = "dynamic" ]; then
+if [ "$VARIANT" = "saml" ]; then
+  ATTR="auth-verifier-static-saml"
+elif [ "$LINK" = "dynamic" ]; then
   ATTR="auth-verifier-dynamic-openssl"
 else
   ATTR="auth-verifier-static-openssl"
 fi
-OUT_LINK="$REPO_ROOT/result-server-${LINK}"
+OUT_LINK="$REPO_ROOT/result-server-${BUILD_TAG}"
 nix-build -I "nixpkgs=${PIN_URL}" -A "$ATTR" -o "$OUT_LINK"
 REAL_OUT=$(readlink -f "$OUT_LINK" || echo "$OUT_LINK")
 BIN_OUT="$REAL_OUT/bin/auth_verifier"
@@ -52,7 +74,7 @@ export CARGO_HOME="$HOME/cargo-home"
 mkdir -p "$CARGO_HOME"
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-echo "Building DMG for auth_verifier v${VERSION_STR} (link=${LINK})…"
+echo "Building DMG for auth_verifier v${VERSION_STR} (${BUILD_TAG})…"
 
 # Use cargo-packager if available
 if command -v cargo-packager >/dev/null 2>&1; then
@@ -67,13 +89,16 @@ $PACKAGER \
   --release \
   --formats dmg
 
-OUT_DIR="$REPO_ROOT/result-dmg-${LINK}"
+OUT_DIR="$REPO_ROOT/result-dmg-${BUILD_TAG}"
 mkdir -p "$OUT_DIR"
-find "$REPO_ROOT" -maxdepth 4 -name '*.dmg' -newer "$REPO_ROOT/Cargo.toml" 2>/dev/null | while IFS= read -r dmg; do
-  cp -f "$dmg" "$OUT_DIR/"
+# Skip result-* dirs so a DMG collected by another build tag is not picked up again.
+find "$REPO_ROOT" -maxdepth 4 -name '*.dmg' -not -path "$REPO_ROOT/result-*" -newer "$REPO_ROOT/Cargo.toml" 2>/dev/null | while IFS= read -r dmg; do
+  name=$(basename "$dmg")
+  if [ "$VARIANT" = "saml" ]; then name="${name%.dmg}-saml.dmg"; fi
+  cp -f "$dmg" "$OUT_DIR/$name"
   sum=$(shasum -a 256 "$dmg" | awk '{print $1}')
-  echo "$sum  $(basename "$dmg")" >"$OUT_DIR/$(basename "$dmg").sha256"
-  echo "Built DMG: $dmg (sha256: $sum)"
+  echo "$sum  $name" >"$OUT_DIR/$name.sha256"
+  echo "Built DMG: $OUT_DIR/$name (sha256: $sum)"
 done
 
 # GPG sign

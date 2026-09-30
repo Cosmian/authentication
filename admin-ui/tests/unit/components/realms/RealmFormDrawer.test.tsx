@@ -93,6 +93,21 @@ describe("RealmFormDrawer", () => {
         await waitFor(() => expect(onSuccess).toHaveBeenCalled());
     });
 
+    it("should treat a realm whose totp_params the server omitted as not using TOTP", async () => {
+        // The server drops `totp_params` from its JSON when unset, rather than sending null.
+        const withoutTotp: Realm = {
+            ...existingRealm,
+            auth_params: { username_password_params: { allow_expired_passwords: false }, jwt_params: null },
+        };
+        await act(async () => {
+            render(<RealmFormDrawer open={true} realm={withoutTotp} onClose={vi.fn()} onSuccess={vi.fn()} />);
+        });
+
+        expect(screen.getByRole("checkbox", { name: "TOTP (Two-Factor)" })).not.toBeChecked();
+        const buttons = screen.getAllByRole("button", { name: "Save" });
+        expect(buttons[buttons.length - 1]).toBeDisabled();
+    });
+
     it("should not render when open is false", () => {
         render(<RealmFormDrawer open={false} realm={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
 

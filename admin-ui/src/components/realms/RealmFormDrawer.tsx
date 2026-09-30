@@ -93,7 +93,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                     const toggleDirty =
                         upEnabled !== (orig.auth_params.username_password_params !== null) ||
                         jwtEnabled !== (orig.auth_params.jwt_params !== null) ||
-                        totpEnabled !== (orig.auth_params.totp_params !== null) ||
+                        totpEnabled !== Boolean(orig.auth_params.totp_params) ||
                         samlEnabled !== Boolean(orig.auth_params.saml_params);
                     const formDirty =
                         cur.session_max_age_seconds !== orig.session_max_age_seconds ||
@@ -139,7 +139,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             form.setFieldsValue(values);
             const up = realm.auth_params.username_password_params !== null;
             const jwt = realm.auth_params.jwt_params !== null;
-            const totp = realm.auth_params.totp_params !== null;
+            const totp = Boolean(realm.auth_params.totp_params);
             setUpEnabled(up);
             setJwtEnabled(jwt);
             setTotpEnabled(totp);

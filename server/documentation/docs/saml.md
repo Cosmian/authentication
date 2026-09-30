@@ -48,7 +48,15 @@ admins keep signing in with the methods of the `_` realm.
 ## Prerequisites
 
 1. **A server built with the `saml` feature.** SAML statically links the xmlsec and libxml2
-   C libraries (see the ADR), so it is off by default. Build it inside the Nix shell:
+   C libraries (see the ADR), so it is off by default. Either use a prebuilt SAML build or
+   build it yourself:
+
+    - **Prebuilt:** the release publishes a SAML variant next to the standard one — packages
+      whose file name ends in `-saml` (for example `auth-verifier_<version>-1_amd64-saml.deb`)
+      and the Docker image tag `<version>-saml`. It is a static build only and installs under
+      the same package name as the standard server, so install one or the other.
+    - **From source with Nix:** `nix-build -A auth-verifier-static-saml`
+    - **From source with cargo**, inside the Nix shell:
 
     ```bash
     nix-shell --run "cargo build --release --features auth_verifier/saml"

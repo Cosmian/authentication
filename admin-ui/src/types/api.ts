@@ -58,7 +58,8 @@ export interface SamlParams {
 export interface RealmAuthParams {
     jwt_params: JwtParams | null;
     username_password_params: UsernamePasswordParams | null;
-    totp_params: TotpRealmParams | null;
+    /** Omitted by the server when the realm doesn't use TOTP. */
+    totp_params?: TotpRealmParams | null;
     /** Omitted by the server when the realm doesn't use SAML. */
     saml_params?: SamlParams | null;
 }

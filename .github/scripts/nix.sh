@@ -32,6 +32,10 @@ usage() {
     -l, --link <static|dynamic>   OpenSSL linkage (default: static)
                     static:  statically link OpenSSL (vendored in Rust crate)
                     dynamic: dynamically link system OpenSSL
+    --variant <default|saml>      Build variant (default: default)
+                    default: the standard server
+                    saml:    server compiled with the saml feature (static only;
+                             packages get a -saml file suffix, Docker tag a -saml suffix)
 
   Examples:
     $0 test                           # all tests
@@ -41,6 +45,8 @@ usage() {
     $0 --link static package deb
     $0 --link dynamic package rpm
     $0 --link static package dmg     # macOS only
+    $0 --variant saml package deb
+    $0 --variant saml docker --load --test
     $0 docker --load
     $0 docker --load --test
     $0 update-hashes
@@ -111,12 +117,17 @@ ensure_nix_path() {
 
 parse_global_options() {
   LINK="static"
+  VARIANT="default"
   COMMAND=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
     -l | --link)
       LINK="${2:-}"
+      shift 2 || true
+      ;;
+    --variant)
+      VARIANT="${2:-}"
       shift 2 || true
       ;;
     docker | test | package | update-hashes)
@@ -139,6 +150,21 @@ parse_global_options() {
 
   [ -z "${COMMAND:-}" ] && usage
 
+  case "$VARIANT" in
+  default) BUILD_TAG="$LINK" ;;
+  saml)
+    if [ "$LINK" != "static" ]; then
+      echo "Error: --variant saml is only available with --link static" >&2
+      exit 1
+    fi
+    BUILD_TAG="static-saml"
+    ;;
+  *)
+    echo "Error: --variant must be 'default' or 'saml'" >&2
+    exit 1
+    ;;
+  esac
+
   if [ "$COMMAND" = "package" ]; then
     RELEASE_FLAG="--release"
     BUILD_PROFILE="release"
@@ -147,7 +173,7 @@ parse_global_options() {
     BUILD_PROFILE="debug"
   fi
 
-  export LINK RELEASE_FLAG BUILD_PROFILE
+  export LINK VARIANT BUILD_TAG RELEASE_FLAG BUILD_PROFILE
   REMAINING_ARGS=("$@")
 }
 
@@ -240,8 +266,13 @@ docker_command() {
   fi
 
   ATTR="docker-image"
+  IMAGE_TAG_SUFFIX=""
+  if [ "$VARIANT" = "saml" ]; then
+    ATTR="docker-image-saml"
+    IMAGE_TAG_SUFFIX="-saml"
+  fi
   VERSION=$(bash "$REPO_ROOT/.github/scripts/release/get_version.sh")
-  OUT_LINK="$REPO_ROOT/result-docker-static"
+  OUT_LINK="$REPO_ROOT/result-docker-${LINK}${IMAGE_TAG_SUFFIX}"
 
   if [ -n "${FORCE_REBUILD:-}" ]; then
     DOCKER_FORCE=true
@@ -263,8 +294,9 @@ docker_command() {
 
       if [ "$DOCKER_TEST" = true ]; then
         echo "Running Docker image tests..."
-        DOCKER_IMAGE_NAME="cosmian-auth-verifier:${VERSION}"
+        DOCKER_IMAGE_NAME="cosmian-auth-verifier:${VERSION}${IMAGE_TAG_SUFFIX}"
         export DOCKER_IMAGE_NAME
+        if [ "$VARIANT" = "saml" ]; then export EXPECT_SAML=1; fi
         bash "$REPO_ROOT/.github/scripts/test/test_docker_image.sh"
       fi
     else
@@ -329,8 +361,8 @@ package_command() {
     if [ "$pkg_type" = "dmg" ]; then
       SCRIPT="$REPO_ROOT/.github/scripts/package/package_dmg.sh"
       nix-shell -I "nixpkgs=${PIN_URL}" --argstr variant "default" "$REPO_ROOT/shell.nix" \
-        --run "bash '$SCRIPT' --link '$LINK'"
-      OUT_DIR="$REPO_ROOT/result-dmg-$LINK"
+        --run "bash '$SCRIPT' --link '$LINK' --variant '$VARIANT'"
+      OUT_DIR="$REPO_ROOT/result-dmg-$BUILD_TAG"
       dmg_file=$(find "$OUT_DIR" -maxdepth 1 -type f -name '*.dmg' 2>/dev/null | head -n1 || true)
       if [ -n "${dmg_file:-}" ] && [ -f "$dmg_file" ]; then
         sum=$(compute_sha256 "$dmg_file")
@@ -362,9 +394,9 @@ package_command() {
     deb)
       if [ "$(uname)" = "Linux" ]; then
         SCRIPT_LINUX="$REPO_ROOT/.github/scripts/package/package_deb.sh"
-        nix-shell -I "nixpkgs=${NIXPKGS_ARG}" -p curl --run "bash '$SCRIPT_LINUX' --link '$LINK'"
-        REAL_OUT="$REPO_ROOT/result-deb-$LINK"
-        echo "Built deb ($LINK): $REAL_OUT"
+        nix-shell -I "nixpkgs=${NIXPKGS_ARG}" -p curl --run "bash '$SCRIPT_LINUX' --link '$LINK' --variant '$VARIANT'"
+        REAL_OUT="$REPO_ROOT/result-deb-$BUILD_TAG"
+        echo "Built deb ($BUILD_TAG): $REAL_OUT"
 
         # Smoke test
         SMOKE_TEST="$REPO_ROOT/.github/scripts/package/smoke_test_deb.sh"
@@ -383,9 +415,9 @@ package_command() {
     rpm)
       if [ "$(uname)" = "Linux" ]; then
         SCRIPT_LINUX="$REPO_ROOT/.github/scripts/package/package_rpm.sh"
-        nix-shell -I "nixpkgs=${NIXPKGS_ARG}" -p curl --run "bash '$SCRIPT_LINUX' --link '$LINK'"
-        REAL_OUT="$REPO_ROOT/result-rpm-$LINK"
-        echo "Built rpm ($LINK): $REAL_OUT"
+        nix-shell -I "nixpkgs=${NIXPKGS_ARG}" -p curl --run "bash '$SCRIPT_LINUX' --link '$LINK' --variant '$VARIANT'"
+        REAL_OUT="$REPO_ROOT/result-rpm-$BUILD_TAG"
+        echo "Built rpm ($BUILD_TAG): $REAL_OUT"
 
         SMOKE_TEST="$REPO_ROOT/.github/scripts/package/smoke_test_rpm.sh"
         RPM_FILE=$(find "$REAL_OUT" -maxdepth 1 -type f -name '*.rpm' 2>/dev/null | head -n1 || true)
@@ -404,8 +436,8 @@ package_command() {
       if [ "$(uname)" = "Darwin" ]; then
         SCRIPT_DARWIN="$REPO_ROOT/.github/scripts/package/package_dmg.sh"
         nix-shell -I "nixpkgs=${NIXPKGS_ARG}" --argstr variant "default" "$REPO_ROOT/shell.nix" \
-          --run "bash '$SCRIPT_DARWIN' --link '$LINK'"
-        echo "Built dmg ($LINK): $REPO_ROOT/result-dmg-$LINK"
+          --run "bash '$SCRIPT_DARWIN' --link '$LINK' --variant '$VARIANT'"
+        echo "Built dmg ($BUILD_TAG): $REPO_ROOT/result-dmg-$BUILD_TAG"
       else
         echo "DMG packaging is only supported on macOS." >&2
         exit 1
@@ -424,7 +456,8 @@ update_hashes_command() {
   else
     echo "Building auth-verifier (static) to capture hashes..."
     ATTR="auth-verifier-static"
-    OUT_LINK="$REPO_ROOT/result-server-static"
+    [ "$VARIANT" = "saml" ] && ATTR="auth-verifier-static-saml"
+    OUT_LINK="$REPO_ROOT/result-server-${BUILD_TAG}"
     nix-build -I "nixpkgs=${PIN_URL}" "$REPO_ROOT/default.nix" -A "$ATTR" -o "$OUT_LINK"
     REAL_OUT=$(readlink -f "$OUT_LINK")
 

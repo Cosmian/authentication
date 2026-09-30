@@ -12,3 +12,15 @@ NC='\033[0m'
 
 print_status() { echo -e "${GREEN}[mise]${NC} $*"; }
 print_error() { echo -e "${RED}[mise][error]${NC} $*" >&2; }
+
+# Split leading --link/--variant pairs of "$@" into NIX_GLOBAL_ARGS (they must precede the
+# nix.sh command word); the remaining arguments go to NIX_REST_ARGS.
+split_nix_global_args() {
+  NIX_GLOBAL_ARGS=()
+  while [ "${1:-}" = "--link" ] || [ "${1:-}" = "-l" ] || [ "${1:-}" = "--variant" ]; do
+    NIX_GLOBAL_ARGS+=("$1" "${2:?missing value for $1}")
+    shift 2
+  done
+  # shellcheck disable=SC2034 # read by the sourcing task
+  NIX_REST_ARGS=("$@")
+}

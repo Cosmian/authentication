@@ -15,7 +15,10 @@ Used by `nix/auth-verifier.nix` to verify reproducible Cargo vendoring:
 
 Generated after a successful build and used for cross-run determinism checks:
 
-- `auth-verifier.<static|dynamic>.<arch>.<os>.sha256`
+- `auth-verifier.<static|dynamic|static-saml>.<arch>.<os>.sha256`
+
+`static-saml` is the SAML build (`auth-verifier-static-saml`); it shares the Cargo vendor
+hash of the static build because `Cargo.lock` is the same.
 
 ## How to update
 

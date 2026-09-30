@@ -14,6 +14,13 @@
 - Add SAML 2.0 as a realm authentication method in the admin UI: pasted IdP metadata is parsed in the browser with the server's acceptance rules and previewed (IdP entity ID, sign-in URL, signing-certificate subject and expiry, NameID formats); the SP entity ID and ACS URL are prefilled, copyable and paired with a download of this server's SP metadata; subject, role and allowlisted claim mappings, return origins and default return URL are checked per field (reserved claim names, duplicates, non-origin or non-https URLs, ACS URL of another realm); server rejections naming a SAML setting appear on that field and other refusals inline; and realm cards show a SAML tag and flag IdP signing certificates within 30 days of expiry.
 - Make `saml_params` optional in the admin UI's `RealmAuthParams` type, as the server omits it for realms without SAML, which also restores the admin UI's type-check.
 - Bundle a static, OpenSSL-only xmlsec 1.3.5 and libxml2 2.13.4 (`nix/xmlsec-static.nix`, built with the glibc-2.34 toolchain, XSLT and runtime crypto loading disabled) and wire it plus the libclang/bindgen setup into `shell.nix`, so `--features saml` links xmlsec statically against the server's vendored OpenSSL with no new runtime library dependency.
+- Add a separate SAML Nix build next to the unchanged default one — `auth-verifier-static-saml` (static only, compiled with `--features saml` against the bundled xmlsec, libclang taken from the glibc-2.34 package set, build failing if xmlsec/libxml2 end up dynamically linked) and `docker-image-saml` (tag `<version>-saml`) — so SAML can be shipped as prebuilt packages and images without changing the standard artifacts; its binary hash is tracked as `static-saml`.
+- Add a `--variant default|saml` option to `.github/scripts/nix.sh`, the packaging scripts and the `package`, `hashes:update`, `docker:load` and `docker:test` mise tasks: SAML packages are written to `result-<format>-static-saml/` with a `-saml` file-name suffix (checksum and signature name the final file) under the same package name, and `--variant saml --link dynamic` is rejected.
+- Make the DMG packaging script skip `result-*` directories when collecting the built DMG, so a DMG from another build tag is not picked up again.
+
+## Bug Fixes
+
+- Stop the admin UI's realm drawer from ticking TOTP when editing a realm without it: the server omits `totp_params` when unset, but the drawer only treated `null` as disabled, so saving such a realm silently enabled TOTP.
 
 ## Tests
 
@@ -25,9 +32,13 @@
 ## CI
 
 - Add a Nix-based `cargo-saml` job that runs clippy and the unit tests with `--features saml` inside `nix-shell`, since that feature needs the bundled xmlsec and libclang that the plain-cargo jobs don't have.
+- Run the `cargo-saml` job on Linux x86_64, Linux aarch64 and macOS, and package the SAML variant (`static-saml`) for deb, rpm and dmg in the packaging and publish matrices (own `static-saml` publish folder, attached to GitHub releases), so the bundled xmlsec is verified on every platform we ship.
+- Test the SAML packages in the container and systemd package tests by starting the server with a `[saml_sp_params]` section, which a build without the `saml` feature refuses, and build, test and push a `-saml` Docker image and manifest next to the default one; `test_docker_image.sh` does the same check when `EXPECT_SAML=1`.
 
 ## Docs
 
+- Add `server/saml_testing.md`, a hands-on guide to test the SAML branch: automated tests, building the server and admin UI, starting the server, running a local Keycloak identity provider from a one-file realm import, creating a SAML realm in the admin UI, signing in, and a checklist of UI and server checks including the IdP-must-sign and bad-signing-key cases.
 - Add a SAML 2.0 single sign-on guide (`docs/saml.md`: supported scope, build and `[saml_sp_params]` prerequisites, realm settings, IdP onboarding with the SP metadata, the login flow, identity mapping, every check applied to a response, certificate and key rotation, troubleshooting), document SAML as flow 8, the `[saml_sp_params]` section, the `/saml` endpoints and the `sa` auth scheme across the configuration, flows and API references, list SAML as implemented in the overview and README, and add a commented `[saml_sp_params]` block to the packaged and development configurations.
 - Document the `/saml/{realm_id}/login`, `/acs` and `/metadata` endpoints and a `SAML` tag in `openapi.yaml`, and proxy `/saml` from the admin UI dev and preview servers.
 - Add ADR-0003 recording why SAML uses `samael` with a statically bundled, OpenSSL-only xmlsec, why the server-side feature is behind an optional `saml` Cargo feature while the API types are not, the v1 protocol scope, the single server-wide RSA SP signing key, and the rejected alternatives and accepted risks (including that xmlsec/libxml2 security updates now ship with our releases).
+- Document the prebuilt SAML packages, Docker tag and `nix-build -A auth-verifier-static-saml` as ways to get a SAML-enabled server in `docs/saml.md`, and the `saml` feature, SAML Nix attributes, `--variant` option and `static-saml` hash files in `AGENTS.md` and the expected-hashes README.
