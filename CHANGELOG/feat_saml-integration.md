@@ -33,6 +33,7 @@
 
 - Add a Nix-based `cargo-saml` job that runs clippy and the unit tests with `--features saml` inside `nix-shell`, since that feature needs the bundled xmlsec and libclang that the plain-cargo jobs don't have.
 - Run the `cargo-saml` job on Linux x86_64, Linux aarch64 and macOS, and package the SAML variant (`static-saml`) for deb, rpm and dmg in the packaging and publish matrices (own `static-saml` publish folder, attached to GitHub releases), so the bundled xmlsec is verified on every platform we ship.
+- Pin `<nixpkgs>` (`-I nixpkgs=$PIN_URL`) in the `cargo-saml` job's `nix-shell` calls so the shell uses a Nix-provided bash; without it the macOS runner fell back to `/bin/bash` 3.2, which nixpkgs' stdenv rejects.
 - Test the SAML packages in the container and systemd package tests by starting the server with a `[saml_sp_params]` section, which a build without the `saml` feature refuses, and build, test and push a `-saml` Docker image and manifest next to the default one; `test_docker_image.sh` does the same check when `EXPECT_SAML=1`.
 
 ## Docs
