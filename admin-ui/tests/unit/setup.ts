@@ -10,8 +10,11 @@ afterEach(async () => {
     // async work; draining rounds covers all known cases (bumped from five to
     // eight after a recurrence in RealmContext.test.tsx, then to sixteen after
     // a recurrence in CredentialModal.test.tsx's Form.List-driven claim editor).
-    // If "window is not defined" returns, increase the loop count.
-    for (let i = 0; i < 16; i++) {
+    // A fixed round count is load-dependent (it recurred on slow CI runners), so also keep
+    // yielding for a minimum wall-clock time, which lets short timers (antd/rc-motion,
+    // form validation) fire and the scheduler go idle before jsdom is torn down.
+    const settleUntil = Date.now() + 50;
+    for (let i = 0; i < 16 || Date.now() < settleUntil; i++) {
         await new Promise<void>((resolve) => setImmediate(() => resolve()));
     }
     vi.restoreAllMocks();
