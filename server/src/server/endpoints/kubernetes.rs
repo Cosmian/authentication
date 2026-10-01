@@ -57,8 +57,7 @@ pub async fn k8s_login(
 ) -> Result<HttpResponse, AuthError> {
     // Content-Type-agnostic body parsing, mirroring `approle_login`: SPIRE's Go
     // `hashicorp_vault` client does not reliably set `Content-Type`, so a strict
-    // `Json<...>` extractor would reject valid login requests with a 415 (see ADR
-    // "Decision 1").
+    // `Json<...>` extractor would reject valid login requests with a 415.
     let payload: K8sLoginRequest = serde_json::from_slice(&body)
         .map_err(|e| AuthError::BadRequest(format!("invalid Kubernetes login body: {e}")))?;
 
