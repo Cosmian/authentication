@@ -14,7 +14,7 @@ admin UI** (configuring a realm for SAML). The product documentation is in
 
 | Tool | Why |
 |------|-----|
-| [Nix](https://nixos.org/download) | The SAML build links the C libraries xmlsec/libxml2, which the repo's `nix-shell` provides. Only needed to **build**; the built server runs anywhere. |
+| [Nix](https://nixos.org/download) | The SAML build links the C libraries xmlsec/libxml2, which the repo's `nix-shell` provides. Only needed to **build**; the built server runs anywhere. If `nix-shell` is "command not found" after installing, see [If something goes wrong](#if-something-goes-wrong). |
 | Docker | Runs a local identity provider (Keycloak). |
 | Node 22.12+ and pnpm | Builds the admin UI. |
 | `curl`, `openssl` | Used in the checks. |
@@ -48,7 +48,7 @@ Release-style build, if you want it: `nix-build -A auth-verifier-static-saml`.
 ## 3. Start the server (terminal 1)
 
 The development config already has a commented SAML signing-key block. Enable it in a copy,
-with a fresh database:
+with a fresh database. Do this only while no server is running:
 
 ```bash
 rm -f /tmp/saml-guide.db
@@ -57,11 +57,20 @@ sed -e 's/^# \[saml_sp_params\]/[saml_sp_params]/' \
     -e 's/^# saml_certificate/saml_certificate/' \
     -e 's#sqlite:///tmp/path.db#sqlite:///tmp/saml-guide.db#' \
     server/auth_verifier.dev.toml > /tmp/saml-guide.toml
+```
 
+Start the server:
+
+```bash
 ./target/debug/auth_verifier /tmp/saml-guide.toml
 ```
 
-Wait until this answers (a debug build takes a while to start):
+**This command does not return.** The server runs in this terminal, printing log lines, until
+you press Ctrl-C. That is expected: leave it running and use a second terminal for everything
+else. To stop or restart it, press Ctrl-C here first (never delete `/tmp/saml-guide.db` while
+it runs).
+
+From the second terminal, check that it answers (a debug build needs a little while to start):
 
 ```bash
 curl -sk https://127.0.0.1:8443/public/version
@@ -126,12 +135,22 @@ docker run -d --rm --name kc-saml-demo -p 9443:9443 \
   quay.io/keycloak/keycloak:26.4 start-dev --import-realm
 ```
 
-The first run downloads the image. Wait until this saves the IdP's metadata (this is what
-you'll paste into the admin UI):
+The first run downloads the image and Keycloak needs a few seconds to start, so the command
+below fails (`curl: (35)` or `(7)`) until it is ready; just rerun it. It saves the IdP's
+metadata, which you will paste into the admin UI:
 
 ```bash
 curl -sk https://127.0.0.1:9443/realms/demo/protocol/saml/descriptor -o /tmp/idp-metadata.xml && wc -c /tmp/idp-metadata.xml
 ```
+
+When you paste it in step 5, copy it **from this file** (`cat /tmp/idp-metadata.xml`, or open it
+in an editor), not from the descriptor URL in a browser. A browser shows the XML as a tree, and
+copying from that view loses the `xmlns:` declarations on the first line, which makes the
+admin UI reject it as "not well-formed XML".
+
+Use the **`demo`** realm created by the import, exactly as written above. Do not create a
+Keycloak realm by hand: it would have no SAML client for your server and no user, and sign-in
+would fail with "Invalid requester".
 
 Open <https://127.0.0.1:9443/> in your browser once and accept its certificate warning too
 (the IdP has its own address, so it needs its own exception). The Keycloak admin console is at
@@ -141,22 +160,30 @@ Open <https://127.0.0.1:9443/> in your browser once and accept its certificate w
 
 1. Sign in at <https://127.0.0.1:8443/admin-ui/> as `admin` / `change_me`.
 2. **Realms → Create Realm**, Realm ID **`sso-demo`** (it must be exactly this: the IdP was set
-   up for it).
-3. Tick **SAML 2.0 (single sign-on)** and fill in:
+   up for it). Two different realms are involved: `sso-demo` is the realm on **your server**,
+   `demo` is the realm inside **Keycloak** (the IdP).
+3. Tick **SAML 2.0 (single sign-on)**. The SAML settings appear in the drawer, in the order of
+   the table below. **Scroll down inside the drawer**: the last section, "After sign-in",
+   holds two **required** fields that are easy to miss.
+4. Fill in the fields, then click **Create** at the bottom of the drawer.
 
-    | Field | Value |
-    |-------|-------|
-    | IdP metadata XML | The content of `/tmp/idp-metadata.xml` |
-    | SP entity ID / ACS URL | Already prefilled: `https://127.0.0.1:8443/saml/sso-demo` and `…/acs` |
-    | Subject attribute | `username` |
-    | Role attribute | `groups` |
-    | Extra claims | Add mapping: attribute `email`, claim `mail` |
-    | Allowed return origins | `https://127.0.0.1:8443` (press Enter) |
-    | Default return URL | `https://127.0.0.1:8443/whoami?realm=sso-demo` |
+| Drawer section | Field | Value | Required |
+|----------------|-------|-------|----------|
+| (top) | Realm ID | `sso-demo` | Yes |
+| IdP metadata | IdP metadata XML | The content of `/tmp/idp-metadata.xml` | Yes |
+| This server | SP entity ID | Prefilled: `https://127.0.0.1:8443/saml/sso-demo` | Yes |
+| This server | Assertion Consumer Service URL | Prefilled: `https://127.0.0.1:8443/saml/sso-demo/acs` | Yes |
+| Identity mapping | Subject attribute | `username` | No, but needed here (see below) |
+| Identity mapping | Role attribute | `groups` | No |
+| Identity mapping | Extra claims | Click **Add claim mapping**: attribute `email`, claim `mail` | No |
+| After sign-in | **Allowed return origins** | `https://127.0.0.1:8443`, then press **Enter** so it becomes a tag | **Yes** |
+| After sign-in | **Default return URL** | `https://127.0.0.1:8443/whoami?realm=sso-demo` | **Yes** |
 
-4. As soon as the metadata is pasted, a **summary panel** appears: IdP entity ID
-   `https://127.0.0.1:9443/realms/demo`, the sign-in URL and the signing certificate with a
-   green validity tag. **Create**.
+Notes:
+
+- As soon as the metadata is pasted, a **summary panel** appears: IdP entity ID `https://127.0.0.1:9443/realms/demo`, the sign-in URL and the signing certificate with a green validity tag.
+- **The Create button stays greyed out, with no message, until every required field is filled.** If it won't enable, check the two "After sign-in" fields at the bottom first. The default return URL must be under one of the allowed origins.
+- Without a subject attribute, the user name would be Keycloak's opaque persistent NameID (something like `G-d56e48b8-…`) instead of `alice`.
 
 The realm card now shows a **SAML** tag. Reopen it with **Edit**: the **Download SP metadata**
 button gives the file an IdP administrator would import.
@@ -239,6 +266,11 @@ with `saml_certificate does not match saml_rsa_private_key`. Undo the change aft
 
 | Symptom | Likely cause |
 |---------|--------------|
+| The admin UI says the metadata is "not well-formed XML" | The XML was copied from a browser page, which drops the `xmlns:` declarations on the first line (the real document starts with `<md:EntityDescriptor xmlns="urn:oasis:…" xmlns:md=… xmlns:ds=…`). Copy it from the saved file instead: `cat /tmp/idp-metadata.xml`. |
+| Keycloak shows "Invalid requester" and you made your own Keycloak realm | Only the imported `demo` realm has the SAML client and the user `alice`. Use `https://127.0.0.1:9443/realms/demo/protocol/saml/descriptor` for the metadata. |
+| Login or saving fails with `500 … attempt to write a readonly database` | The database file was deleted or replaced while the server was running. Press Ctrl-C in terminal 1 and redo step 3 from the top. |
+| Server exits at start with `Address already in use` | Another server is still running on port 8443. Press Ctrl-C in its terminal (or `pkill -f target/debug/auth_verifier`), then start again. |
+| `nix-shell: command not found` | Nix is installed but not on this terminal's PATH (common in an editor's integrated terminal, which can inherit a "Nix already loaded" marker without the PATH). Run `unset __ETC_PROFILE_NIX_SOURCED; . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh` in that terminal, or open a fresh login shell. |
 | Browser shows a certificate warning page | Expected: accept it for both `https://127.0.0.1:8443` and `https://127.0.0.1:9443`. |
 | Keycloak shows "Invalid requester" or a signature error | The realm ID or URLs differ from `sso-demo` / `https://127.0.0.1:8443`, or you used `localhost`. |
 | `401 unknown or expired sign-in request` | The login took over 10 minutes, or was already used. Start again from `/saml/sso-demo/login`. |

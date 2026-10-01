@@ -1,6 +1,18 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
+import { message } from "antd";
 import { afterEach, vi } from "vitest";
+
+// antd's static `message.*` mounts its own React root outside Testing Library's cleanup, so its
+// commits and passive-effect flushes can fire after jsdom is torn down ("window is not defined").
+// No test asserts on these toasts, so make them no-ops. Assigned directly because the tests'
+// vi.restoreAllMocks() would undo a vi.spyOn.
+{
+    const noop = () => Object.assign(() => {}, { then: (resolve?: () => void) => Promise.resolve().then(resolve) });
+    for (const method of ["success", "error", "warning", "info", "loading", "open"] as const) {
+        (message as unknown as Record<string, unknown>)[method] = noop;
+    }
+}
 
 afterEach(async () => {
     cleanup();
