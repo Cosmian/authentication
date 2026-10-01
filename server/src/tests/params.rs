@@ -78,6 +78,7 @@ pub fn get_default_server_params() -> AuthResult<ServerParams> {
         // Use TLS keys for JWT by default in tests
         session_jwt_params: None,
         certificate_jwt_params: None,
+        saml_sp_params: None,
         sessions_store_params: None,
         stale_session_collector_config: None,
         dev_seed: None,

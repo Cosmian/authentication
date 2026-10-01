@@ -18,7 +18,7 @@ on:
 
 jobs:
   nix-docker-image:
-    name: docker-${{ matrix.runner }}
+    name: docker-${{ matrix.runner }}-${{ matrix.variant }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -28,6 +28,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        variant: [default, saml]
 
     steps:
       - name: Derive architecture from runner
@@ -90,6 +91,8 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/cosmian/auth-verifier
+          flavor: |
+            suffix=${{ matrix.variant == 'saml' && '-saml' || '' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -109,7 +112,7 @@ jobs:
       - name: Build and load Docker image
         id: build
         run: |
-          mise run docker:load
+          mise run docker:load -- --variant ${{ matrix.variant }}
         env:
           NIX_CURL_FLAGS: --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
 
@@ -165,6 +168,7 @@ jobs:
       - name: Test Docker image
         env:
           DOCKER_IMAGE_NAME: ${{ steps.pick_test_tag.outputs.test_tag }}
+          EXPECT_SAML: ${{ matrix.variant == 'saml' && '1' || '' }}
         run: |
           mise run test:docker-image
 
@@ -179,9 +183,13 @@ jobs:
       arch: ${{ steps.arch.outputs.arch }}
 
   nix-docker-manifest:
-    name: docker-manifest
+    name: docker-manifest-${{ matrix.variant }}
     needs: nix-docker-image
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [default, saml]
     permissions:
       contents: read
       packages: write
@@ -208,6 +216,8 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY_IMAGE }}
+          flavor: |
+            suffix=${{ matrix.variant == 'saml' && '-saml' || '' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr

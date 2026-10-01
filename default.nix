@@ -184,11 +184,22 @@ let
     version = authVersion;
   };
 
+  # Static, OpenSSL-only xmlsec + libxml2 for the SAML build (glibc 2.34 toolchain on Linux)
+  xmlsecStatic = import ./nix/xmlsec-static.nix { inherit pkgs pkgs234; };
+
   # Build auth-verifier for static linkage
   auth-verifier-static = pkgs.callPackage ./nix/auth-verifier.nix {
     inherit pkgs pkgs234 rustPlatform;
     version = authVersion;
     static = true;
+  };
+
+  # Same as auth-verifier-static, compiled with the `saml` Cargo feature
+  auth-verifier-static-saml = pkgs.callPackage ./nix/auth-verifier.nix {
+    inherit pkgs pkgs234 rustPlatform xmlsecStatic;
+    version = authVersion;
+    static = true;
+    saml = true;
   };
 
   # Build auth-verifier for dynamic linkage
@@ -206,14 +217,25 @@ let
     version = authVersion;
   };
 
+  # Docker image with the SAML-enabled server (tag suffix -saml)
+  docker-image-saml = pkgs.callPackage ./nix/docker.nix {
+    inherit pkgs;
+    authServer = auth-verifier-static-saml;
+    adminUi = admin-ui;
+    version = authVersion;
+    tagSuffix = "-saml";
+  };
+
 in
 {
   # Build attributes accessible via -A
   inherit
     admin-ui
     auth-verifier-static
+    auth-verifier-static-saml
     auth-verifier-dynamic
     docker-image
+    docker-image-saml
     cargoGenerateRpmTool
     rustToolchain
     ;

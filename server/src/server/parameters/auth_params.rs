@@ -18,3 +18,15 @@ pub struct CertificateJwtParams {
     /// The path to the certificate EC public key PEM file used for verifying certificates
     pub cert_ec_public_key: String,
 }
+
+/// This server's SAML Service Provider signing key, shared by all SAML realms. It signs our
+/// `<AuthnRequest>`s, and its certificate is published in our SP metadata. RSA only (2048
+/// bits or more): it is what IdPs universally accept.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SamlSpParams {
+    /// The path to the RSA private key PEM file
+    pub saml_rsa_private_key: String,
+
+    /// The path to the X.509 certificate PEM file matching `saml_rsa_private_key`
+    pub saml_certificate: String,
+}

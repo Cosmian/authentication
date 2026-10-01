@@ -11,6 +11,7 @@ All endpoints are served over **HTTPS only**. The base URL is `https://{host}:{p
 - [Public Endpoints](#public-endpoints)
 - [Authentication — Login and Session Claims](#authentication--login-and-session-claims)
   - [`POST /certify`](#post-certifyrealmrealm_id)
+- [SAML 2.0 Single Sign-On](#saml-20-single-sign-on)
 - [Session Management](#session-management)
 - [Machine Authentication (AppRole / Kubernetes / Token)](#machine-authentication-approle--kubernetes--token)
 - [Realm Administration](#realm-administration)
@@ -195,6 +196,61 @@ the requested/present intersection of `claims` is empty.
 
 **Response — `500 Internal Server Error`** — certificate signing is not configured on this
 server (no `certificate_jwt_params`).
+
+---
+
+## SAML 2.0 Single Sign-On
+
+Browser endpoints of the SAML Service Provider. They exist only on servers built with the
+`saml` feature and configured with `[saml_sp_params]`; otherwise they return `404`. See
+[SAML 2.0 single sign-on](saml.md) for setup and the validation rules.
+
+### `GET /saml/{realm_id}/login`
+
+Start a login at the realm's IdP. Meant to be opened by the browser, not called by API clients.
+
+| Query parameter | Required | Description |
+|-----------------|----------|-------------|
+| `return_to` | No | Where the browser goes after login: an `https` URL under one of the realm's `allowed_return_origins`. Defaults to `default_return_url`. |
+
+**Response — `302 Found`** — `Location` is the IdP sign-in URL carrying a signed `AuthnRequest`
+(HTTP-Redirect binding) whose `RelayState` is the request ID. Also sets
+`_ea_saml=<request ID>; Secure; HttpOnly; SameSite=None; Path=/saml/; Max-Age=600`.
+
+**Response — `400 Bad Request`** — unknown realm, realm without SAML, or `return_to` not allowed.
+
+---
+
+### `POST /saml/{realm_id}/acs`
+
+Assertion Consumer Service: the IdP's response arrives here through the browser (HTTP-POST
+binding, `application/x-www-form-urlencoded`).
+
+| Form field | Description |
+|------------|-------------|
+| `SAMLResponse` | Base64-encoded SAML `<Response>` |
+| `RelayState` | The request ID from the login redirect; must equal the `_ea_saml` cookie |
+
+**Response — `200 OK`** — an HTML page sending the browser on to the login's return URL, with
+`Set-Cookie: _ea_=<cookie_string>; HttpOnly; Secure; SameSite=Strict` (auth scheme `sa`) and
+the `_ea_saml` cookie cleared.
+
+**Response — `400 Bad Request`** — unknown realm or realm without SAML.
+
+**Response — `401 Unauthorized`** — `"SAML error: <reason>"`: the login wasn't started from
+this browser, the request is unknown, expired or already used, or the response fails
+validation.
+
+---
+
+### `GET /saml/{realm_id}/metadata`
+
+This server's SAML 2.0 SP metadata for the realm (entity ID, ACS URL, NameID format, signing
+certificate, `AuthnRequestsSigned="true"`), to import into the IdP.
+
+**Response — `200 OK`** — `Content-Type: application/samlmetadata+xml`.
+
+**Response — `400 Bad Request`** — unknown realm or realm without SAML.
 
 ---
 
@@ -995,6 +1051,9 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 }
 ```
 
+`auth_params.saml_params` (omitted when unset) enables SAML single sign-on; its fields are
+described in [SAML 2.0 single sign-on](saml.md#step-2--configure-the-realm).
+
 ### `Admin`
 
 ```json
@@ -1047,7 +1106,7 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 
 | Field         | Description                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------- |
-| `auth_scheme` | `"up"` username/password · `"jwt"` JWT · `"cc"` client cert · `"f2"` FIDO2 · `"dc"` digital credentials |
+| `auth_scheme` | `"up"` username/password · `"jwt"` JWT · `"cc"` client cert · `"f2"` FIDO2 · `"dc"` digital credentials · `"sa"` SAML |
 
 ### `AuthenticatedClientScheme`
 
@@ -1055,7 +1114,7 @@ See [authorization_and_administration.md](authorization_and_administration.md) f
 { "username": "alice", "auth_scheme": "UsernamePassword" }
 ```
 
-`auth_scheme` values: `"UsernamePassword"`, `"Jwt"`, `"ClientCertificate"`, `"Fido2"`, `"DigitalCredentials"`
+`auth_scheme` values: `"UsernamePassword"`, `"Jwt"`, `"ClientCertificate"`, `"Fido2"`, `"DigitalCredentials"`, `"Saml"`
 
 ### `ClientClaims`
 
@@ -1070,12 +1129,13 @@ The JWT payload returned by `GET /whoami`:
 | `nbf`    | `i64`      | Not-before (Unix seconds)                                                                                             |
 | `iat`    | `i64`      | Issued-at (Unix seconds)                                                                                              |
 | `jti`    | `String`   | JWT ID                                                                                                                |
-| `roles`  | `String[]` | RBAC roles (e.g. `["CryptoOfficer"]`), sourced from `UserPass.roles` for username/password sessions. Absent/empty means no roles (fail-closed in OPA). Empty for all other auth schemes. |
-| `as_as`  | `String`   | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`)                                                                          |
+| `roles`  | `String[]` | RBAC roles (e.g. `["CryptoOfficer"]`), sourced from `UserPass.roles` for username/password sessions and from the realm's `role_attribute` for SAML sessions. Absent/empty means no roles (fail-closed in OPA). Empty for all other auth schemes. |
+| `as_as`  | `String`   | Auth scheme used (`up`/`jwt`/`cc`/`f2`/`dc`/`sa`)                                                                     |
 | `as_rid` | `String`   | Realm ID                                                                                                              |
 
 Any keys from `UserPass.extra_claims` are also present as top-level claims for
-username/password sessions.
+username/password sessions, and the attributes mapped by the realm's `attribute_claim_map`
+for SAML sessions.
 
 ### `CertificateClaims`
 
@@ -1088,7 +1148,7 @@ substituted for, a session token.
 | -------------------- | -------- | ---------------------------------------- |
 | `realm_id`           | `String` | Realm the caller authenticated to        |
 | `sub`                | `String` \| absent | Subject (authenticated username). Absent when the request set `exclude_sub: true`. |
-| `auth_scheme`        | `String` | Auth scheme used to establish the session (`up`/`jwt`/`cc`/`f2`/`dc`) |
+| `auth_scheme`        | `String` | Auth scheme used to establish the session (`up`/`jwt`/`cc`/`f2`/`dc`/`sa`) |
 | `verification_key`   | `String` | The certified PEM public key             |
 | `iat`                | `i64`    | Issued-at (Unix seconds)                 |
 | `exp`                | `i64`    | Expiration (Unix seconds) — realm's `certificate_max_age_seconds` |

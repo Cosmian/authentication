@@ -87,3 +87,35 @@ jobs:
       - name: Run unit tests
         run: |
           cargo test --workspace --lib -- --nocapture
+
+  cargo-saml:
+    name: Cargo SAML (Nix) - ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Bundled xmlsec (nix/xmlsec-static.nix) is built per platform, matching the packaging matrix.
+        runner: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+
+    env:
+      # Same pin as shell.nix/common.sh; nix-shell takes its bash from <nixpkgs>, and without it falls back to macOS /bin/bash 3.2.
+      PIN_URL: https://package.cosmian.com/nixpkgs/8b27c1239e5c421a2bbc2c65d52e4a6fbf2ff296.tar.gz
+
+    steps:
+      - name: Nix installation
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            connect-timeout = 15
+            stalled-download-timeout = 15
+            narinfo-cache-negative-ttl = 0
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Static analysis (saml feature)
+        run: nix-shell -I "nixpkgs=$PIN_URL" --run "cargo clippy --workspace --all-targets --features auth_verifier/saml -- -D warnings"
+
+      - name: Run unit tests (saml feature)
+        run: nix-shell -I "nixpkgs=$PIN_URL" --run "cargo test --workspace --lib --features auth_verifier/saml -- --nocapture"
