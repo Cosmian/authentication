@@ -36,6 +36,12 @@ The first `nix-shell` builds xmlsec and takes a while; later runs are quick. All
 pass. (The complete server suite is `cargo test --workspace --features auth_verifier/saml
 --lib -- --test-threads=4` and takes about ten minutes; it is not required for this guide.)
 
+Steps 3 to 7 are also automated against the SAML Docker image and the same Keycloak setup:
+`mise run docker:load -- --variant saml`, then `mise run test:saml-e2e` (Playwright tests in
+`e2e/`; `SAML_E2E_KEEP=1` leaves both containers running). CI runs it weekly and on SAML changes
+(`.github/workflows/saml-e2e.yml`). The manual walk-through below remains the way to look at
+the UI yourself.
+
 ## 2. Build the server and the admin UI
 
 ```bash

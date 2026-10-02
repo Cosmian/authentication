@@ -50,6 +50,7 @@ mise run package -- --variant saml deb      # SAML build: result-deb-static-saml
 mise run docker:load
 mise run docker:test
 mise run docker:test -- --variant saml      # SAML image (tag <version>-saml), checks the saml feature
+mise run test:saml-e2e                      # SAML image vs a real Keycloak: curl checks + Playwright (e2e/)
 mise run ui:lint                            # admin-ui: eslint + prettier + tsc
 mise run ui:test                            # admin-ui: unit tests
 mise run ui:build
@@ -90,6 +91,8 @@ server/             auth_verifier  — server binary + lib
     session/        — session management
     tests/          — integration tests
     tls/            — TLS helpers
+
+e2e/                Playwright SAML end-to-end tests (run by `mise run test:saml-e2e`)
 
 nix/                Nix build expressions and expected vendor hashes
   auth-verifier.nix   — Nix derivation for auth_verifier binary

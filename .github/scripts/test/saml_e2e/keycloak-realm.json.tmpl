@@ -1,0 +1,56 @@
+{
+  "realm": "demo",
+  "enabled": true,
+  "sslRequired": "none",
+  "groups": [{ "name": "admins" }, { "name": "users" }],
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.com",
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Tester",
+      "enabled": true,
+      "groups": ["/admins", "/users"],
+      "credentials": [{ "type": "password", "value": "alice-pw", "temporary": false }]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "${SP_ORIGIN}/saml/${SP_REALM}",
+      "protocol": "saml",
+      "enabled": true,
+      "redirectUris": ["${SP_ORIGIN}/saml/${SP_REALM}/acs"],
+      "attributes": {
+        "saml_assertion_consumer_url_post": "${SP_ORIGIN}/saml/${SP_REALM}/acs",
+        "saml.assertion.signature": "true",
+        "saml.server.signature": "false",
+        "saml.client.signature": "true",
+        "saml.signature.algorithm": "RSA_SHA256",
+        "saml.signing.certificate": "${SP_CERT}",
+        "saml.authnstatement": "true",
+        "saml_name_id_format": "username"
+      },
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "username", "attribute.name": "username", "attribute.nameformat": "Basic" }
+        },
+        {
+          "name": "email",
+          "protocol": "saml",
+          "protocolMapper": "saml-user-property-mapper",
+          "config": { "user.attribute": "email", "attribute.name": "email", "attribute.nameformat": "Basic" }
+        },
+        {
+          "name": "groups",
+          "protocol": "saml",
+          "protocolMapper": "saml-group-membership-mapper",
+          "config": { "attribute.name": "groups", "attribute.nameformat": "Basic", "full.path": "false", "single": "false" }
+        }
+      ]
+    }
+  ]
+}
