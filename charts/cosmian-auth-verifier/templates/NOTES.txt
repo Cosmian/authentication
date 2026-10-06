@@ -1,0 +1,41 @@
+Cosmian Authentication Server has been deployed as {{ include "cosmian-auth-verifier.fullname" . }} in namespace {{ .Release.Namespace }}.
+Image: {{ .Values.image.repository }}:{{ include "cosmian-auth-verifier.imageTag" . }}
+
+{{- $scheme := include "cosmian-auth-verifier.scheme" . }}
+
+{{- if not .Values.authVerifier.tls.enabled }}
+
+*** WARNING: TLS is disabled — the server serves plain HTTP. Development only! ***
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+{{- $ingressScheme := ternary "https" "http" (or (not (empty .Values.ingress.tls)) (hasKey .Values.ingress.annotations "nginx.ingress.kubernetes.io/ssl-passthrough")) }}
+{{- range .Values.ingress.hosts }}
+The server is reachable at: {{ $ingressScheme }}://{{ .host }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+Get the application URL by running:
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "cosmian-auth-verifier.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo {{ $scheme }}://$NODE_IP:$NODE_PORT
+{{- else if contains "ClusterIP" .Values.service.type }}
+Get the application URL by running these commands:
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "cosmian-auth-verifier.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  echo "Visit {{ $scheme }}://127.0.0.1:{{ .Values.service.port }}{{ .Values.probes.path }}"
+{{- end }}
+{{- if .Values.authVerifier.adminUi.enabled }}
+The admin UI is served under /admin-ui.
+{{- end }}
+
+Database backend: {{ .Values.authVerifier.database.backend }}
+{{- if and (eq .Values.authVerifier.database.backend "sqlite") (not .Values.persistence.enabled) }}
+WARNING: persistence is disabled for the sqlite backend — data will be lost on pod restart.
+{{- end }}
+{{- if .Values.authVerifier.sessionStore.enabled }}
+Session store: {{ .Values.authVerifier.sessionStore.backend }}
+{{- end }}
+{{- if .Values.saml.enabled }}
+
+SAML 2.0 single sign-on is enabled. Configure the IdP of each realm through the
+API or the admin UI; each realm publishes its SP metadata at /saml/<realm_id>/metadata.
+{{- end }}
