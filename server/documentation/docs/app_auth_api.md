@@ -474,6 +474,5 @@ vault_token_cache_ttl_secs    = 30
 ## See also
 
 - [KMS SPIRE/SPIFFE integration guide](../../documentation/docs/integrations/spire_spiffe.md) — full end-to-end flow, KMS configuration, CLI reference, and troubleshooting.
-- [Architecture Decision Record — ADR-0002](adr/2026-07-26-app-auth-api-for-spire.md) — design rationale, alternatives considered, and database schema motivation.
 - [Authorization and Administration](authorization_and_administration.md) — the `AdminAuth` middleware reused for AppRole/Kubernetes role administration.
 - `ckms` AppRole provisioning commands — CLI wrapper for AppRole provisioning against this API.
