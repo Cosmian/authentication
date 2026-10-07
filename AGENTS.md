@@ -253,7 +253,8 @@ nix-build -A auth-verifier-dynamic
 # Build the SAML binary (static only)
 nix-build -A auth-verifier-static-saml
 
-# Build Docker image (Linux only); the SAML image is tagged <version>-saml
+# Build Docker image (Linux only); the SAML image is tagged <version>-saml locally and
+# published as the separate GHCR package ghcr.io/cosmian/auth-verifier-saml:<version>
 nix-build -A docker-image
 nix-build -A docker-image-saml
 ```

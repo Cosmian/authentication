@@ -28,4 +28,4 @@ annotations:
     - name: auth-verifier
       image: ghcr.io/cosmian/auth-verifier:0.4.0
     - name: auth-verifier-saml
-      image: ghcr.io/cosmian/auth-verifier:0.4.0-saml
+      image: ghcr.io/cosmian/auth-verifier-saml:0.4.0

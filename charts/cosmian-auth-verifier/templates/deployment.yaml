@@ -87,7 +87,7 @@ spec:
         - name: auth-verifier
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ include "cosmian-auth-verifier.imageTag" . }}"
+          image: {{ include "cosmian-auth-verifier.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           # Render the configuration template with the Secret-provided URLs
           # (TOML-escaped), then start the server on it.

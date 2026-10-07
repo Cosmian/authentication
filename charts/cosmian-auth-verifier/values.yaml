@@ -7,9 +7,10 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/cosmian/auth-verifier
+  # Used instead of `repository` when saml.enabled is true (server built with the `saml` feature).
+  samlRepository: ghcr.io/cosmian/auth-verifier-saml
   pullPolicy: IfNotPresent
-  # Overrides the image tag whose default is the chart appVersion, suffixed
-  # with "-saml" when saml.enabled is true.
+  # Overrides the image tag whose default is the chart appVersion.
   tag: ''
 
 imagePullSecrets: []
@@ -259,7 +260,7 @@ authVerifier:
   extraConfig: ''
 
 ## SAML 2.0 single sign-on.
-## Enabling it switches to the "-saml" image variant (built with the `saml`
+## Enabling it switches to the SAML image (image.samlRepository, built with the `saml`
 ## feature) and configures the SP signing key. Per-realm IdP settings are then
 ## managed through the API / admin UI.
 saml:

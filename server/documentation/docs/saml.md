@@ -53,7 +53,8 @@ admins keep signing in with the methods of the `_` realm.
 
     - **Prebuilt:** the release publishes a SAML variant next to the standard one — packages
       whose file name ends in `-saml` (for example `auth-verifier_<version>-1_amd64-saml.deb`)
-      and the Docker image tag `<version>-saml`. It is a static build only and installs under
+      and the Docker image `ghcr.io/cosmian/auth-verifier-saml:<version>`, a separate package
+      from the standard `ghcr.io/cosmian/auth-verifier`. It is a static build only and installs under
       the same package name as the standard server, so install one or the other.
     - **From source with Nix:** `nix-build -A auth-verifier-static-saml`
     - **From source with cargo**, inside the Nix shell:

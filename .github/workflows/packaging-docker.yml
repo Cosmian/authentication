@@ -90,9 +90,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/cosmian/auth-verifier
-          flavor: |
-            suffix=${{ matrix.variant == 'saml' && '-saml' || '' }}
+          images: ghcr.io/cosmian/${{ matrix.variant == 'saml' && 'auth-verifier-saml' || 'auth-verifier' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -195,7 +193,7 @@ jobs:
       packages: write
       id-token: write # Required for cosign keyless signing
     env:
-      REGISTRY_IMAGE: ghcr.io/cosmian/auth-verifier
+      REGISTRY_IMAGE: ghcr.io/cosmian/${{ matrix.variant == 'saml' && 'auth-verifier-saml' || 'auth-verifier' }}
 
     steps:
       - name: Login to GHCR
@@ -216,8 +214,6 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY_IMAGE }}
-          flavor: |
-            suffix=${{ matrix.variant == 'saml' && '-saml' || '' }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr

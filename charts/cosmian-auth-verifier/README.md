@@ -47,7 +47,7 @@ helm install auth ./charts/cosmian-auth-verifier \
   --set authVerifier.sessionStore.existingSecret=auth-sessions \
   --set replicaCount=2
 
-# SAML: switches to the <version>-saml image and configures the SP signing key
+# SAML: switches to the ghcr.io/cosmian/auth-verifier-saml image and configures the SP signing key
 kubectl create secret tls auth-saml-sp --cert=saml-sp.cert.pem --key=saml-sp.key.pem
 helm install auth ./charts/cosmian-auth-verifier \
   --set authVerifier.tls.existingSecret=auth-verifier-tls \

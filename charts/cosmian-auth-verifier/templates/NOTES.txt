@@ -1,5 +1,5 @@
 Cosmian Authentication Server has been deployed as {{ include "cosmian-auth-verifier.fullname" . }} in namespace {{ .Release.Namespace }}.
-Image: {{ .Values.image.repository }}:{{ include "cosmian-auth-verifier.imageTag" . }}
+Image: {{ include "cosmian-auth-verifier.image" . }}
 
 {{- $scheme := include "cosmian-auth-verifier.scheme" . }}
 

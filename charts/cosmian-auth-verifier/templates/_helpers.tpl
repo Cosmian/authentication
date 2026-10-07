@@ -62,18 +62,12 @@ Create the name of the service account to use.
 {{- end }}
 
 {{/*
-Resolve the image tag: the chart appVersion by default, with the "-saml" suffix
-of the SAML image variant when saml.enabled is true. An explicit image.tag is
-used verbatim.
+Resolve the image: the SAML image repository when saml.enabled is true, tagged with
+the chart appVersion unless image.tag is set.
 */}}
-{{- define "cosmian-auth-verifier.imageTag" -}}
-{{- if .Values.image.tag }}
-{{- .Values.image.tag }}
-{{- else if .Values.saml.enabled }}
-{{- printf "%s-saml" .Chart.AppVersion }}
-{{- else }}
-{{- .Chart.AppVersion }}
-{{- end }}
+{{- define "cosmian-auth-verifier.image" -}}
+{{- $repository := ternary .Values.image.samlRepository .Values.image.repository .Values.saml.enabled }}
+{{- printf "%s:%s" $repository (.Values.image.tag | default .Chart.AppVersion) }}
 {{- end }}
 
 {{/*
