@@ -340,12 +340,12 @@ sequenceDiagram
     participant IdP as Identity Provider
 
     B->>EA: GET /saml/{realm}/login?return_to=https://app.example.com/…
-    EA-->>B: 302 to IdP (signed AuthnRequest)<br/>Set-Cookie: _ea_saml=<request ID>
+    EA-->>B: 302 to IdP (signed AuthnRequest)<br/>Set-Cookie: _ea_saml = request ID
     B->>IdP: sign in
     IdP-->>B: form posting the signed SAML response
     B->>EA: POST /saml/{realm}/acs (SAMLResponse, RelayState)<br/>Cookie: _ea_saml
     note over EA: browser binding, single-use request,<br/>signature, audience, recipient, time, replay
-    EA-->>B: Set-Cookie: _ea_=…; continue to return_to
+    EA-->>B: 200 page continuing to return_to<br/>Set-Cookie: _ea_ session
 ```
 
 Setup, identity mapping, the full list of checks and troubleshooting are in
