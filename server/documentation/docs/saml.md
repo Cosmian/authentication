@@ -14,6 +14,7 @@ The design and its trade-offs are recorded in
 ## Table of Contents
 
 - [What is supported](#what-is-supported)
+- [Architecture](#architecture)
 - [Prerequisites](#prerequisites)
 - [Step 1 — Create the SP signing key](#step-1--create-the-sp-signing-key)
 - [Step 2 — Configure the realm](#step-2--configure-the-realm)
@@ -42,6 +43,56 @@ The design and its trade-offs are recorded in
 
 SAML is a login method for the users of a realm. It is **never** an administrator credential:
 admins keep signing in with the methods of the `_` realm.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph user["End user"]
+        B["Web browser"]
+    end
+
+    subgraph app["Your application"]
+        APP["Web application<br/>(origin listed in allowed_return_origins)"]
+        API["API server"]
+    end
+
+    subgraph idp["Identity provider"]
+        IDP["SAML 2.0 IdP<br/>Entra ID, Okta, ADFS, Keycloak, Shibboleth"]
+        DIR[("User directory<br/>AD, LDAP")]
+        MFA["MFA factors"]
+    end
+
+    subgraph verifier["Authentication Verifier deployment"]
+        EA["Authentication Verifier<br/>SAML 2.0 Service Provider<br/>/saml/{realm_id}/login, /acs, /metadata"]
+        KEY["SP signing key and certificate<br/>(PEM files of saml_sp_params)"]
+        DB[("Auth database<br/>SQLite, PostgreSQL, MySQL<br/>realms and saml_params")]
+        SS[("Session store<br/>SQLite, PostgreSQL, MySQL, Redis<br/>sessions, pending SAML requests, replay cache")]
+    end
+
+    ADM["Realm administrator<br/>admin UI or admin API"]
+    IDPADM["IdP administrator"]
+
+    B -- "1. opens the application" --> APP
+    B -- "2. login redirect and ACS form post" --> EA
+    B -- "3. signs in" --> IDP
+    IDP --> DIR
+    IDP --> MFA
+    B -- "4. API calls with the _ea_ cookie" --> API
+    API -- "5. validates the session (/sessions)" --> EA
+    EA --> DB
+    EA --> SS
+    KEY -.-> EA
+    ADM -. "pastes IdP metadata, sets SAML realm settings" .-> EA
+    EA -. "SP metadata" .-> IDPADM
+    IDPADM -. "registers the SP" .-> IDP
+```
+
+The Authentication Verifier and the IdP never talk to each other directly: every SAML message
+travels through the browser (front channel), and trust is set up once, out of band, by
+exchanging metadata. The application and the API server only ever see the `_ea_` session.
 
 ---
 
@@ -194,23 +245,43 @@ sequenceDiagram
     autonumber
     participant B as Browser
     participant EA as Authentication Verifier
-    participant S as SAML request store
+    participant DB as Auth database
+    participant RS as SAML request store
+    participant SS as Session store
     participant IdP as Identity Provider
+    participant APP as Application and API
 
-    B->>EA: GET /saml/{realm}/login?return_to=…
-    note over EA: return_to checked against allowed_return_origins
-    EA->>S: store pending request (ID, realm, return URL; 10 min)
-    EA-->>B: 302 to IdP SSO URL (signed AuthnRequest, RelayState = request ID)<br/>Set-Cookie: _ea_saml=<request ID>; Secure; HttpOnly; SameSite=None
-    B->>IdP: GET SSO URL
-    IdP-->>B: sign-in page (MFA, …)
-    B->>IdP: credentials
-    IdP-->>B: auto-submitting form
-    B->>EA: POST /saml/{realm}/acs (SAMLResponse, RelayState)<br/>Cookie: _ea_saml=<request ID>
-    note over EA: _ea_saml must equal RelayState
-    EA->>S: take pending request (single use, same realm)
-    note over EA: verify signature and conditions,<br/>record assertion ID (replay cache),<br/>map identity
-    EA-->>B: 200 page continuing to the return URL<br/>Set-Cookie: _ea_=…; SameSite=Strict (session)
-    B->>B: navigate to return URL
+    B->>EA: GET /saml/{realm_id}/login?return_to=URL
+    note over EA: per-IP rate limit (same as /login)
+    EA->>DB: get realm
+    DB-->>EA: realm and saml_params
+    note over EA: 400 if the realm does not use SAML<br/>return_to must be https under allowed_return_origins (else 400)<br/>absent return_to uses default_return_url
+    EA->>RS: store pending request (request ID, realm, return URL, expires in 10 min)
+    note over EA: AuthnRequest ID = request ID<br/>signed RSA-SHA256 with the SP key (HTTP-Redirect)
+    EA-->>B: 302 Location: IdP SSO URL with SAMLRequest, RelayState = request ID, SigAlg, Signature<br/>Set-Cookie: _ea_saml = request ID (Secure, HttpOnly, SameSite=None, Path=/saml/)
+
+    rect rgba(128, 128, 128, 0.1)
+        note over B,IdP: at the IdP, outside the Authentication Verifier
+        B->>IdP: GET SSO URL
+        note over IdP: checks the AuthnRequest signature<br/>authenticates the user (password, MFA)
+        IdP-->>B: auto-submitting HTML form
+    end
+
+    B->>EA: POST /saml/{realm_id}/acs with SAMLResponse and RelayState<br/>Cookie: _ea_saml = request ID
+    note over EA: _ea_saml cookie must equal RelayState (else 401)
+    EA->>DB: get realm
+    DB-->>EA: realm and saml_params
+    EA->>RS: take pending request (RelayState, realm), single use
+    RS-->>EA: pending request with return URL (none: 401)
+    note over EA: base64-decode SAMLResponse<br/>verify signature against the IdP certificates (xmlsec)<br/>check algorithms, Issuer, InResponseTo, Audience,<br/>Recipient, Destination, validity window, AuthnStatement, Status
+    EA->>RS: record assertion ID (replay cache)
+    RS-->>EA: new (already seen: 401)
+    note over EA: map identity: subject, roles, extra claims<br/>issue session token (as_as = sa, as_rid = realm)
+    EA->>SS: upsert session
+    EA-->>B: 200 HTML page continuing to the return URL<br/>Set-Cookie: _ea_ session (SameSite=Strict), _ea_saml cleared
+    B->>APP: GET return URL with the _ea_ cookie
+    APP->>EA: validate the session (/sessions)
+    EA-->>APP: session data
 ```
 
 The pending requests and the replay cache live in the session store's database (SQLite,
