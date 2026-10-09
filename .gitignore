@@ -1,7 +1,9 @@
 target/
 result*
 .cargo_check
-admin-ui/node_modules/
+node_modules/
+test-results/
+playwright-report/
 admin-ui/dist/
 .github/agents/
 .qwen
