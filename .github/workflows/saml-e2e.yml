@@ -1,0 +1,123 @@
+---
+name: SAML e2e
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # Mondays 03:00 UTC
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "server/src/saml/**"
+      - "server/Cargo.toml"
+      - "client/src/params/saml_params.rs"
+      - "client/src/params/realm_auth_params.rs"
+      - "admin-ui/src/components/realms/Saml*"
+      - "admin-ui/src/utils/saml*"
+      - "default.nix"
+      - "nix/auth-verifier.nix"
+      - "nix/docker.nix"
+      - "nix/xmlsec-static.nix"
+      - "e2e/**"
+      - ".github/scripts/test/saml_e2e/**"
+      - ".github/scripts/test/test_saml_e2e.sh"
+      - ".mise/tasks/test/saml-e2e"
+      - ".github/workflows/saml-e2e.yml"
+  pull_request:
+    paths:
+      - "server/src/saml/**"
+      - "server/Cargo.toml"
+      - "client/src/params/saml_params.rs"
+      - "client/src/params/realm_auth_params.rs"
+      - "admin-ui/src/components/realms/Saml*"
+      - "admin-ui/src/utils/saml*"
+      - "default.nix"
+      - "nix/auth-verifier.nix"
+      - "nix/docker.nix"
+      - "nix/xmlsec-static.nix"
+      - "e2e/**"
+      - ".github/scripts/test/saml_e2e/**"
+      - ".github/scripts/test/test_saml_e2e.sh"
+      - ".mise/tasks/test/saml-e2e"
+      - ".github/workflows/saml-e2e.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saml-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  saml-e2e:
+    name: SAML e2e (Keycloak) - ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+
+    steps:
+      - name: Nix installation
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            connect-timeout = 15
+            stalled-download-timeout = 15
+            narinfo-cache-negative-ttl = 0
+
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+        with:
+          version: 2026.9.2
+
+      - name: Warm Nix store
+        run: |
+          sed -n 's/.*url *= *"\(https:\/\/[^"]*\.tar\.gz\)".*/\1/p' default.nix | sort -u | while read -r url; do
+            dest="/tmp/$(basename "$url")"
+            fallback=$(echo "$url" | sed 's|https://package.cosmian.com/nixpkgs/|https://github.com/NixOS/nixpkgs/archive/|')
+            echo "Downloading $(basename "$url") …"
+            if ! curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL -o "$dest" "$url"; then
+              echo "Mirror failed, falling back to GitHub …"
+              curl --retry 5 --retry-delay 10 --retry-max-time 300 --retry-all-errors -fsSL -o "$dest" "$fallback"
+            fi
+            nix-prefetch-url --unpack --name source "file://$dest"
+            rm -f "$dest"
+          done
+
+      - name: Build and load the SAML Docker image
+        run: mise run docker:load -- --variant saml
+        env:
+          NIX_CURL_FLAGS: --user-agent "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
+
+      - name: Install e2e dependencies and Chromium
+        run: |
+          pnpm --dir e2e install --frozen-lockfile
+          pnpm --dir e2e exec playwright install --with-deps chromium
+
+      - name: Lint e2e
+        run: |
+          pnpm --dir e2e format:check
+          pnpm --dir e2e typecheck
+
+      - name: Run SAML e2e tests
+        run: mise run test:saml-e2e
+        env:
+          CI: true
+
+      - name: Upload Playwright results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saml-e2e-${{ matrix.runner }}
+          path: |
+            e2e/test-results/
+            e2e/playwright-report/
+          retention-days: 7

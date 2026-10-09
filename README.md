@@ -2,7 +2,7 @@
 
 `authentication` is a Rust workspace that provides:
 
-- `auth_verifier`: a multi-realm authentication server supporting username/password, JWT/OIDC, mTLS, and TOTP
+- `auth_verifier`: a multi-realm authentication server supporting username/password, JWT/OIDC, mTLS, TOTP and SAML 2.0 single sign-on
 - `auth_client`: a client library and shared types used to integrate with the server
 
 ## Documentation

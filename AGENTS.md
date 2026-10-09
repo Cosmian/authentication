@@ -46,8 +46,11 @@ full list.
 mise run test:sqlite                        # == bash .github/scripts/nix.sh test sqlite
 mise run test:psql
 mise run package -- --link static deb       # == bash .github/scripts/nix.sh --link static package deb
+mise run package -- --variant saml deb      # SAML build: result-deb-static-saml/*-saml.deb
 mise run docker:load
 mise run docker:test
+mise run docker:test -- --variant saml      # SAML image (tag <version>-saml), checks the saml feature
+mise run test:saml-e2e                      # SAML image vs a real Keycloak: curl checks + Playwright (e2e/)
 mise run ui:lint                            # admin-ui: eslint + prettier + tsc
 mise run ui:test                            # admin-ui: unit tests
 mise run ui:build
@@ -89,6 +92,8 @@ server/             auth_verifier  — server binary + lib
     tests/          — integration tests
     tls/            — TLS helpers
 
+e2e/                Playwright SAML end-to-end tests (run by `mise run test:saml-e2e`)
+
 nix/                Nix build expressions and expected vendor hashes
   auth-verifier.nix   — Nix derivation for auth_verifier binary
   docker.nix        — Docker image derivation
@@ -122,6 +127,7 @@ mise.toml           — mise task runner config ([tools], [task_config])
 | ------------------ | ------- | ----------------------------------------------------------- |
 | `openssl`          | **on**  | Use OpenSSL (vendored) for TLS; required for most deploys   |
 | `rustls`           | off     | Use rustls instead of OpenSSL                               |
+| `saml`             | off     | SAML 2.0 SP; needs bundled xmlsec (`nix/xmlsec-static.nix`) — Nix build `auth-verifier-static-saml` |
 | `database`         | **on**  | Compile all database backends (SQLite, PostgreSQL, MySQL)   |
 | `no_jwt_validation`| off     | Skip JWT expiry/issuer checks — **dev/test only**           |
 
@@ -230,7 +236,12 @@ grep -r '#\[get\|#\[post\|#\[put\|#\[delete' server/src/server/endpoints/
 - **Vendored OpenSSL** (compiled during cargo build, no external OpenSSL needed)
 - `cmake` and `perl` as native build inputs (required by `aws-lc-sys` and openssl crate)
 
-No FIPS / non-FIPS variants — the auth server has a single build variant.
+No FIPS / non-FIPS variants. The only build variant besides the default one is
+**SAML**: the same server compiled with the `saml` Cargo feature and a statically
+bundled xmlsec + libxml2 (`nix/xmlsec-static.nix`). It is static-only
+(`--variant saml` with `--link dynamic` is rejected) and is tagged `static-saml`
+in result directories, CI artifacts, hash files and publish folders.
+Packages keep the package name; only the file name gets a `-saml` suffix.
 
 ```bash
 # Build static binary
@@ -239,8 +250,13 @@ nix-build -A auth-verifier-static
 # Build dynamic binary
 nix-build -A auth-verifier-dynamic
 
-# Build Docker image (Linux only)
+# Build the SAML binary (static only)
+nix-build -A auth-verifier-static-saml
+
+# Build Docker image (Linux only); the SAML image is tagged <version>-saml locally and
+# published as the separate GHCR package ghcr.io/cosmian/auth-verifier-saml:<version>
 nix-build -A docker-image
+nix-build -A docker-image-saml
 ```
 
 ---
@@ -253,9 +269,11 @@ bash .github/scripts/nix.sh --link static package       # DEB + RPM on Linux, DM
 bash .github/scripts/nix.sh --link static package deb   # DEB only
 bash .github/scripts/nix.sh --link static package rpm   # RPM only
 bash .github/scripts/nix.sh --link static package dmg   # DMG only (macOS)
+bash .github/scripts/nix.sh --variant saml package deb  # SAML build (static only)
 
 # Docker (Linux only):
 bash .github/scripts/nix.sh docker --load
+bash .github/scripts/nix.sh --variant saml docker --load --test
 ```
 
 ### Expected hashes (`nix/expected-hashes/`)
@@ -264,7 +282,7 @@ bash .github/scripts/nix.sh docker --load
 | ------------------------------------------- | ------------------------------------------ |
 | `server.vendor.static.sha256`               | Cargo vendor hash for static builds        |
 | `server.vendor.dynamic.sha256`              | Cargo vendor hash for dynamic builds       |
-| `auth-verifier.<link>.<arch>.<os>.sha256`     | Expected binary hash for determinism check |
+| `auth-verifier.<static\|dynamic\|static-saml>.<arch>.<os>.sha256` | Expected binary hash for determinism check |
 
 When `Cargo.lock` changes, the vendor hashes become stale. Regenerate:
 
@@ -281,7 +299,7 @@ nix-build -A auth-verifier-static 2>&1 | grep "got:"
 All CI runs go through `.github/scripts/nix.sh`:
 
 ```bash
-bash .github/scripts/nix.sh [--link static|dynamic] COMMAND [args]
+bash .github/scripts/nix.sh [--link static|dynamic] [--variant default|saml] COMMAND [args]
 ```
 
 | Command              | Description                                     |

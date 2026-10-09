@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Build, load, and smoke-test the Docker image (delegates to .github/scripts/nix.sh docker --load --test)"
+#MISE description="Build, load, and smoke-test the Docker image. Usage: mise run docker:test -- [--variant default|saml]"
 set -euo pipefail
 source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
 
-print_status "Building, loading, and testing Docker image"
-exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" docker --load --test "$@"
+split_nix_global_args "$@"
+
+print_status "Building, loading, and testing Docker image (${NIX_GLOBAL_ARGS[*]:-defaults})"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" ${NIX_GLOBAL_ARGS[@]+"${NIX_GLOBAL_ARGS[@]}"} docker --load --test ${NIX_REST_ARGS[@]+"${NIX_REST_ARGS[@]}"}

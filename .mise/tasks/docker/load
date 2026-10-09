@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-#MISE description="Build and load the Docker image into the local Docker daemon (delegates to .github/scripts/nix.sh docker --load)"
+#MISE description="Build and load the Docker image into the local Docker daemon. Usage: mise run docker:load -- [--variant default|saml]"
 set -euo pipefail
 source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
 
-print_status "Building and loading Docker image"
-exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" docker --load "$@"
+split_nix_global_args "$@"
+
+print_status "Building and loading Docker image (${NIX_GLOBAL_ARGS[*]:-defaults})"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" ${NIX_GLOBAL_ARGS[@]+"${NIX_GLOBAL_ARGS[@]}"} docker --load ${NIX_REST_ARGS[@]+"${NIX_REST_ARGS[@]}"}

@@ -11,8 +11,9 @@ This document describes every authentication flow supported by the Authenticatio
 | 5 | [AppRole](#flow-5--approle-machine-credentials) | `role_id` + `secret_id` | `X-Vault-Token` app token |
 | 6 | [Kubernetes service-account](#flow-6--kubernetes-service-account) | Kubernetes SA JWT | `X-Vault-Token` app token |
 | 7 | [Token self-service](#flow-7--token-self-service) | Existing app token | Metadata / renewed token |
+| 8 | [SAML 2.0 single sign-on](#flow-8--saml-20-single-sign-on) | Signed SAML assertion from the realm's IdP | `_ea_` session cookie |
 
-Flows 1–4 produce a **session cookie** (`_ea_`) used by human and administrator clients. Flows 5–6 produce an opaque **app token** (`X-Vault-Token`) for machine-to-machine workloads. Flow 7 is the self-service lifecycle for app tokens produced by flows 5 and 6.
+Flows 1–4 and 8 produce a **session cookie** (`_ea_`) used by human and administrator clients. Flows 5–6 produce an opaque **app token** (`X-Vault-Token`) for machine-to-machine workloads. Flow 7 is the self-service lifecycle for app tokens produced by flows 5 and 6.
 
 ---
 
@@ -322,6 +323,36 @@ For the full endpoint reference, see [app_auth_api.md](app_auth_api.md#token-sel
 
 ---
 
+## Flow 8 — SAML 2.0 Single Sign-On
+
+Browser users of a SAML realm sign in at the organisation's identity provider. The server is
+the SAML Service Provider: it sends a signed `AuthnRequest`, validates the IdP's signed
+response and issues the usual `_ea_` session, with `as_as` set to `"sa"`. Requires a server
+built with the `saml` feature and a `[saml_sp_params]` signing key.
+
+### SAML sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant EA as Authentication Verifier
+    participant IdP as Identity Provider
+
+    B->>EA: GET /saml/{realm}/login?return_to=https://app.example.com/…
+    EA-->>B: 302 to IdP (signed AuthnRequest)<br/>Set-Cookie: _ea_saml = request ID
+    B->>IdP: sign in
+    IdP-->>B: form posting the signed SAML response
+    B->>EA: POST /saml/{realm}/acs (SAMLResponse, RelayState)<br/>Cookie: _ea_saml
+    note over EA: browser binding, single-use request,<br/>signature, audience, recipient, time, replay
+    EA-->>B: 200 page continuing to return_to<br/>Set-Cookie: _ea_ session
+```
+
+Setup, identity mapping, the full list of checks and troubleshooting are in
+[SAML 2.0 single sign-on](saml.md).
+
+---
+
 ## Session Lifecycle
 
 ```mermaid
@@ -372,6 +403,14 @@ DELETE /sessions/realms/{realm_id}
 | `GET`  | `/whoami?realm={realm}`  | Return the current session's claims as a signed JWT | Session cookie           |
 | `GET`  | `/public/version`        | Server version string                               | No                       |
 | `GET`  | `/.well-known/jwks.json` | JSON Web Key Set for JWT verification               | No                       |
+
+### SAML endpoints (browser, `saml` feature with `[saml_sp_params]`)
+
+| Method | Path                     | Description                                                   | Auth required                  |
+| ------ | ------------------------ | ------------------------------------------------------------- | ------------------------------ |
+| `GET`  | `/saml/{realm}/login`    | Start a login: redirect to the realm's IdP                    | No                             |
+| `POST` | `/saml/{realm}/acs`      | Assertion Consumer Service: validate the response, set `_ea_` | `_ea_saml` cookie from `login` |
+| `GET`  | `/saml/{realm}/metadata` | This server's SP metadata for the realm, for the IdP          | No                             |
 
 ### Machine authentication endpoints
 

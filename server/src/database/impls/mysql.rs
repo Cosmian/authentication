@@ -943,6 +943,9 @@ impl Database for MySqlDatabase {
                 "SELECT id FROM admin WHERE certificate = ?",
                 value.to_string(),
             ),
+            // SAML is a user-facing realm auth scheme, not an admin credential: no admin
+            // authenticates via SAML, so there is never a matching admin row.
+            AuthScheme::Saml => return Ok(Vec::new()),
         };
 
         let rows = sqlx::query(query)

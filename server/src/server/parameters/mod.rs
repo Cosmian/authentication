@@ -1,5 +1,5 @@
 mod auth_params;
-pub use auth_params::{CertificateJwtParams, SessionJwtParams};
+pub use auth_params::{CertificateJwtParams, SamlSpParams, SessionJwtParams};
 
 mod database_params;
 pub use database_params::{DatabaseBackend, DatabaseParams};

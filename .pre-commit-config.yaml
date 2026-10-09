@@ -36,6 +36,7 @@ repos:
     hooks:
       - id: yamlfmt
         args: [--mapping, "2", --sequence, "4", --offset, "2"]
+        exclude: ^charts/[^/]+/templates/
 
   - repo: https://github.com/crate-ci/typos
     rev: v1.31.1
@@ -83,6 +84,7 @@ repos:
       - id: check-vcs-permalinks
       - id: check-xml
       - id: check-yaml
+        exclude: ^charts/[^/]+/templates/
       - id: debug-statements
       - id: destroyed-symlinks
       - id: detect-private-key

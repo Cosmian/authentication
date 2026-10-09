@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="SAML end-to-end tests: SAML Docker image against a Keycloak IdP (set DOCKER_IMAGE_NAME; SAML_E2E_KEEP=1 keeps the stack up)"
+set -euo pipefail
+source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
+
+print_status "SAML e2e against ${DOCKER_IMAGE_NAME:-newest local cosmian-auth-verifier:*-saml}"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/test/test_saml_e2e.sh" "$@"

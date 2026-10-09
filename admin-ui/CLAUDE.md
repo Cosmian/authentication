@@ -69,7 +69,7 @@ tests/
 ## Auth Server Proxy (dev)
 
 Target: `https://localhost:8443`
-Proxied paths: `/login`, `/whoami`, `/sessions`, `/realms`, `/admins`, `/public`
+Proxied paths: `/login`, `/whoami`, `/sessions`, `/realms`, `/admins`, `/auth`, `/public`, `/saml`
 Options: `secure: false`, `changeOrigin: true`
 
 ## Test Regression Policy

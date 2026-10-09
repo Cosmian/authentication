@@ -8,7 +8,13 @@
   version,
   # Linkage mode: true for static OpenSSL, false for dynamic OpenSSL
   static ? true,
+  # Build with the `saml` Cargo feature, linking the bundled static xmlsec/libxml2
+  saml ? false,
+  xmlsecStatic ? null,
 }:
+
+assert saml -> xmlsecStatic != null;
+assert saml -> static;
 
 let
   # On Linux, use pkgs234 stdenv (glibc 2.34) to broaden runtime compatibility.
@@ -18,9 +24,12 @@ let
   # Name tag for output symlinks
   linkTag = if static then "static" else "dynamic";
 
+  # Distinguishes the SAML binary from the default one (different bytes, different hash)
+  buildTag = linkTag + lib.optionalString saml "-saml";
+
   # Expected deterministic sha256 of the final installed binary (auth_verifier)
   # Naming convention (matches repository files):
-  #   auth-verifier.<static|dynamic>.<arch>.<os>.sha256
+  #   auth-verifier.<static|dynamic|static-saml>.<arch>.<os>.sha256
   expectedHashDir = ./expected-hashes;
 
   # Helper: read & trim a hash file, returning null when absent or placeholder.
@@ -40,10 +49,10 @@ let
       null;
 
   # Pre-read expected hashes for every arch+os combination this derivation supports.
-  expectedHash_x86_64_linux = readHashFile "auth-verifier.${linkTag}.x86_64.linux.sha256";
-  expectedHash_aarch64_linux = readHashFile "auth-verifier.${linkTag}.aarch64.linux.sha256";
-  expectedHash_x86_64_darwin = readHashFile "auth-verifier.${linkTag}.x86_64.darwin.sha256";
-  expectedHash_arm64_darwin = readHashFile "auth-verifier.${linkTag}.arm64.darwin.sha256";
+  expectedHash_x86_64_linux = readHashFile "auth-verifier.${buildTag}.x86_64.linux.sha256";
+  expectedHash_aarch64_linux = readHashFile "auth-verifier.${buildTag}.aarch64.linux.sha256";
+  expectedHash_x86_64_darwin = readHashFile "auth-verifier.${buildTag}.x86_64.darwin.sha256";
+  expectedHash_arm64_darwin = readHashFile "auth-verifier.${buildTag}.arm64.darwin.sha256";
 
   srcRoot = ../.;
 
@@ -87,7 +96,9 @@ let
         fw.CoreFoundation
         pkgs.libiconv
       ]
-    );
+    )
+    # Setup hooks put xmlsec on PKG_CONFIG_PATH and xmlsec1-config on PATH, as in shell.nix
+    ++ lib.optionals saml [ xmlsecStatic ];
 
   # Native build inputs needed by vendored OpenSSL and aws-lc-sys
   nativeBuildInputs =
@@ -102,7 +113,7 @@ let
 
 in
 rustPlatform.buildRustPackage {
-  pname = "auth_verifier";
+  pname = "auth_verifier" + lib.optionalString saml "-saml";
   inherit version;
 
   src = filteredSrc;
@@ -151,10 +162,21 @@ rustPlatform.buildRustPackage {
         export CC_${rustTriple}=${ccBin}
         export CXX_${rustTriple}=${cxxBin}
       '';
+      # samael's bindgen needs libclang plus the target libc headers; same recipe as shell.nix.
+      # Must come from the same glibc-2.34 set: build scripts run against pkgs234's libc,
+      # which cannot load a libclang built for a newer glibc.
+      libclang = platform.llvmPackages.libclang;
+      samlExports = lib.optionalString saml ''
+        # samael's build script runs xmlsec1-config; buildInputs bin dirs are not on PATH here.
+        export PATH="${xmlsecStatic}/bin:$PATH"
+        export LIBCLANG_PATH="${libclang.lib}/lib"
+        export BINDGEN_EXTRA_CLANG_ARGS="$(cat ${effectiveCc}/nix-support/libc-cflags 2>/dev/null) $(cat ${effectiveCc}/nix-support/cc-cflags 2>/dev/null) -idirafter $(echo ${libclang.lib}/lib/clang/*/include)"
+      '';
+      features = lib.optionalString saml " --features saml";
     in
     ''
-      echo "== cargo build auth_verifier (release) =="
-      ${ccExports}cargo build --release -p auth_verifier --bin auth_verifier
+      echo "== cargo build auth_verifier (release, ${buildTag}) =="
+      ${ccExports}${samlExports}cargo build --release -p auth_verifier --bin auth_verifier${features}
     '';
 
   # Custom install phase: copy the binary and immediately patch its ELF
@@ -186,6 +208,19 @@ rustPlatform.buildRustPackage {
     BIN="$out/bin/auth_verifier"
     [ -f "$BIN" ] || { echo "ERROR: Binary not found at $BIN"; exit 1; }
     echo "Binary exists at: $BIN"
+    ${lib.optionalString saml ''
+      # xmlsec/libxml2 must be linked statically; a hit means a system library slipped in.
+      if [ "$(uname)" = "Linux" ]; then
+        LIBS=$(readelf -d "$BIN" | grep NEEDED || true)
+      else
+        LIBS=$(otool -L "$BIN" || true)
+      fi
+      if echo "$LIBS" | grep -qiE 'xmlsec|libxml2|libltdl'; then
+        echo "ERROR: SAML binary links xmlsec/libxml2 dynamically:"
+        echo "$LIBS"
+        exit 1
+      fi
+    ''}
 
     file "$BIN" || true
     if [ "$(uname)" = "Linux" ]; then
@@ -214,7 +249,7 @@ rustPlatform.buildRustPackage {
         aarch64|arm64) ARCH_TAG="aarch64" ;;
         *) ARCH_TAG="$ARCH_LINUX" ;;
       esac
-      HASH_FILENAME="auth-verifier.${linkTag}.$ARCH_TAG.linux.sha256"
+      HASH_FILENAME="auth-verifier.${buildTag}.$ARCH_TAG.linux.sha256"
 
       EXPECTED=""
       case "$ARCH_LINUX" in
@@ -248,7 +283,7 @@ rustPlatform.buildRustPackage {
         arm64)  ARCH_TAG="arm64" ;;
         *) ARCH_TAG="$ARCH_DARWIN" ;;
       esac
-      HASH_FILENAME="auth-verifier.${linkTag}.$ARCH_TAG.darwin.sha256"
+      HASH_FILENAME="auth-verifier.${buildTag}.$ARCH_TAG.darwin.sha256"
 
       EXPECTED=""
       case "$ARCH_DARWIN" in

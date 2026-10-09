@@ -63,6 +63,12 @@ tags:
       Kubernetes service-account JWT authentication (`/auth/kubernetes/...`).
       The `login` endpoint validates the JWT against the role's JWKS URL.
       Role management requires admin session cookie.
+  - name: SAML
+    description: |
+      SAML 2.0 SP-initiated Web Browser SSO (`/saml/{realm_id}/...`). Present only on
+      servers built with the `saml` feature and configured with `saml_sp_params`;
+      otherwise these routes return 404. `login` and `acs` are browser navigations,
+      not API calls.
 
 components:
   securitySchemes:
@@ -92,7 +98,7 @@ components:
     AuthScheme:
       type: string
       description: Wire representation of the authentication scheme.
-      enum: [up, jwt, cc, f2, dc]
+      enum: [up, jwt, cc, f2, dc, sa]
 
     AuthenticatedClientScheme:
       type: object
@@ -103,7 +109,7 @@ components:
           example: alice
         auth_scheme:
           type: string
-          enum: [UsernamePassword, Jwt, ClientCertificate, Fido2, DigitalCredentials]
+          enum: [UsernamePassword, Jwt, ClientCertificate, Fido2, DigitalCredentials, Saml]
       example:
         username: alice
         auth_scheme: UsernamePassword
@@ -171,9 +177,75 @@ components:
           default: 30
           example: 30
 
+    SamlParams:
+      type: object
+      description: |
+        Validated when the realm is created or updated; servers built without the `saml`
+        feature, or without a configured SAML signing key, refuse it. The IdP fields are
+        always derived from `metadata_xml`, overwriting any values sent.
+      required: [metadata_xml, sp_entity_id, sp_acs_url, default_return_url]
+      properties:
+        idp_entity_id:
+          type: string
+          description: IdP entityID (the required <Issuer> on responses); server-derived from metadata_xml.
+        idp_sso_url:
+          type: string
+          format: uri
+          description: IdP HTTP-Redirect Single Sign-On Service URL; server-derived from metadata_xml.
+        idp_signing_certificates:
+          type: array
+          items:
+            type: string
+          description: PEM-encoded IdP signing certificate(s); server-derived from metadata_xml.
+        idp_nameid_format:
+          type: string
+          nullable: true
+          description: Expected/requested <NameID> Format URI.
+        metadata_xml:
+          type: string
+          nullable: true
+          description: Raw IdP metadata XML supplied by the admin; the IdP fields above are derived from it.
+        sp_entity_id:
+          type: string
+          description: This SP's entityID, advertised in published SP metadata.
+        sp_acs_url:
+          type: string
+          format: uri
+          description: This SP's Assertion Consumer Service URL (/saml/{realm_id}/acs).
+        subject_attribute:
+          type: string
+          nullable: true
+          description: SAML attribute whose single value becomes the session subject; when unset the <NameID> is used.
+        normalize_subject_case:
+          type: boolean
+          default: false
+          description: Lowercase the resolved subject before use.
+        role_attribute:
+          type: string
+          nullable: true
+          description: SAML attribute whose values populate the JWT roles claim (pass-through).
+        attribute_claim_map:
+          type: object
+          additionalProperties:
+            type: string
+          description: Allowlist mapping SAML attribute name to session JWT extra-claim name.
+        allowed_return_origins:
+          type: array
+          items:
+            type: string
+          description: Allowed return-URL origins (scheme://host[:port]); any path under an approved origin is permitted.
+        default_return_url:
+          type: string
+          format: uri
+          description: Default post-login redirect URL, used when no return_to is supplied.
+
     RealmAuthParams:
       type: object
       properties:
+        saml_params:
+          allOf:
+            - $ref: '#/components/schemas/SamlParams'
+          nullable: true
         jwt_params:
           allOf:
             - $ref: '#/components/schemas/JwtParams'
@@ -972,6 +1044,12 @@ components:
   responses:
     NoContent:
       description: Success — empty body.
+    BadRequest:
+      description: Invalid request body; the message names the offending field.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     Unauthorized:
       description: Missing or invalid credentials.
       content:
@@ -1160,6 +1238,128 @@ paths:
                     session_id:
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /saml/{realm_id}/login:
+    get:
+      tags: [SAML]
+      summary: Start a SAML login at the realm's IdP
+      operationId: samlLogin
+      description: |
+        Redirects the browser to the realm's IdP with a signed `AuthnRequest`
+        (HTTP-Redirect binding, `RelayState` = request ID) and sets the short-lived
+        `_ea_saml` cookie (`Secure; HttpOnly; SameSite=None; Path=/saml/`) that the ACS
+        requires, so a login can only be completed by the browser that started it.
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+        - name: return_to
+          in: query
+          required: false
+          description: |
+            Where to send the browser after login. Must be an https URL under one of the
+            realm's `allowed_return_origins`; defaults to `default_return_url`.
+          schema:
+            type: string
+            format: uri
+          example: https://app.example.com/dashboard
+      security: []
+      responses:
+        '302':
+          description: Redirect to the IdP Single Sign-On Service.
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+            Set-Cookie:
+              schema:
+                type: string
+              example: _ea_saml=_4f1c...; Secure; HttpOnly; SameSite=None; Path=/saml/; Max-Age=600
+        '400':
+          description: Unknown realm, realm without SAML, or `return_to` not allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /saml/{realm_id}/acs:
+    post:
+      tags: [SAML]
+      summary: SAML Assertion Consumer Service
+      operationId: samlAcs
+      description: |
+        Receives the IdP's `<Response>` (HTTP-POST binding). Requires the `_ea_saml`
+        cookie to match `RelayState`, validates the response (signature, issuer,
+        audience, recipient, `InResponseTo`, validity window, single use), maps the
+        identity and sets the `_ea_` session cookie. The HTML page returned sends the
+        browser on to the login's return URL.
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [SAMLResponse, RelayState]
+              properties:
+                SAMLResponse:
+                  type: string
+                  description: Base64-encoded SAML `<Response>` XML.
+                RelayState:
+                  type: string
+                  description: The request ID sent in the login redirect.
+      responses:
+        '200':
+          description: Signed in; the page redirects to the return URL.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              example: _ea_=<value>; HttpOnly; Secure; SameSite=Strict; Path=/
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: Unknown realm or realm without SAML.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: |
+            The response was rejected (browser mismatch, unknown or expired login,
+            invalid or replayed response, unmappable identity).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /saml/{realm_id}/metadata:
+    get:
+      tags: [SAML]
+      summary: This server's SAML SP metadata for the realm
+      operationId: samlMetadata
+      description: |
+        SAML 2.0 metadata to import into the realm's IdP: entity ID, ACS URL, NameID
+        format and the SP signing certificate (`AuthnRequestsSigned="true"`).
+      parameters:
+        - $ref: '#/components/parameters/realmId'
+      security: []
+      responses:
+        '200':
+          description: SP metadata.
+          content:
+            application/samlmetadata+xml:
+              schema:
+                type: string
+        '400':
+          description: Unknown realm or realm without SAML.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /whoami:
     get:
@@ -1488,6 +1688,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Realm'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1579,6 +1781,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Realm'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

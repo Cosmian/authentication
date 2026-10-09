@@ -1,0 +1,83 @@
+{{- $av := .Values.authVerifier -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cosmian-auth-verifier.fullname" . }}
+  labels:
+    {{- include "cosmian-auth-verifier.labels" . | nindent 4 }}
+data:
+  # @DATABASE_URL@ and @SESSION_STORE_URL@ are replaced at container start with
+  # values read from Secrets, so no credentials are stored in this ConfigMap.
+  auth_verifier.toml.tpl: |
+    host_name = {{ $av.hostName | quote }}
+    host_port = {{ $av.port | int }}
+    {{- if $av.adminUi.enabled }}
+    admin_ui_path = "/srv/admin-ui"
+    {{- end }}
+    roles = {{ toJson $av.roles }}
+    allowed_origins = {{ toJson $av.allowedOrigins }}
+    login_rate_limit_per_second = {{ $av.loginRateLimit.perSecond | int }}
+    login_rate_limit_burst = {{ $av.loginRateLimit.burst | int }}
+
+    [log]
+    level = {{ $av.log.level | quote }}
+    {{- if $av.tls.enabled }}
+
+    [tls_params]
+    server_private_key = "/etc/cosmian/tls/tls.key"
+    server_certificate = "/etc/cosmian/tls/tls.crt"
+    server_ca_chain = {{ printf "/etc/cosmian/tls/%s" $av.tls.caKey | quote }}
+    {{- if $av.tls.clientCaSecret }}
+    client_ca_cert_chain = {{ printf "/etc/cosmian/client-ca/%s" $av.tls.clientCaKey | quote }}
+    {{- end }}
+    {{- with $av.tls.cipherSuites }}
+    tls_cipher_suites = {{ . | quote }}
+    {{- end }}
+    {{- end }}
+    {{- if $av.sessionJwt.existingSecret }}
+
+    [session_jwt_params]
+    jwt_ec_private_key = "/etc/cosmian/session-jwt/tls.key"
+    jwt_ec_public_key = "/etc/cosmian/session-jwt/tls.crt"
+    {{- end }}
+    {{- if $av.certificateJwt.existingSecret }}
+
+    [certificate_jwt_params]
+    cert_ec_private_key = "/etc/cosmian/certificate-jwt/tls.key"
+    cert_ec_public_key = "/etc/cosmian/certificate-jwt/tls.crt"
+    {{- end }}
+    {{- if .Values.saml.enabled }}
+
+    [saml_sp_params]
+    saml_rsa_private_key = "/etc/cosmian/saml-sp/tls.key"
+    saml_certificate = "/etc/cosmian/saml-sp/tls.crt"
+    {{- end }}
+
+    [database_params]
+    backend = {{ $av.database.backend | quote }}
+    {{- if eq $av.database.backend "sqlite" }}
+    connection_url = {{ printf "sqlite://%s/auth_verifier.db" $av.database.sqlitePath | quote }}
+    {{- else }}
+    connection_url = "@DATABASE_URL@"
+    {{- end }}
+    max_connections = {{ $av.database.maxConnections | int }}
+    min_connections = {{ $av.database.minConnections | int }}
+    connect_timeout_secs = {{ $av.database.connectTimeoutSecs | int }}
+    idle_timeout_secs = {{ $av.database.idleTimeoutSecs | int }}
+    auto_init_schema = {{ $av.database.autoInitSchema }}
+    {{- if $av.sessionStore.enabled }}
+
+    [sessions_store_params]
+    backend = {{ $av.sessionStore.backend | quote }}
+    connection_url = "@SESSION_STORE_URL@"
+    max_connections = {{ $av.sessionStore.maxConnections | int }}
+    {{- end }}
+    {{- with $av.staleSessionCleanupIntervalSeconds }}
+
+    [stale_session_collector_config]
+    cleanup_interval_seconds = {{ . | int }}
+    {{- end }}
+    {{- with $av.extraConfig }}
+    {{- "\n" }}
+    {{- . | nindent 4 }}
+    {{- end }}

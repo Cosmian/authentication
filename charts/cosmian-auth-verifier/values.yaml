@@ -1,0 +1,290 @@
+---
+## Default values for the cosmian-auth-verifier Helm chart.
+## This is a YAML-formatted file.
+## Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/cosmian/auth-verifier
+  # Used instead of `repository` when saml.enabled is true (server built with the `saml` feature).
+  samlRepository: ghcr.io/cosmian/auth-verifier-saml
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ''
+
+imagePullSecrets: []
+nameOverride: ''
+fullnameOverride: ''
+
+serviceAccount:
+  # Specifies whether a service account should be created.
+  create: true
+  # Automatically mount a ServiceAccount's API credentials.
+  automount: false
+  # Annotations to add to the service account.
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template.
+  name: ''
+
+podAnnotations: {}
+podLabels: {}
+
+# The image runs as the baked-in "auth" user (uid/gid 1000).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  # The rendered configuration, /tmp and the sqlite PVC are writable volumes;
+  # the root filesystem can safely be read-only.
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+
+service:
+  type: ClusterIP
+  port: 8443
+  annotations: {}
+
+# The server terminates TLS itself (authVerifier.tls) and mTLS client
+# certificates are verified during the TLS handshake. Use TLS passthrough
+# (e.g. nginx.ingress.kubernetes.io/ssl-passthrough: "true") to keep mTLS, or
+# re-encrypt to the HTTPS backend
+# (nginx.ingress.kubernetes.io/backend-protocol: "HTTPS") otherwise.
+# Either way the server sees the controller's IP, so the per-IP login rate
+# limit (authVerifier.loginRateLimit) is shared by all clients.
+ingress:
+  enabled: false
+  className: ''
+  annotations: {}
+  hosts:
+    - host: auth.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: cosmian-auth-verifier-ingress-tls
+  #    hosts:
+  #      - auth.example.com
+
+resources:
+  # Each Argon2id password hash (/login, credential updates) takes 64 MiB and
+  # 4 lanes: size the memory limit for the expected concurrent logins.
+  limits:
+    cpu: '2'
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 256Mi
+
+# -- Optional PriorityClass name.
+priorityClassName: ''
+
+# -- Seconds the pod is allowed to terminate gracefully.
+terminationGracePeriodSeconds: 30
+
+# Probes target the unauthenticated GET /public/version endpoint; the scheme
+# (HTTP/HTTPS) follows authVerifier.tls.enabled. Only timing fields go here.
+probes:
+  path: /public/version
+  # Covers the database connect timeout (30 s) plus schema initialisation.
+  startup:
+    failureThreshold: 12
+    periodSeconds: 5
+  liveness:
+    periodSeconds: 10
+  readiness:
+    periodSeconds: 10
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 75
+  # targetMemoryUtilizationPercentage: 80
+  # -- Optional HPA scaling behavior; pods are stateless (sessions live in the
+  # session store), so the Kubernetes defaults are usually fine.
+  behavior: {}
+
+# Requires a postgresql/mysql backend: the sqlite deployment runs a single pod.
+podDisruptionBudget:
+  enabled: false
+  # Exactly one of minAvailable / maxUnavailable must be set.
+  minAvailable: 1
+  # maxUnavailable: 1
+
+networkPolicy:
+  # When enabled, only traffic on the server port is allowed in, from the
+  # namespaces/pods matched by ingressFrom (defaults to same-namespace only).
+  enabled: false
+  ingressFrom: []
+  #  - namespaceSelector: {}
+  #  - podSelector:
+  #      matchLabels:
+  #        role: frontend
+  egress: []
+
+# -- Topology spread constraints for distributing replicas across zones/nodes.
+topologySpreadConstraints: []
+#  - maxSkew: 1
+#    topologyKey: topology.kubernetes.io/zone
+#    whenUnsatisfiable: DoNotSchedule
+#    labelSelector:
+#      matchLabels:
+#        app.kubernetes.io/name: cosmian-auth-verifier
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- Extra environment variables appended to the container (e.g. RUST_LOG,
+# which overrides authVerifier.log.level).
+extraEnv: []
+# -- Extra envFrom sources (ConfigMap/Secret) merged into the container env.
+extraEnvFrom: []
+# -- Extra volumes mounted on the pod.
+extraVolumes: []
+# -- Extra volumeMounts mounted on the container.
+extraVolumeMounts: []
+# -- Extra sidecar containers added to the pod.
+extraContainers: []
+# -- Init containers run before the main container starts.
+initContainers: []
+
+## Cosmian Authentication Server configuration.
+## Rendered into auth_verifier.toml (see server/documentation/docs/server_configuration.md).
+## Credentials (database URLs) are kept in a Secret and substituted at startup.
+authVerifier:
+  # -- Address to bind to inside the container.
+  hostName: 0.0.0.0
+  # -- Listening port inside the container.
+  port: 8443
+
+  log:
+    # -- error, warn, info, debug, trace, or a RUST_LOG-style directive.
+    level: info
+
+  # -- Serve the admin UI bundled in the image (/srv/admin-ui) at /admin-ui.
+  adminUi:
+    enabled: true
+
+  # -- RBAC role names advertised via GET /public/roles (must match your OPA policy).
+  roles: []
+  # -- Origins allowed to call the admin scopes cross-origin (same-origin when empty).
+  allowedOrigins: []
+
+  # Keyed on the TCP peer IP (forwarded headers are ignored); each replica
+  # keeps its own counters.
+  loginRateLimit:
+    # -- Sustained per-IP requests/second allowed on POST /login.
+    perSecond: 5
+    # -- Burst capacity above the sustained rate.
+    burst: 10
+
+  tls:
+    # -- Serve HTTPS. Disabling it is for development only and then requires
+    # sessionJwt.existingSecret, since session JWTs are otherwise signed with
+    # the TLS key.
+    enabled: true
+    # -- Secret with the server certificate (tls.crt), its PKCS#8 private key
+    # (tls.key) and the CA chain (caKey). When sessionJwt is unset, the key
+    # also signs session JWTs and must be EC P-256. With cert-manager, use
+    # privateKey.algorithm: ECDSA, privateKey.size: 256 and
+    # privateKey.encoding: PKCS8.
+    existingSecret: ''
+    # -- Key of existingSecret holding the CA chain (server_ca_chain).
+    caKey: ca.crt
+    # -- Optional Secret with the CA chain verifying mTLS client certificates.
+    # When empty, the server CA chain is used.
+    clientCaSecret: ''
+    # -- Key of clientCaSecret holding the client CA chain.
+    clientCaKey: ca.crt
+    # -- Optional colon-separated cipher suite list.
+    cipherSuites: ''
+
+  sessionJwt:
+    # -- Optional Secret with a dedicated EC P-256 key pair signing session JWTs:
+    # tls.key (PKCS#8 private key) and tls.crt (public key or certificate PEM).
+    existingSecret: ''
+
+  certificateJwt:
+    # -- Optional Secret with the EC P-256 key pair signing POST /certify
+    # certificates (same tls.key / tls.crt layout). /certify is disabled when empty.
+    existingSecret: ''
+
+  database:
+    # -- Primary database: sqlite, postgresql or mysql.
+    backend: sqlite
+    # -- Connection URL for postgresql/mysql, stored in a chart-managed Secret.
+    # Prefer existingSecret to avoid storing credentials in values.
+    url: ''
+    # -- Existing Secret holding the connection URL under the key "database-url".
+    existingSecret: ''
+    # -- Directory holding auth_verifier.db for the sqlite backend.
+    sqlitePath: /var/lib/cosmian-auth
+    maxConnections: 10
+    minConnections: 0
+    connectTimeoutSecs: 30
+    idleTimeoutSecs: 600
+    # -- Create/migrate the schema on startup.
+    autoInitSchema: true
+
+  # Dedicated session store. When disabled, sessions are kept in the primary
+  # database.
+  sessionStore:
+    enabled: false
+    # -- redis, postgresql or mysql.
+    backend: redis
+    # -- Connection URL, stored in a chart-managed Secret.
+    url: ''
+    # -- Existing Secret holding the connection URL under the key "session-store-url".
+    existingSecret: ''
+    maxConnections: 20
+
+  # -- Interval of the expired-session cleanup task (SQL session stores only).
+  # Leave empty for the server default (60 s).
+  staleSessionCleanupIntervalSeconds: ''
+
+  # -- Raw TOML appended to the generated configuration, e.g. a [proxy_params]
+  # table. It must only contain [table] sections and ends up in a ConfigMap:
+  # do not put credentials here.
+  extraConfig: ''
+
+## SAML 2.0 single sign-on.
+## Enabling it switches to the SAML image (image.samlRepository, built with the `saml`
+## feature) and configures the SP signing key. Per-realm IdP settings are then
+## managed through the API / admin UI.
+saml:
+  enabled: false
+  # -- Secret with the SP signing key pair: tls.key (RSA >= 2048 bits private
+  # key) and tls.crt (its certificate, published in the SP metadata).
+  existingSecret: ''
+
+# Persistence for the sqlite database backend. Ignored for postgresql/mysql.
+# Prefer postgresql or mysql for HA deployments.
+persistence:
+  enabled: true
+  # -- Use an existing PVC instead of creating one.
+  existingClaim: ''
+  storageClassName: ''
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+  annotations: {}
+
+# -- Test connection pod settings.
+test:
+  # -- Image used by the helm test connection pod (needs curl; busybox wget
+  # lacks TLS 1.3). Override for air-gapped environments or a private registry.
+  image:
+    repository: curlimages/curl
+    tag: 8.11.1
