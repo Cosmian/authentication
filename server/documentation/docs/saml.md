@@ -6,9 +6,6 @@ Keycloak, Shibboleth, … — and come back with the usual `_ea_` session cookie
 for the API servers that validate sessions: a SAML session is a session like any other, with
 `as_as` (auth scheme) set to `"sa"`.
 
-The design and its trade-offs are recorded in
-[ADR-0003](adr/2026-09-25-saml-service-provider.md).
-
 ---
 
 ## Table of Contents
@@ -99,7 +96,7 @@ exchanging metadata. The application and the API server only ever see the `_ea_`
 ## Prerequisites
 
 1. **A server built with the `saml` feature.** SAML statically links the xmlsec and libxml2
-   C libraries (see the ADR), so it is off by default. Either use a prebuilt SAML build or
+   C libraries, so it is off by default. Either use a prebuilt SAML build or
    build it yourself:
 
     - **Prebuilt:** the release publishes a SAML variant next to the standard one — packages

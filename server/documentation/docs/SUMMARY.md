@@ -13,7 +13,3 @@
 - [Authorization and administration](authorization_and_administration.md)
 - [Client library](client_library.md)
 - [API reference](api_reference.md)
-- [Architecture Decision Records]()
-  - [Role / JWT / OPA integration](adr/2026-06-24-role-jwt-opa-integration.md)
-  - [App auth API for SPIRE](adr/2026-07-26-app-auth-api-for-spire.md)
-  - [SAML 2.0 Service Provider](adr/2026-09-25-saml-service-provider.md)
