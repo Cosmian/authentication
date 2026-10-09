@@ -11,3 +11,10 @@ updates:
     labels:
       - dependencies
       - admin-ui
+    groups:
+      admin-ui-minor-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      admin-ui-security:
+        applies-to: security-updates
+        patterns: ["*"]
