@@ -209,7 +209,8 @@ connect_timeout_secs = 10
 idle_timeout_secs = 300
 
 # When true (default), the database schema is created / migrated at startup.
-# Set to false when migrations are managed externally (e.g., Flyway, Liquibase).
+# Set to false when migrations are managed externally (e.g., Flyway, Liquibase);
+# SAML builds then also need the SAML tables (see the SAML guide).
 auto_init_schema = true
 ```
 

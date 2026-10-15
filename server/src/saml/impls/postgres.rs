@@ -48,8 +48,10 @@ impl PostgresSamlRequestStore {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS saml_seen_assertion (
-                assertion_id TEXT PRIMARY KEY,
-                expires_at   BIGINT NOT NULL
+                realm_id     TEXT NOT NULL,
+                assertion_id TEXT NOT NULL,
+                expires_at   BIGINT NOT NULL,
+                PRIMARY KEY (realm_id, assertion_id)
             )
             "#,
         )
@@ -138,13 +140,19 @@ impl SamlRequestStore for PostgresSamlRequestStore {
         row.map(row_to_pending).transpose()
     }
 
-    async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool> {
+    async fn record_assertion_id(
+        &self,
+        realm_id: &str,
+        assertion_id: &str,
+        expires_at: i64,
+    ) -> AuthResult<bool> {
         ensure_unexpired(expires_at, "SAML assertion id")?;
         // ON CONFLICT DO NOTHING: the first insert for an assertion id wins (1 row affected);
         // a replay conflicts and affects 0 rows.
         let result = sqlx::query(
-            "INSERT INTO saml_seen_assertion (assertion_id, expires_at) VALUES ($1, $2) ON CONFLICT (assertion_id) DO NOTHING",
+            "INSERT INTO saml_seen_assertion (realm_id, assertion_id, expires_at) VALUES ($1, $2, $3) ON CONFLICT (realm_id, assertion_id) DO NOTHING",
         )
+        .bind(realm_id)
         .bind(assertion_id)
         .bind(expires_at)
         .execute(&self.pool)

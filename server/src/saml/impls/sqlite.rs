@@ -48,8 +48,10 @@ impl SqliteSamlRequestStore {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS saml_seen_assertion (
-                assertion_id TEXT PRIMARY KEY,
-                expires_at   INTEGER NOT NULL
+                realm_id     TEXT NOT NULL,
+                assertion_id TEXT NOT NULL,
+                expires_at   INTEGER NOT NULL,
+                PRIMARY KEY (realm_id, assertion_id)
             )
             "#,
         )
@@ -139,14 +141,20 @@ impl SamlRequestStore for SqliteSamlRequestStore {
         .transpose()
     }
 
-    async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool> {
+    async fn record_assertion_id(
+        &self,
+        realm_id: &str,
+        assertion_id: &str,
+        expires_at: i64,
+    ) -> AuthResult<bool> {
         ensure_unexpired(expires_at, "SAML assertion id")?;
         // INSERT OR IGNORE relies on the PRIMARY KEY: the first insert for an assertion id wins
         // (1 row affected); a replay collides and affects 0 rows. `rows_affected` therefore
         // distinguishes a newly-recorded id from a replay without a separate read.
         let result = sqlx::query(
-            "INSERT OR IGNORE INTO saml_seen_assertion (assertion_id, expires_at) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO saml_seen_assertion (realm_id, assertion_id, expires_at) VALUES (?, ?, ?)",
         )
+        .bind(realm_id)
         .bind(assertion_id)
         .bind(expires_at)
         .execute(&self.pool)

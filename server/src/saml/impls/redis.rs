@@ -12,7 +12,8 @@ use crate::{
 ///
 /// Both kinds of state carry a TTL, so Redis expires them automatically:
 /// - `saml:pending:{realm_id}:{request_id}` -> JSON `PendingSamlRequest`
-/// - `saml:seen:{assertion_id}` -> a marker set only while the id must be remembered
+/// - `saml:seen:{realm_id length}:{realm_id}:{assertion_id}` -> a marker set only while the id
+///   must be remembered
 pub struct RedisSamlRequestStore {
     client: Arc<Client>,
 }
@@ -28,8 +29,9 @@ impl RedisSamlRequestStore {
         format!("saml:pending:{realm_id}:{request_id}")
     }
 
-    fn seen_key(assertion_id: &str) -> String {
-        format!("saml:seen:{assertion_id}")
+    fn seen_key(realm_id: &str, assertion_id: &str) -> String {
+        // The length prefix keeps `a:b` + `c` and `a` + `b:c` apart: both IDs may contain ':'.
+        format!("saml:seen:{}:{realm_id}:{assertion_id}", realm_id.len())
     }
 
     async fn conn(&self) -> AuthResult<redis::aio::MultiplexedConnection> {
@@ -86,10 +88,15 @@ impl SamlRequestStore for RedisSamlRequestStore {
         }
     }
 
-    async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool> {
+    async fn record_assertion_id(
+        &self,
+        realm_id: &str,
+        assertion_id: &str,
+        expires_at: i64,
+    ) -> AuthResult<bool> {
         let ttl = ensure_unexpired(expires_at, "SAML assertion id")?;
         let mut conn = self.conn().await?;
-        let key = Self::seen_key(assertion_id);
+        let key = Self::seen_key(realm_id, assertion_id);
         // `SET key 1 NX EX ttl` sets only if the key is absent: a reply of OK means newly
         // recorded, a nil reply means the id was already seen (a replay). One atomic command.
         let set: Option<String> = redis::cmd("SET")

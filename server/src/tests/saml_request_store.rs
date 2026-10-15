@@ -69,6 +69,8 @@ fn unique(prefix: &str) -> String {
     format!("{prefix}-{}", Uuid::new_v4())
 }
 
+const ASSERTION_REALM: &str = "assertion-realm";
+
 fn now() -> i64 {
     Utc::now().timestamp()
 }
@@ -193,22 +195,49 @@ async fn test_record_assertion_id_detects_replay() {
 
     assert!(
         store
-            .record_assertion_id(&id, now() + 300)
+            .record_assertion_id(ASSERTION_REALM, &id, now() + 300)
             .await
             .expect("record")
     );
     assert!(
         !store
-            .record_assertion_id(&id, now() + 300)
+            .record_assertion_id(ASSERTION_REALM, &id, now() + 300)
             .await
             .expect("record"),
         "the same assertion id seen twice is a replay"
     );
     assert!(
         store
-            .record_assertion_id(&other_id, now() + 300)
+            .record_assertion_id(ASSERTION_REALM, &other_id, now() + 300)
             .await
             .expect("record")
+    );
+}
+
+#[tokio::test]
+async fn test_assertion_ids_are_scoped_per_realm() {
+    let store = store().await;
+    let (id, realm, other_realm) = (unique("assertion"), unique("realm"), unique("realm"));
+
+    assert!(
+        store
+            .record_assertion_id(&realm, &id, now() + 300)
+            .await
+            .expect("record")
+    );
+    assert!(
+        store
+            .record_assertion_id(&other_realm, &id, now() + 300)
+            .await
+            .expect("record"),
+        "one realm's assertion ids must not block another realm's"
+    );
+    assert!(
+        !store
+            .record_assertion_id(&realm, &id, now() + 300)
+            .await
+            .expect("record"),
+        "a replay within the realm is still detected"
     );
 }
 
@@ -217,7 +246,7 @@ async fn test_record_assertion_id_refuses_an_already_expired_entry() {
     let store = store().await;
 
     let result = store
-        .record_assertion_id(&unique("assertion"), now() - 1)
+        .record_assertion_id(ASSERTION_REALM, &unique("assertion"), now() - 1)
         .await;
     assert!(
         result.is_err(),
@@ -253,13 +282,13 @@ async fn test_ids_are_case_sensitive() {
     let assertion_id = unique("Assertion-Mixed");
     assert!(
         store
-            .record_assertion_id(&assertion_id, now() + 300)
+            .record_assertion_id(&realm, &assertion_id, now() + 300)
             .await
             .expect("record")
     );
     assert!(
         store
-            .record_assertion_id(&assertion_id.to_lowercase(), now() + 300)
+            .record_assertion_id(&realm, &assertion_id.to_lowercase(), now() + 300)
             .await
             .expect("record"),
         "assertion ids differing only in case are different assertions"
@@ -274,20 +303,20 @@ async fn test_long_assertion_ids_sharing_a_prefix_are_distinct() {
 
     assert!(
         store
-            .record_assertion_id(&first, now() + 300)
+            .record_assertion_id(ASSERTION_REALM, &first, now() + 300)
             .await
             .expect("record")
     );
     assert!(
         store
-            .record_assertion_id(&second, now() + 300)
+            .record_assertion_id(ASSERTION_REALM, &second, now() + 300)
             .await
             .expect("record"),
         "ids that differ only after 255 characters are different assertions"
     );
     assert!(
         !store
-            .record_assertion_id(&first, now() + 300)
+            .record_assertion_id(ASSERTION_REALM, &first, now() + 300)
             .await
             .expect("record"),
         "a long id is still recognized as a replay"
@@ -304,11 +333,11 @@ async fn test_delete_expired_purges_only_expired_entries() {
         .await
         .expect("store request");
     store
-        .record_assertion_id(&stale_assertion, now() + 2)
+        .record_assertion_id(&realm, &stale_assertion, now() + 2)
         .await
         .expect("record");
     store
-        .record_assertion_id(&fresh_assertion, now() + 300)
+        .record_assertion_id(&realm, &fresh_assertion, now() + 300)
         .await
         .expect("record");
 
@@ -317,14 +346,14 @@ async fn test_delete_expired_purges_only_expired_entries() {
 
     assert!(
         store
-            .record_assertion_id(&stale_assertion, now() + 300)
+            .record_assertion_id(&realm, &stale_assertion, now() + 300)
             .await
             .expect("record"),
         "the expired entry must have been purged"
     );
     assert!(
         !store
-            .record_assertion_id(&fresh_assertion, now() + 300)
+            .record_assertion_id(&realm, &fresh_assertion, now() + 300)
             .await
             .expect("record"),
         "an unexpired entry must survive the purge"

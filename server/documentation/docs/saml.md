@@ -39,7 +39,7 @@ for the API servers that validate sessions: a SAML session is a session like any
 | Local logout (`DELETE /sessions`) | SAML Single Logout |
 
 SAML is a login method for the users of a realm. It is **never** an administrator credential:
-admins keep signing in with the methods of the `_` realm.
+admins keep signing in with the methods of the `_` realm, which refuses SAML settings.
 
 ---
 
@@ -255,7 +255,7 @@ sequenceDiagram
     note over EA: 400 if the realm does not use SAML<br/>return_to must be https under allowed_return_origins (else 400)<br/>absent return_to uses default_return_url
     EA->>RS: store pending request (request ID, realm, return URL, expires in 10 min)
     note over EA: AuthnRequest ID = request ID<br/>signed RSA-SHA256 with the SP key (HTTP-Redirect)
-    EA-->>B: 302 Location: IdP SSO URL with SAMLRequest, RelayState = request ID, SigAlg, Signature<br/>Set-Cookie: _ea_saml = request ID (Secure, HttpOnly, SameSite=None, Path=/saml/)
+    EA-->>B: 302 Location: IdP SSO URL with SAMLRequest, RelayState = request ID, SigAlg, Signature<br/>Set-Cookie: _ea_saml = request ID (Secure, HttpOnly, SameSite=None, Path=/)
 
     rect rgba(128, 128, 128, 0.1)
         note over B,IdP: at the IdP, outside the Authentication Verifier
@@ -271,7 +271,7 @@ sequenceDiagram
     EA->>RS: take pending request (RelayState, realm), single use
     RS-->>EA: pending request with return URL (none: 401)
     note over EA: base64-decode SAMLResponse<br/>verify signature against the IdP certificates (xmlsec)<br/>check algorithms, Issuer, InResponseTo, Audience,<br/>Recipient, Destination, validity window, AuthnStatement, Status
-    EA->>RS: record assertion ID (replay cache)
+    EA->>RS: record assertion ID in this realm (replay cache)
     RS-->>EA: new (already seen: 401)
     note over EA: map identity: subject, roles, extra claims<br/>issue session token (as_as = sa, as_rid = realm)
     EA->>SS: upsert session
@@ -284,6 +284,15 @@ sequenceDiagram
 The pending requests and the replay cache live in the session store's database (SQLite,
 PostgreSQL, MySQL or Redis) and are purged on the stale-session collector's interval. The
 `/saml` routes share the per-IP rate limit of `/login`.
+
+On the SQL backends SAML opens its own connection pool with the session store's
+`max_connections` / `min_connections`, so plan for twice that many connections to that
+database. With `auto_init_schema = false`, create the two SAML tables yourself:
+`saml_pending_request` (`request_id` primary key, `realm_id`, `return_url`, `created_at`,
+`expires_at`) and `saml_seen_assertion` (primary key `realm_id` + `assertion_id`, or
+`assertion_id_sha256` `BINARY(32)` on MySQL, and `expires_at`), each indexed on
+`expires_at`. The `CREATE TABLE` statements in `server/src/saml/impls/` are the reference.
+Until they exist, SAML logins fail and the periodic cleanup logs errors.
 
 The ACS answers with a small page instead of a redirect: the `SameSite=Strict` session cookie
 may be withheld on a navigation that directly follows the IdP's cross-site POST, and
@@ -305,6 +314,10 @@ IdP's responsibility.
 | `as_rid` | The realm ID |
 
 Roles come straight from the IdP: this server does not filter them against its role list.
+
+A SAML user is a different identity from a user of another scheme with the same name: a
+session's identity is the realm, the scheme (`as_as`) and `sub` together. Applications must
+key users on all three, never on `sub` alone.
 
 ---
 
@@ -355,7 +368,7 @@ WARN event="auth.login.failure" realm=my-service auth_scheme="saml" SAML login r
 | `404` on `/saml/…` | The server was built without `saml`, or `[saml_sp_params]` isn't set. |
 | `400 realm '…' does not exist or does not use SAML` | Wrong realm in the URL, or SAML isn't enabled for it. |
 | `400 return_to is not under an allowed return origin` | Add the origin to `allowed_return_origins`. |
-| `401 this sign-in was not started from this browser` | The browser didn't send back the `_ea_saml` cookie: the login was started in another browser or profile, or the server isn't reached over HTTPS. Start again from `/saml/{realm}/login`. |
+| `401 this sign-in was not started from this browser` | The browser didn't send back the `_ea_saml` cookie: the login was started in another browser or profile, a newer sign-in was started in another tab of the same browser (only the latest one can complete), or the server isn't reached over HTTPS. Start again from `/saml/{realm}/login`. |
 | `401 unknown or expired sign-in request` | More than 10 minutes at the IdP, the response was already used, or it answers another realm. |
 | `401 … must be signed` / signature errors | The IdP signs with a certificate missing from the pasted metadata, or signs neither the assertion nor the response. Refresh the metadata. |
 | `401 … AudienceRequirement` / `not addressed to this service provider` | The IdP's entity ID / audience setting differs from `sp_entity_id`. |

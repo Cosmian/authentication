@@ -44,8 +44,10 @@ impl MySqlSamlRequestStore {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS saml_seen_assertion (
-                assertion_id_sha256 BINARY(32) PRIMARY KEY,
+                realm_id            VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+                assertion_id_sha256 BINARY(32) NOT NULL,
                 expires_at          BIGINT NOT NULL,
+                PRIMARY KEY (realm_id, assertion_id_sha256),
                 INDEX idx_saml_seen_expires_at (expires_at)
             )
             "#,
@@ -158,13 +160,19 @@ impl SamlRequestStore for MySqlSamlRequestStore {
         Ok(result)
     }
 
-    async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool> {
+    async fn record_assertion_id(
+        &self,
+        realm_id: &str,
+        assertion_id: &str,
+        expires_at: i64,
+    ) -> AuthResult<bool> {
         ensure_unexpired(expires_at, "SAML assertion id")?;
         // INSERT IGNORE: the first insert for an assertion id wins (1 row affected); a replay
         // collides on the primary key and affects 0 rows.
         let result = sqlx::query(
-            "INSERT IGNORE INTO saml_seen_assertion (assertion_id_sha256, expires_at) VALUES (?, ?)",
+            "INSERT IGNORE INTO saml_seen_assertion (realm_id, assertion_id_sha256, expires_at) VALUES (?, ?, ?)",
         )
+        .bind(realm_id)
         .bind(Sha256::digest(assertion_id.as_bytes()).to_vec())
         .bind(expires_at)
         .execute(&self.pool)

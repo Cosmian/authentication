@@ -217,8 +217,14 @@ async fn consume_response(
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .ok_or_else(|| AuthError::Saml("SAMLResponse is not base64-encoded UTF-8".to_string()))?;
-    let assertion =
-        validate_saml_response(&xml, &params, &pending.request_id, state.store.as_ref()).await?;
+    let assertion = validate_saml_response(
+        &xml,
+        &params,
+        &realm.id,
+        &pending.request_id,
+        state.store.as_ref(),
+    )
+    .await?;
     let identity = map_identity(&assertion, &params)?;
     Ok((realm, pending, identity))
 }
@@ -263,8 +269,9 @@ fn resolve_return_url(params: &SamlParams, return_to: Option<&str>) -> AuthResul
 
 fn request_cookie(request_id: &str) -> Cookie<'static> {
     // SameSite=None: the IdP's form POST back to the ACS is a cross-site request.
+    // Path=/: the ACS URL may sit behind a reverse-proxy path prefix (`sp_acs_url`).
     Cookie::build(REQUEST_COOKIE, request_id.to_string())
-        .path("/saml/")
+        .path("/")
         .secure(true)
         .http_only(true)
         .same_site(SameSite::None)

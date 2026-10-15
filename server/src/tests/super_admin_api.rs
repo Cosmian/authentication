@@ -383,6 +383,41 @@ async fn test_saml_params_validated_on_realm_create_and_update() -> AuthResult<(
     ctx.stop_server().await
 }
 
+/// SAML is never an administrator credential, so the admin realm `_` refuses SAML settings
+/// even when they are otherwise valid.
+#[cfg(feature = "saml")]
+#[actix_web::test]
+async fn test_saml_params_refused_on_admin_realm() -> AuthResult<()> {
+    init_test_logging(None);
+    let mut server_params = get_default_server_params()?;
+    server_params.saml_sp_params = Some(test_saml_sp_params());
+    let ctx = start_test_server(server_params).await?;
+    let client = authenticate_as_admin(&ctx).await?;
+
+    let mut admin_realm = client.get_realm_as_super_admin(ADMIN_REALM).await?;
+    admin_realm.auth_params.saml_params =
+        Some(crate::tests::helpers::test_saml_params(ADMIN_REALM));
+    let err = client
+        .update_realm_as_super_admin(ADMIN_REALM, &admin_realm)
+        .await
+        .expect_err("Expected update_realm to refuse SAML on the admin realm");
+    assert!(
+        matches!(err, AuthError::FailedHttpStatus(ref m) if m.contains("400") && m.contains("admin realm")),
+        "Expected a 400 naming the admin realm, got: {err:?}"
+    );
+    assert!(
+        client
+            .get_realm_as_super_admin(ADMIN_REALM)
+            .await?
+            .auth_params
+            .saml_params
+            .is_none(),
+        "The refused update must not have been stored"
+    );
+
+    ctx.stop_server().await
+}
+
 // ── Authorization enforcement ────────────────────────────────────────────────
 
 /// A realm admin (non-super-admin) must not be able to update any realm (HTTP 403).

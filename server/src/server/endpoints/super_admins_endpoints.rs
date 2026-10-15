@@ -15,6 +15,12 @@ fn check_saml_params(realm: &mut Realm, server_params: &ServerParams) -> Result<
     let Some(params) = realm.auth_params.saml_params.as_mut() else {
         return Ok(());
     };
+    if realm.id == crate::models::ADMIN_REALM {
+        return Err(AuthError::BadRequest(
+            "SAML can't be enabled on the admin realm `_`: SAML is never an administrator credential"
+                .to_string(),
+        ));
+    }
     if server_params.saml_sp_params.is_none() {
         return Err(AuthError::BadRequest(
             "SAML needs a server signing key: set `saml_sp_params` in the server configuration"

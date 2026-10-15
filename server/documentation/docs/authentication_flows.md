@@ -465,7 +465,7 @@ These endpoints produce or manage **app tokens** (`X-Vault-Token`). See [app_aut
 | `exp`    | Registered                        | Expiry time (Unix seconds)                               |
 | `iat`    | Registered                        | Issued-at time (Unix seconds)                            |
 | `roles`  | Authorization (RFC 9068 §2.2.3.1) | RBAC roles assigned to the user — **omitted when empty** |
-| `as_as`  | Private                           | Auth scheme: `"up"` / `"jwt"` / `"cc"` / `"f2"` / `"dc"` |
+| `as_as`  | Private                           | Auth scheme: `"up"` / `"jwt"` / `"cc"` / `"f2"` / `"dc"` / `"sa"` |
 | `as_rid` | Private                           | Realm ID (also used as the OPA domain scope)             |
 | `as_pk`  | Private                           | Client public key PEM — only present for mTLS sessions   |
 

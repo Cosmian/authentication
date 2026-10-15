@@ -42,12 +42,18 @@ pub trait SamlRequestStore: Send + Sync {
         realm_id: &str,
     ) -> AuthResult<Option<PendingSamlRequest>>;
 
-    /// Record a consumed assertion ID for replay defense. Returns `true` if it was newly
-    /// recorded, `false` if it had already been seen (a replay). Fails if `expires_at` has
-    /// already passed. `expires_at` must cover every instant at which the assertion could still
-    /// be accepted (for the ACS: its `IssueInstant` plus the accepted issue delay), because the
-    /// entry may be forgotten after that.
-    async fn record_assertion_id(&self, assertion_id: &str, expires_at: i64) -> AuthResult<bool>;
+    /// Record an assertion ID consumed in `realm_id` for replay defense. Returns `true` if it was
+    /// newly recorded, `false` if it had already been seen in that realm (a replay). Realms keep
+    /// separate caches, so one realm's IdP cannot use up IDs another realm will receive. Fails
+    /// if `expires_at` has already passed. `expires_at` must cover every instant at which the
+    /// assertion could still be accepted (for the ACS: its `IssueInstant` plus the accepted issue
+    /// delay), because the entry may be forgotten after that.
+    async fn record_assertion_id(
+        &self,
+        realm_id: &str,
+        assertion_id: &str,
+        expires_at: i64,
+    ) -> AuthResult<bool>;
 
     /// Delete expired pending requests and replay-cache entries. Called periodically.
     async fn delete_expired(&self) -> AuthResult<()>;

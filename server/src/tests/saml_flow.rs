@@ -29,6 +29,7 @@ use crate::{
 };
 
 const REALM: &str = "saml_flow";
+const OTHER_REALM: &str = "saml_flow_other";
 const SP_CERTIFICATE_PEM: &str = include_str!("certificates/rsa/auth.server.cert.pem");
 
 fn realm_params() -> SamlParams {
@@ -102,7 +103,7 @@ async fn start_login(ctx: &TestsContext, return_to: Option<&str>) -> AuthResult<
         .map_err(http_error)?;
     assert_eq!(response.status(), StatusCode::FOUND);
     let (cookie, header) = set_cookie(&response, "_ea_saml").expect("request cookie");
-    for attribute in ["Secure", "HttpOnly", "SameSite=None", "Path=/saml/"] {
+    for attribute in ["Secure", "HttpOnly", "SameSite=None", "Path=/;"] {
         assert!(
             header.contains(attribute),
             "{attribute} missing from: {header}"
@@ -128,12 +129,22 @@ async fn post_to_acs(
     relay_state: &str,
     cookie: Option<&str>,
 ) -> AuthResult<Response> {
+    post_to_realm_acs(ctx, REALM, xml, relay_state, cookie).await
+}
+
+async fn post_to_realm_acs(
+    ctx: &TestsContext,
+    realm: &str,
+    xml: &str,
+    relay_state: &str,
+    cookie: Option<&str>,
+) -> AuthResult<Response> {
     let body = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("SAMLResponse", &STANDARD.encode(xml))
         .append_pair("RelayState", relay_state)
         .finish();
     let mut request = browser()
-        .post(format!("{}/saml/{REALM}/acs", ctx.get_client_url()))
+        .post(format!("{}/saml/{realm}/acs", ctx.get_client_url()))
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(body);
     if let Some(cookie) = cookie {
@@ -220,6 +231,63 @@ async fn the_acs_only_accepts_the_browser_that_started_the_login() -> AuthResult
         page.contains("url=https://app.example.com/home"),
         "the default return URL applies: {page}"
     );
+
+    ctx.stop_server().await
+}
+
+/// The second login has its own pending request, so only the assertion-ID cache can refuse it.
+#[actix_web::test]
+async fn a_replayed_assertion_is_refused_at_the_acs() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_saml_server().await?;
+    let idp = TestIdp::new();
+
+    let mut statuses = Vec::new();
+    let mut last_body = String::new();
+    for _ in 0..2 {
+        let (idp_url, cookie) = start_login(&ctx, None).await?;
+        let relay_state = query_value(&idp_url, "RelayState").expect("RelayState");
+        let mut answer = TestResponse::answering(&relay_state, &realm_params());
+        answer.assertion_id = "_replayed-assertion".to_string();
+        let response = post_to_acs(&ctx, &idp.sign(&answer), &relay_state, Some(&cookie)).await?;
+        statuses.push(response.status());
+        last_body = response.text().await.map_err(http_error)?;
+    }
+
+    assert_eq!(statuses, [StatusCode::OK, StatusCode::UNAUTHORIZED]);
+    assert!(last_body.contains("already been used"), "{last_body}");
+
+    ctx.stop_server().await
+}
+
+/// A login started in one realm can't be completed at another realm's ACS, and the attempt
+/// doesn't consume it.
+#[actix_web::test]
+async fn another_realms_acs_refuses_the_login() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_saml_server().await?;
+    let mut other = test_realm(OTHER_REALM);
+    other.auth_params.saml_params = Some(test_saml_params(OTHER_REALM));
+    authenticate_as_admin(&ctx)
+        .await?
+        .create_realm_as_super_admin(&other)
+        .await?;
+
+    let (idp_url, request_cookie) = start_login(&ctx, None).await?;
+    let (xml, relay_state) = idp_answer(&idp_url);
+
+    let wrong =
+        post_to_realm_acs(&ctx, OTHER_REALM, &xml, &relay_state, Some(&request_cookie)).await?;
+    assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED);
+    assert!(set_cookie(&wrong, "_ea_").is_none());
+    let body = wrong.text().await.map_err(http_error)?;
+    assert!(
+        body.contains("unknown or expired sign-in request"),
+        "{body}"
+    );
+
+    let right = post_to_acs(&ctx, &xml, &relay_state, Some(&request_cookie)).await?;
+    assert_eq!(right.status(), StatusCode::OK);
 
     ctx.stop_server().await
 }

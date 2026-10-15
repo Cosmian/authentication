@@ -16,8 +16,9 @@ const MAX_CLOCK_SKEW_SECONDS: i64 = 180;
 /// long a consumed assertion ID must be remembered to detect a replay.
 const MAX_ISSUE_DELAY_SECONDS: i64 = 300;
 
-/// Check a SAML `<Response>` answering our `AuthnRequest` `request_id`, against the realm
-/// settings `params`, and return its verified assertion. Each assertion is accepted once.
+/// Check a SAML `<Response>` answering our `AuthnRequest` `request_id`, against the settings
+/// `params` of realm `realm_id`, and return its verified assertion. Each assertion is accepted
+/// once per realm.
 ///
 /// samael checks the signature (of the response or the assertion), `InResponseTo`, issuer,
 /// validity window, bearer `Recipient`, `Destination` and status; this adds what it leaves
@@ -26,6 +27,7 @@ const MAX_ISSUE_DELAY_SECONDS: i64 = 300;
 pub(crate) async fn validate_saml_response(
     response_xml: &str,
     params: &SamlParams,
+    realm_id: &str,
     request_id: &str,
     store: &dyn SamlRequestStore,
 ) -> AuthResult<Assertion> {
@@ -47,7 +49,7 @@ pub(crate) async fn validate_saml_response(
     }
     // Rounded up: the store needs a whole second that is still in the future.
     if !store
-        .record_assertion_id(&assertion.id, accepted_until.timestamp() + 1)
+        .record_assertion_id(realm_id, &assertion.id, accepted_until.timestamp() + 1)
         .await?
     {
         return Err(saml_error("assertion has already been used"));
@@ -200,6 +202,7 @@ mod tests {
         validate_saml_response(
             xml,
             &realm_params(),
+            REALM,
             REQUEST_ID,
             memory_store().await.as_ref(),
         )
@@ -251,11 +254,11 @@ mod tests {
     async fn a_replayed_assertion_is_rejected() {
         let (params, store) = (realm_params(), memory_store().await);
         let xml = TestIdp::new().sign(&response());
-        validate_saml_response(&xml, &params, REQUEST_ID, store.as_ref())
+        validate_saml_response(&xml, &params, REALM, REQUEST_ID, store.as_ref())
             .await
             .expect("first use");
         let Err(AuthError::Saml(message)) =
-            validate_saml_response(&xml, &params, REQUEST_ID, store.as_ref()).await
+            validate_saml_response(&xml, &params, REALM, REQUEST_ID, store.as_ref()).await
         else {
             panic!("the second use must be rejected");
         };
@@ -395,8 +398,14 @@ mod tests {
         let mut params = realm_params();
         params.idp_signing_certificates.clear();
         let xml = TestIdp::new().sign(&response());
-        let result =
-            validate_saml_response(&xml, &params, REQUEST_ID, memory_store().await.as_ref()).await;
+        let result = validate_saml_response(
+            &xml,
+            &params,
+            REALM,
+            REQUEST_ID,
+            memory_store().await.as_ref(),
+        )
+        .await;
         assert!(
             matches!(result, Err(AuthError::Saml(ref m)) if m.contains("no IdP signing certificate"))
         );

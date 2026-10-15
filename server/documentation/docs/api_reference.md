@@ -161,7 +161,7 @@ back as a session cookie/token.
 
 **Authentication:** Session cookie (`_ea_` cookie).
 
-**Request body**
+**Request body:**
 
 ```json
 {
@@ -215,7 +215,7 @@ Start a login at the realm's IdP. Meant to be opened by the browser, not called 
 
 **Response — `302 Found`** — `Location` is the IdP sign-in URL carrying a signed `AuthnRequest`
 (HTTP-Redirect binding) whose `RelayState` is the request ID. Also sets
-`_ea_saml=<request ID>; Secure; HttpOnly; SameSite=None; Path=/saml/; Max-Age=600`.
+`_ea_saml=<request ID>; Secure; HttpOnly; SameSite=None; Path=/; Max-Age=600`.
 
 **Response — `400 Bad Request`** — unknown realm, realm without SAML, or `return_to` not allowed.
 

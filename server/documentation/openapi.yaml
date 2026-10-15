@@ -357,7 +357,7 @@ components:
             plaintext:
               type: string
               description: Plaintext UTF-8 password, hashed with Argon2id by the server before storage.
-          example: { plaintext: "correct horse battery staple" }
+          example: {plaintext: correct horse battery staple}
         - type: object
           required: [hashed]
           properties:
@@ -373,7 +373,7 @@ components:
                 match exactly (the PHC format doesn't validate parameter *choice*, only syntax,
                 and an unbounded `m` would let an unauthenticated login attempt allocate
                 arbitrary memory before the password comparison even runs).
-          example: { hashed: "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$aGFzaGVkdmFsdWU" }
+          example: {hashed: '$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$aGFzaGVkdmFsdWU'}
 
     UserPass:
       type: object
@@ -392,10 +392,10 @@ components:
             ignored on input (use `password_input` to set/change the password) and
             always returned as an empty string on read — the hash is never returned to
             callers.
-          example: ""
+          example: ''
         password_input:
           allOf:
-            - $ref: "#/components/schemas/PasswordInput"
+            - $ref: '#/components/schemas/PasswordInput'
           nullable: true
           description: |
             How to set the password on create/update. Required on create; omit on
@@ -422,7 +422,7 @@ components:
             schemes never source claims from a UserPass row). Selectively exposed via
             POST /certify when explicitly named in that request's `claims` field. Rejected
             with 400 if its serialized size exceeds 4 KiB.
-          example: { as_registrant: "acme-corp" }
+          example: {as_registrant: acme-corp}
     SessionData:
       type: object
       description: |
@@ -576,7 +576,7 @@ components:
         sub:
           type: string
           nullable: true
-          description: "Absent when the request set `exclude_sub: true`."
+          description: 'Absent when the request set `exclude_sub: true`.'
           example: alice
         auth_scheme:
           $ref: '#/components/schemas/AuthScheme'
@@ -1247,7 +1247,7 @@ paths:
       description: |
         Redirects the browser to the realm's IdP with a signed `AuthnRequest`
         (HTTP-Redirect binding, `RelayState` = request ID) and sets the short-lived
-        `_ea_saml` cookie (`Secure; HttpOnly; SameSite=None; Path=/saml/`) that the ACS
+        `_ea_saml` cookie (`Secure; HttpOnly; SameSite=None; Path=/`) that the ACS
         requires, so a login can only be completed by the browser that started it.
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -1273,7 +1273,7 @@ paths:
             Set-Cookie:
               schema:
                 type: string
-              example: _ea_saml=_4f1c...; Secure; HttpOnly; SameSite=None; Path=/saml/; Max-Age=600
+              example: _ea_saml=_4f1c...; Secure; HttpOnly; SameSite=None; Path=/; Max-Age=600
         '400':
           description: Unknown realm, realm without SAML, or `return_to` not allowed.
           content:
@@ -1836,7 +1836,7 @@ paths:
               example:
                 - realm: my-service
                   username: alice
-                  password_hash: ""
+                  password_hash: ''
                   change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2075,8 +2075,8 @@ paths:
             example:
               realm: my-service
               username: alice
-              password_hash: ""
-              password_input: { plaintext: secret }
+              password_hash: ''
+              password_input: {plaintext: secret}
               change_password: false
       responses:
         '201':
@@ -2112,7 +2112,7 @@ paths:
               example:
                 - realm: my-service
                   username: alice
-                  password_hash: ""
+                  password_hash: ''
                   change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2139,7 +2139,7 @@ paths:
               example:
                 realm: my-service
                 username: alice
-                password_hash: ""
+                password_hash: ''
                 change_password: false
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -2167,8 +2167,8 @@ paths:
             example:
               realm: my-service
               username: alice
-              password_hash: ""
-              password_input: { plaintext: newsecret }
+              password_hash: ''
+              password_input: {plaintext: newsecret}
               change_password: false
       responses:
         '200':
