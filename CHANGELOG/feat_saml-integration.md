@@ -23,6 +23,10 @@
 
 - Stop the admin UI's realm drawer from ticking TOTP when editing a realm without it: the server omits `totp_params` when unset, but the drawer only treated `null` as disabled, so saving such a realm silently enabled TOTP.
 
+## Security
+
+- Bump `rustls` 0.23.45 → 0.23.46 for RUSTSEC-2026-0349 (an unauthenticated ServerHello could make outbound client connections reuse a classical-only key share, losing post-quantum confidentiality) and RUSTSEC-2026-0348 (Brotli certificate decompression; not reachable here since the `brotli` feature is off), which failed the cargo-deny advisories check; also move `spin` off the yanked 0.9.8.
+
 ## Tests
 
 - Stop the admin UI unit tests from failing CI with an unhandled `window is not defined` by making antd's static `message.*` toasts no-ops in the test setup (they mount a React root outside Testing Library's cleanup that flushed after jsdom teardown), and keep a 50 ms minimum settle time in the teardown.
