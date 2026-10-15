@@ -1,9 +1,14 @@
-import { Button, Checkbox, Divider, Drawer, Form, Input, InputNumber, message, Select } from "antd";
+import { Alert, Button, Checkbox, Divider, Drawer, Form, Input, InputNumber, message, Select } from "antd";
+import type { FormInstance } from "antd";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Realm, RealmAuthParams, TotpAlgorithm } from "../../types/api";
 import { useAuth } from "../../contexts/AuthContext";
+import { ApiError } from "../../services/api";
 import { createRealmsApi } from "../../services/realmsApi";
+import { defaultSpUrls, isSamlDirty, toSamlFormValues, toSamlParams } from "../../utils/samlForm";
+import { samlFieldError, serverMessage } from "../../utils/samlValidation";
 import { JwtIdpList } from "./JwtIdpList";
+import { SamlSettingsSection } from "./SamlSettingsSection";
 
 export interface RealmFormDrawerProps {
     open: boolean;
@@ -17,6 +22,33 @@ const TOTP_ALGORITHMS: { value: TotpAlgorithm; label: string }[] = [
     { value: "SHA256", label: "SHA-256" },
     { value: "SHA512", label: "SHA-512" },
 ];
+
+/** Form fields the server's `saml_params.<field>` errors belong to. */
+const SAML_ERROR_FIELDS: Record<string, string> = {
+    metadata_xml: "metadata_xml",
+    sp_entity_id: "sp_entity_id",
+    sp_acs_url: "sp_acs_url",
+    subject_attribute: "subject_attribute",
+    attribute_claim_map: "claim_map",
+    allowed_return_origins: "allowed_return_origins",
+    default_return_url: "default_return_url",
+};
+
+/**
+ * Show a failed save where it belongs: a SAML setting's error on its field, any other 4xx
+ * inline (returned), anything else as a toast.
+ */
+function reportSubmitError(error: unknown, form: FormInstance, isEdit: boolean): string | null {
+    const fieldError = samlFieldError(error);
+    const field = fieldError ? SAML_ERROR_FIELDS[fieldError.field] : undefined;
+    if (fieldError && field) {
+        form.setFields([{ name: ["saml", field], errors: [fieldError.message] }]);
+        return null;
+    }
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500) return serverMessage(error);
+    message.error(isEdit ? "Failed to update realm" : "Failed to create realm");
+    return null;
+}
 
 export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, onClose, onSuccess }) => {
     const [form] = Form.useForm();
@@ -33,6 +65,18 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
     const [upEnabled, setUpEnabled] = useState(false);
     const [jwtEnabled, setJwtEnabled] = useState(false);
     const [totpEnabled, setTotpEnabled] = useState(false);
+    const [samlEnabled, setSamlEnabled] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+    const realmId: unknown = Form.useWatch("id", form);
+
+    const toggleSaml = (checked: boolean): void => {
+        setSamlEnabled(checked);
+        const id: unknown = form.getFieldValue("id");
+        if (!checked || typeof id !== "string" || !id || form.getFieldValue(["saml", "sp_acs_url"])) return;
+        const urls = defaultSpUrls(serverUrl || window.location.origin, id);
+        form.setFieldValue(["saml", "sp_entity_id"], urls.entityId);
+        form.setFieldValue(["saml", "sp_acs_url"], urls.acsUrl);
+    };
 
     // Re-validate whenever any field or toggle changes; in edit mode also require dirty
     const watchedValues = Form.useWatch([], form);
@@ -49,7 +93,8 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                     const toggleDirty =
                         upEnabled !== (orig.auth_params.username_password_params !== null) ||
                         jwtEnabled !== (orig.auth_params.jwt_params !== null) ||
-                        totpEnabled !== (orig.auth_params.totp_params !== null);
+                        totpEnabled !== Boolean(orig.auth_params.totp_params) ||
+                        samlEnabled !== Boolean(orig.auth_params.saml_params);
                     const formDirty =
                         cur.session_max_age_seconds !== orig.session_max_age_seconds ||
                         cur.session_max_stale_age_seconds !== orig.session_max_stale_age_seconds ||
@@ -60,7 +105,8 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                             cur.smallest_refresh_interval_seconds !==
                                 (orig.auth_params.jwt_params?.smallest_refresh_interval_seconds ?? null)) ||
                         (totpEnabled && (cur.totp_algorithm ?? "SHA1") !== (orig.auth_params.totp_params?.algorithm ?? "SHA1")) ||
-                        (totpEnabled && (cur.totp_step ?? 30) !== (orig.auth_params.totp_params?.step ?? 30));
+                        (totpEnabled && (cur.totp_step ?? 30) !== (orig.auth_params.totp_params?.step ?? 30)) ||
+                        (samlEnabled && isSamlDirty(cur.saml, orig.auth_params.saml_params));
                     setCanSubmit(formDirty || toggleDirty);
                 }
                 // else: edit mode, original not yet stored — stay disabled
@@ -72,10 +118,11 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             cancelled = true;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [watchedValues, isEdit, upEnabled, jwtEnabled, totpEnabled]);
+    }, [watchedValues, isEdit, upEnabled, jwtEnabled, totpEnabled, samlEnabled]);
 
     useEffect(() => {
         if (!open) return;
+        setSubmitError(null);
         if (realm) {
             originalRealmRef.current = realm;
             const values = {
@@ -87,20 +134,23 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                 smallest_refresh_interval_seconds: realm.auth_params.jwt_params?.smallest_refresh_interval_seconds ?? 300,
                 totp_algorithm: realm.auth_params.totp_params?.algorithm ?? "SHA1",
                 totp_step: realm.auth_params.totp_params?.step ?? 30,
+                saml: toSamlFormValues(realm.auth_params.saml_params),
             };
             form.setFieldsValue(values);
             const up = realm.auth_params.username_password_params !== null;
             const jwt = realm.auth_params.jwt_params !== null;
-            const totp = realm.auth_params.totp_params !== null;
+            const totp = Boolean(realm.auth_params.totp_params);
             setUpEnabled(up);
             setJwtEnabled(jwt);
             setTotpEnabled(totp);
+            setSamlEnabled(Boolean(realm.auth_params.saml_params));
         } else {
             originalRealmRef.current = null;
             form.resetFields();
             setUpEnabled(true);
             setJwtEnabled(false);
             setTotpEnabled(false);
+            setSamlEnabled(false);
         }
     }, [open, realm, form]);
 
@@ -114,7 +164,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             return;
         }
         setSubmitting(true);
-
+        setSubmitError(null);
         const authParams: RealmAuthParams = {
             username_password_params: upEnabled ? { allow_expired_passwords: values.allow_expired_passwords ?? false } : null,
             jwt_params: jwtEnabled
@@ -129,6 +179,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                       step: values.totp_step ?? 30,
                   }
                 : null,
+            saml_params: samlEnabled ? toSamlParams(values.saml) : null,
         };
 
         const payload: Realm = {
@@ -147,8 +198,8 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                 message.success(`Realm "${values.id}" created`);
             }
             onSuccess();
-        } catch {
-            message.error(isEdit ? "Failed to update realm" : "Failed to create realm");
+        } catch (error) {
+            setSubmitError(reportSubmitError(error, form, isEdit));
         } finally {
             setSubmitting(false);
         }
@@ -168,6 +219,9 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             }
         >
             <Form form={form} layout="vertical" initialValues={{ session_max_age_seconds: 3600, session_max_stale_age_seconds: 1800 }}>
+                {submitError && (
+                    <Alert type="error" showIcon className="mb-4" message="The server refused these settings" description={submitError} />
+                )}
                 <Form.Item name="id" label="Realm ID" rules={[{ required: true, message: "Realm ID is required" }]}>
                     <Input disabled={isEdit} placeholder="my-service" />
                 </Form.Item>
@@ -227,6 +281,25 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                             <Form.Item name="totp_step" label="Step (seconds)">
                                 <InputNumber min={1} className="w-full" />
                             </Form.Item>
+                        </div>
+                    )}
+                </div>
+
+                {/* SAML */}
+                <div className="mb-4">
+                    <Checkbox checked={samlEnabled} onChange={(e) => toggleSaml(e.target.checked)}>
+                        SAML 2.0 (single sign-on)
+                    </Checkbox>
+                    {samlEnabled && (
+                        <div className="ml-6 mt-2">
+                            <SamlSettingsSection
+                                realmId={typeof realmId === "string" ? realmId : ""}
+                                metadataUrl={
+                                    isEdit && realm.auth_params.saml_params
+                                        ? `${serverUrl}/saml/${encodeURIComponent(realm.id)}/metadata`
+                                        : null
+                                }
+                            />
                         </div>
                     )}
                 </div>

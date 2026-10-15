@@ -122,7 +122,7 @@ match session {
     }
     Some(data) => {
         println!("Authenticated: {} in realm {}", data.username, data.realm_id);
-        // data.auth_scheme — "up" | "jwt" | "cc" | "f2" | "dc"
+        // data.auth_scheme — "up" | "jwt" | "cc" | "f2" | "dc" | "sa"
         // data.created_at  — Unix timestamp
     }
 }
@@ -137,7 +137,7 @@ match session {
 | `session_id` | `String` | Unique session identifier (UUID) |
 | `realm_id` | `String` | Realm the session belongs to |
 | `username` | `String` | Authenticated client identity |
-| `auth_scheme` | `String` | `"up"` / `"jwt"` / `"cc"` / `"f2"` / `"dc"` |
+| `auth_scheme` | `String` | `"up"` / `"jwt"` / `"cc"` / `"f2"` / `"dc"` / `"sa"` |
 | `cookie_string` | `String` | Opaque value from the `_ea_` cookie |
 | `max_age_seconds` | `i64` | Maximum absolute session lifetime |
 | `max_stale_age_seconds` | `i64` | Idle timeout; any access resets this timer |
@@ -652,6 +652,7 @@ pub enum AuthClientScheme {
 | `ClientCertificate` | `"cc"` |
 | `Fido2` | `"f2"` |
 | `DigitalCredentials` | `"dc"` |
+| `Saml` | `"sa"` |
 
 ### `AuthenticationNextStep`
 
@@ -692,7 +693,7 @@ pub struct AuthorizationClaims {
 }
 
 pub struct AuthPrivateClaims {
-    // "as_as" — auth scheme: "up" | "jwt" | "cc" | "f2" | "dc"
+    // "as_as" — auth scheme: "up" | "jwt" | "cc" | "f2" | "dc" | "sa"
     pub auth_scheme: Option<AuthScheme>,
     // "as_rid" — realm ID (also used as the OPA domain scope)
     pub realm_id: Option<String>,

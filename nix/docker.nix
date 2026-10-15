@@ -6,6 +6,8 @@
   adminUi ? null,
   # Version (from Cargo.toml)
   version,
+  # Appended to the image tag, e.g. "-saml" for the SAML variant
+  tagSuffix ? "",
 }:
 
 let
@@ -28,7 +30,7 @@ let
       null;
 
   imageName = "cosmian-auth-verifier";
-  imageTag = "${version}";
+  imageTag = "${version}${tagSuffix}";
 
   # ── Entrypoint script ─────────────────────────────────────────────────────
   # Resolves the configuration file at runtime:

@@ -907,6 +907,9 @@ impl Database for PostgresDatabase {
                 "SELECT id FROM admin WHERE certificate = $1",
                 value.to_string(),
             ),
+            // SAML is a user-facing realm auth scheme, not an admin credential: no admin
+            // authenticates via SAML, so there is never a matching admin row.
+            AuthScheme::Saml => return Ok(Vec::new()),
         };
 
         let rows = sqlx::query(query)

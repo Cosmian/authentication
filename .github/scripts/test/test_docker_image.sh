@@ -184,7 +184,65 @@ HTTP_CODE=$(ca_curl -o /dev/null -w '%{http_code}' \
   "$BASE_URL/whoami?realm=_")
 assert_eq "HTTP 401" "401" "$HTTP_CODE"
 
-# ── Summary ────────────────────────────────────────────────────────────────
+# ── SAML build check (EXPECT_SAML=1) ───────────────────────────────────────
+# A server built without the `saml` feature refuses to start when [saml_sp_params]
+# is configured, so a successful start proves the feature is compiled in.
+
+if [ "${EXPECT_SAML:-}" = "1" ]; then
+  echo ""
+  echo "── SAML build ────────────────────────────────────────────────────────"
+  SAML_PORT="${AUTH_SERVER_SAML_PORT:-8081}"
+  SAML_DIR=$(mktemp -d)
+  # The container runs as uid 1000 and must be able to read the (throw-away) keys.
+  chmod 755 "$SAML_DIR"
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out "$SAML_DIR/tls.key.pem"
+  openssl req -new -x509 -key "$SAML_DIR/tls.key.pem" -out "$SAML_DIR/tls.cert.pem" -days 1 \
+    -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+  openssl req -x509 -newkey rsa:3072 -sha256 -days 1 -nodes -subj "/CN=saml-sp-test" \
+    -keyout "$SAML_DIR/saml-sp.key.pem" -out "$SAML_DIR/saml-sp.cert.pem" 2>/dev/null
+  cat >"$SAML_DIR/auth_verifier.toml" <<'TOML'
+host_name = "0.0.0.0"
+host_port = 8080
+roles = ["Admin", "User"]
+
+[tls_params]
+server_private_key = "/conf/tls.key.pem"
+server_certificate = "/conf/tls.cert.pem"
+server_ca_chain = "/conf/tls.cert.pem"
+
+[database_params]
+backend = "sqlite"
+connection_url = "sqlite::memory:"
+
+[saml_sp_params]
+saml_rsa_private_key = "/conf/saml-sp.key.pem"
+saml_certificate = "/conf/saml-sp.cert.pem"
+TOML
+  chmod 644 "$SAML_DIR"/*
+
+  SAML_CID=$(docker run -d -p "${SAML_PORT}:8080" -v "$SAML_DIR:/conf:ro" \
+    -e AUTH_SERVER_CONF=/conf/auth_verifier.toml "$IMAGE_NAME" 2>/dev/null)
+  trap 'echo "Stopping containers…"; docker rm -f "$CID" "$SAML_CID" >/dev/null 2>&1 || true; rm -rf "$SAML_DIR"' EXIT
+
+  echo "Test: server starts with [saml_sp_params] (saml feature compiled in)"
+  SAML_UP=false
+  for _ in $(seq 1 30); do
+    if ca_curl -o /dev/null "https://127.0.0.1:${SAML_PORT}/public/version" 2>/dev/null; then
+      SAML_UP=true
+      break
+    fi
+    docker inspect -f '{{.State.Running}}' "$SAML_CID" 2>/dev/null | grep -q true || break
+    sleep 1
+  done
+  if [ "$SAML_UP" = true ]; then
+    echo "  PASS  server started with [saml_sp_params]"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL  server did not start with [saml_sp_params]"
+    docker logs "$SAML_CID" 2>&1 || true
+    FAIL=$((FAIL + 1))
+  fi
+fi
 
 echo ""
 echo "=========================================="
