@@ -7,6 +7,7 @@
 - [Authentication]()
   - [Authentication flows](authentication_flows.md)
   - [Two-factor authentication](two_factor_authentication.md)
+  - [SAML 2.0 single sign-on](saml.md)
   - [AppRole, Kubernetes & Tokens](app_auth_api.md)
   - [Session management](session_management.md)
 - [Authorization and administration](authorization_and_administration.md)

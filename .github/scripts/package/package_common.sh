@@ -10,9 +10,10 @@ cd "$REPO_ROOT"
 
 FORMAT=""
 LINK="static"
+VARIANT="default"
 
 usage() {
-  echo "Usage: $0 --format deb|rpm [--link static|dynamic]" >&2
+  echo "Usage: $0 --format deb|rpm [--link static|dynamic] [--variant default|saml]" >&2
   exit 2
 }
 
@@ -24,6 +25,10 @@ while [ $# -gt 0 ]; do
     ;;
   -l | --link)
     LINK="${2:-}"
+    shift 2 || true
+    ;;
+  --variant)
+    VARIANT="${2:-}"
     shift 2 || true
     ;;
   -h | --help) usage ;;
@@ -45,6 +50,34 @@ static | dynamic) : ;;
   exit 1
   ;;
 esac
+case "$VARIANT" in
+default) BUILD_TAG="$LINK" ;;
+saml)
+  if [ "$LINK" != "static" ]; then
+    echo "Error: --variant saml is only available with --link static" >&2
+    exit 1
+  fi
+  BUILD_TAG="static-saml"
+  ;;
+*)
+  echo "Error: --variant must be 'default' or 'saml'" >&2
+  exit 1
+  ;;
+esac
+
+# The SAML package keeps the same package name; only the file name changes.
+# Renames before the checksum and signature are written so they name the final file.
+apply_variant_suffix() {
+  local file="$1" ext renamed
+  if [ "$VARIANT" != "saml" ]; then
+    echo "$file"
+    return 0
+  fi
+  ext="${file##*.}"
+  renamed="${file%."$ext"}-saml.$ext"
+  mv -f "$file" "$renamed"
+  echo "$renamed"
+}
 
 # Persistent Cargo cache for offline runs
 OFFLINE_CARGO_HOME="$REPO_ROOT/target/cargo-offline-home"
@@ -64,13 +97,15 @@ prewarm_cargo_registry() {
 
 build_or_reuse_server() {
   local attr
-  if [ "$LINK" = "dynamic" ]; then
+  if [ "$VARIANT" = "saml" ]; then
+    attr="auth-verifier-static-saml"
+  elif [ "$LINK" = "dynamic" ]; then
     attr="auth-verifier-dynamic-openssl"
   else
     attr="auth-verifier-static-openssl"
   fi
 
-  OUT_LINK="$REPO_ROOT/result-server-${LINK}"
+  OUT_LINK="$REPO_ROOT/result-server-${BUILD_TAG}"
 
   nix-build -I "nixpkgs=${PIN_URL}" "$REPO_ROOT/default.nix" -A "$attr" -o "$OUT_LINK"
   REAL_SERVER=$(readlink -f "$OUT_LINK" || echo "$OUT_LINK")
@@ -168,10 +203,10 @@ build_deb() {
   fi
 
   VERSION_STR=$(bash "$REPO_ROOT/.github/scripts/release/get_version.sh")
-  OUT_DIR="$REPO_ROOT/result-deb-${LINK}"
+  OUT_DIR="$REPO_ROOT/result-deb-${BUILD_TAG}"
   mkdir -p "$OUT_DIR"
 
-  echo "Building DEB for auth_verifier v${VERSION_STR} (link=$LINK)…"
+  echo "Building DEB for auth_verifier v${VERSION_STR} (${BUILD_TAG})…"
   pushd "$REPO_ROOT/server" >/dev/null
 
   # shellcheck disable=SC2086
@@ -188,6 +223,7 @@ build_deb() {
     echo "ERROR: DEB file not found in $OUT_DIR" >&2
     exit 1
   fi
+  DEB_FILE=$(apply_variant_suffix "$DEB_FILE")
 
   # Compute SHA256
   sum=$(sha256sum "$DEB_FILE" | awk '{print $1}')
@@ -205,10 +241,10 @@ build_rpm() {
   mkdir -p "$CARGO_HOME"
 
   VERSION_STR=$(bash "$REPO_ROOT/.github/scripts/release/get_version.sh")
-  OUT_DIR="$REPO_ROOT/result-rpm-${LINK}"
+  OUT_DIR="$REPO_ROOT/result-rpm-${BUILD_TAG}"
   mkdir -p "$OUT_DIR"
 
-  echo "Building RPM for auth_verifier v${VERSION_STR} (link=$LINK)…"
+  echo "Building RPM for auth_verifier v${VERSION_STR} (${BUILD_TAG})…"
   pushd "$REPO_ROOT" >/dev/null
 
   # Use cargo-generate-rpm from Nix derivation
@@ -237,6 +273,7 @@ build_rpm() {
     echo "ERROR: RPM file not found in $OUT_DIR" >&2
     exit 1
   fi
+  RPM_FILE=$(apply_variant_suffix "$RPM_FILE")
 
   sum=$(sha256sum "$RPM_FILE" | awk '{print $1}')
   echo "$sum  $(basename "$RPM_FILE")" >"$RPM_FILE.sha256"

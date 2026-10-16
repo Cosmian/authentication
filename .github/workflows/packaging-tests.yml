@@ -18,7 +18,7 @@ on:
 
 jobs:
   packages-test:
-    name: In Docker ${{ matrix.container }}-${{ matrix.link }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
+    name: In Docker ${{ matrix.container }}-${{ matrix.build-tag }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
     runs-on: ${{ matrix.runner }}
     container: ${{ matrix.container }}
     strategy:
@@ -35,14 +35,14 @@ jobs:
           # Rocky Linux releases
           - rockylinux/rockylinux:10
           - rockylinux/rockylinux:9
-        link: [static, dynamic]
+        build-tag: [static, dynamic, static-saml]
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
 
     steps:
       - name: Download package artifacts
         uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.link }}_${{ matrix.runner }}-release
+          name: ${{ matrix.build-tag }}_${{ matrix.runner }}-release
 
       - name: List downloaded artifacts
         run: find .
@@ -52,19 +52,19 @@ jobs:
         run: |
           set -ex
           if [[ "${{ matrix.container }}" == rockylinux* ]]; then
-            for pkg in ./result-rpm-${{ matrix.link }}/*.rpm; do
+            for pkg in ./result-rpm-${{ matrix.build-tag }}/*.rpm; do
               rpm -qpl "$pkg"
             done
-            rpm -i ./result-rpm-${{ matrix.link }}/*.rpm --nodeps
+            rpm -i ./result-rpm-${{ matrix.build-tag }}/*.rpm --nodeps
           else
-            for pkg in ./result-deb-${{ matrix.link }}/*.deb; do
+            for pkg in ./result-deb-${{ matrix.build-tag }}/*.deb; do
               dpkg --contents "$pkg"
             done
-            if [ "${{ matrix.link }}" = "dynamic" ]; then
-              dpkg -i ./result-deb-${{ matrix.link }}/*.deb || true
+            if [ "${{ matrix.build-tag }}" = "dynamic" ]; then
+              dpkg -i ./result-deb-${{ matrix.build-tag }}/*.deb || true
               apt-get update -qq && apt-get install -f -y
             else
-              dpkg -i ./result-deb-${{ matrix.link }}/*.deb
+              dpkg -i ./result-deb-${{ matrix.build-tag }}/*.deb
             fi
           fi
 
@@ -181,6 +181,16 @@ jobs:
           backend = "sqlite"
           connection_url = "sqlite::memory:"
           TOML
+          # A build without the saml feature refuses to start when [saml_sp_params] is set.
+          if [ "${{ matrix.build-tag }}" = "static-saml" ]; then
+            openssl req -x509 -newkey rsa:3072 -sha256 -days 1 -nodes -subj "/CN=saml-sp-test" \
+              -keyout "$WORK/saml-sp.key.pem" -out "$WORK/saml-sp.cert.pem"
+            cat >> "$CONFIG" <<TOML
+          [saml_sp_params]
+          saml_rsa_private_key = "$WORK/saml-sp.key.pem"
+          saml_certificate = "$WORK/saml-sp.cert.pem"
+          TOML
+          fi
           BIN="/usr/bin/auth_verifier"
           if [ ! -x "$BIN" ]; then
             BIN=$(find /usr -name 'auth_verifier' -type f 2>/dev/null | head -1)
@@ -209,12 +219,12 @@ jobs:
           case "$HTTP" in 2*) echo "All UI checks PASSED";; *) echo "ERROR: /public/version returned $HTTP"; exit 1;; esac
 
   systemd-packages-test:
-    name: Use GH runners ${{ matrix.link }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
+    name: Use GH runners ${{ matrix.build-tag }}${{ matrix.runner == 'ubuntu-24.04-arm' && '-ARM' || '-AMD64' }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        link: [static, dynamic]
+        build-tag: [static, dynamic, static-saml]
         runner: [ubuntu-24.04, ubuntu-24.04-arm]
 
     steps:
@@ -230,7 +240,7 @@ jobs:
       - name: Download package artifacts
         uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.link }}_${{ matrix.runner }}-release
+          name: ${{ matrix.build-tag }}_${{ matrix.runner }}-release
 
       - name: List downloaded artifacts
         run: find .
@@ -240,15 +250,15 @@ jobs:
         run: |
           set -ex
           # DEB-based (Ubuntu/Debian); systemd tests run on Ubuntu GH runners only
-          for pkg in ./result-deb-${{ matrix.link }}/*.deb; do
+          for pkg in ./result-deb-${{ matrix.build-tag }}/*.deb; do
             dpkg --contents "$pkg"
           done
-          if [ "${{ matrix.link }}" = "dynamic" ]; then
+          if [ "${{ matrix.build-tag }}" = "dynamic" ]; then
             # Dynamic builds depend on system libs; fix with apt after attempt
-            sudo dpkg -i ./result-deb-${{ matrix.link }}/*.deb || true
+            sudo dpkg -i ./result-deb-${{ matrix.build-tag }}/*.deb || true
             sudo apt-get update -qq && sudo apt-get install -f -y
           else
-            sudo dpkg -i ./result-deb-${{ matrix.link }}/*.deb
+            sudo dpkg -i ./result-deb-${{ matrix.build-tag }}/*.deb
           fi
 
       - name: Pre-check server binary
@@ -302,6 +312,17 @@ jobs:
           backend = "sqlite"
           connection_url = "sqlite::memory:"
           TOML
+          # A build without the saml feature refuses to start when [saml_sp_params] is set.
+          if [ "${{ matrix.build-tag }}" = "static-saml" ]; then
+            sudo openssl req -x509 -newkey rsa:3072 -sha256 -days 1 -nodes -subj "/CN=saml-sp-test" \
+              -keyout /etc/cosmian/saml-sp.key.pem -out /etc/cosmian/saml-sp.cert.pem
+            sudo tee -a /etc/cosmian/auth_verifier.toml > /dev/null <<'TOML'
+          [saml_sp_params]
+          saml_rsa_private_key = "/etc/cosmian/saml-sp.key.pem"
+          saml_certificate = "/etc/cosmian/saml-sp.cert.pem"
+          TOML
+            sudo chmod 644 /etc/cosmian/saml-sp.key.pem /etc/cosmian/saml-sp.cert.pem
+          fi
           sudo chown root:root /etc/cosmian/auth_verifier.toml /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem
           sudo chmod 440 /etc/cosmian/auth_verifier.toml
           sudo chmod 644 /etc/cosmian/dev.key.pem /etc/cosmian/dev.cert.pem /etc/cosmian/dev.ca.pem

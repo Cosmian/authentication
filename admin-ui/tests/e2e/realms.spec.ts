@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import type { Realm } from "../../src/types/api";
+import { idpMetadata } from "../unit/fixtures/saml";
 
 // ── Fixture data ──────────────────────────────────────────────────────────────
 
@@ -203,5 +204,38 @@ test.describe("Realms page", () => {
 
         // The realm must no longer appear in the cards.
         await expect(page.getByText("my-service")).not.toBeVisible();
+    });
+
+    test("should create a SAML realm from pasted IdP metadata", async ({ page }) => {
+        await mockRealmsApi(page, [baseRealm]);
+        await page.goto("/admin-ui/realms");
+        await page.getByRole("button", { name: "Create Realm" }).click();
+
+        await page.getByLabel("Realm ID").fill("acme");
+        await page.getByRole("checkbox", { name: "SAML 2.0 (single sign-on)" }).check();
+        await page.getByLabel("IdP metadata XML").fill(idpMetadata());
+        const preview = page.getByLabel("Parsed IdP metadata");
+        await expect(preview.getByText("https://idp.example.com/metadata")).toBeVisible();
+        await expect(preview.getByText("user2.acme.com")).toBeVisible();
+
+        // The prefilled URLs point at the preview server (plain http); use the public ones.
+        await page.getByLabel("SP entity ID", { exact: true }).fill("https://auth.example.com/saml/acme");
+        await page.getByLabel("Assertion Consumer Service URL", { exact: true }).fill("https://auth.example.com/saml/acme/acs");
+        const origins = page.getByLabel("Allowed return origins");
+        await origins.fill("https://app.example.com");
+        await origins.press("Enter");
+        await page.getByLabel("Default return URL").fill("https://app.example.com/home");
+
+        const request = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/admins/realms");
+        await page.getByRole("button", { name: "Create" }).last().click();
+        const body = (await request).postDataJSON() as Realm;
+        expect(body.auth_params.saml_params).toMatchObject({
+            sp_acs_url: "https://auth.example.com/saml/acme/acs",
+            allowed_return_origins: ["https://app.example.com"],
+            default_return_url: "https://app.example.com/home",
+        });
+
+        const card = page.locator(".ant-card").filter({ hasText: "acme" });
+        await expect(card.getByText("SAML", { exact: true })).toBeVisible();
     });
 });

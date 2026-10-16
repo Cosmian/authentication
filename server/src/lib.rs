@@ -30,6 +30,13 @@ pub use session::{
 };
 pub use session::{build_cookie, delete_cookie};
 
+#[cfg(feature = "saml")]
+mod saml;
+#[cfg(feature = "saml")]
+pub use saml::{
+    PendingSamlRequest, SamlRequestStore, SqliteSamlRequestStore, create_saml_request_store,
+};
+
 pub mod tls;
 
 pub mod totp;

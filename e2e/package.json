@@ -1,0 +1,18 @@
+{
+    "name": "auth-e2e",
+    "private": true,
+    "version": "0.4.0",
+    "type": "module",
+    "scripts": {
+        "test": "playwright test",
+        "typecheck": "tsc --noEmit",
+        "format": "prettier . --write",
+        "format:check": "prettier . --check"
+    },
+    "devDependencies": {
+        "@playwright/test": "1.63.0",
+        "@types/node": "^26.5.1",
+        "prettier": "^3.8.1",
+        "typescript": "~6.0.3"
+    }
+}

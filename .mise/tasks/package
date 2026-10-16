@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
-#MISE description="Build packages via Nix. Usage: mise run package -- [--link static|dynamic] [deb|rpm|dmg]"
+#MISE description="Build packages via Nix. Usage: mise run package -- [--link static|dynamic] [--variant default|saml] [deb|rpm|dmg]"
 set -euo pipefail
 source "${MISE_CONFIG_ROOT}/.mise/lib/common.sh"
 
-# nix.sh expects: [--link static|dynamic] package [deb|rpm|dmg]
-# Splice the literal "package" command word in after an optional leading --link pair.
-LINK_ARGS=()
-if [ "${1:-}" = "--link" ] || [ "${1:-}" = "-l" ]; then
-  LINK_ARGS=(--link "${2:?missing value for --link}")
-  shift 2
-fi
+# nix.sh expects: [--link X] [--variant Y] package [deb|rpm|dmg]
+split_nix_global_args "$@"
 
-print_status "Building packages (${LINK_ARGS[1]:-static} link)"
-exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" "${LINK_ARGS[@]}" package "$@"
+print_status "Building packages (${NIX_GLOBAL_ARGS[*]:-defaults})"
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/nix.sh" ${NIX_GLOBAL_ARGS[@]+"${NIX_GLOBAL_ARGS[@]}"} package ${NIX_REST_ARGS[@]+"${NIX_REST_ARGS[@]}"}

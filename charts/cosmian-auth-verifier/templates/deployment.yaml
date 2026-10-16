@@ -1,0 +1,271 @@
+{{- $av := .Values.authVerifier -}}
+{{- $db := $av.database -}}
+{{- $ss := $av.sessionStore -}}
+{{- $scheme := include "cosmian-auth-verifier.scheme" . -}}
+{{- /* Fail early on configurations the server would reject at startup. */ -}}
+{{- if not (has $db.backend (list "sqlite" "postgresql" "mysql")) }}
+  {{- fail "authVerifier.database.backend must be one of: sqlite, postgresql, mysql" }}
+{{- end }}
+{{- if and (ne $db.backend "sqlite") (not $db.url) (not $db.existingSecret) }}
+  {{- fail "authVerifier.database.url or authVerifier.database.existingSecret is required for postgresql/mysql" }}
+{{- end }}
+{{- if and $ss.enabled (not (has $ss.backend (list "redis" "postgresql" "mysql"))) }}
+  {{- fail "authVerifier.sessionStore.backend must be one of: redis, postgresql, mysql" }}
+{{- end }}
+{{- if and $ss.enabled (not $ss.url) (not $ss.existingSecret) }}
+  {{- fail "authVerifier.sessionStore.url or authVerifier.sessionStore.existingSecret is required when the session store is enabled" }}
+{{- end }}
+{{- if and (eq $db.backend "sqlite") (gt (int .Values.replicaCount) 1) (not .Values.autoscaling.enabled) }}
+  {{- fail "replicaCount > 1 requires a postgresql/mysql database backend; sqlite cannot be shared across pods" }}
+{{- end }}
+{{- if and (eq $db.backend "sqlite") .Values.autoscaling.enabled }}
+  {{- fail "autoscaling requires a postgresql/mysql database backend; sqlite cannot be shared across pods" }}
+{{- end }}
+{{- if and (eq $db.backend "sqlite") .Values.podDisruptionBudget.enabled }}
+  {{- fail "podDisruptionBudget requires a postgresql/mysql database backend; on the single sqlite pod it would block node drains" }}
+{{- end }}
+{{- if and $av.tls.enabled (not $av.tls.existingSecret) }}
+  {{- fail "authVerifier.tls.existingSecret is required when authVerifier.tls.enabled is true" }}
+{{- end }}
+{{- if and (not $av.tls.enabled) (not $av.sessionJwt.existingSecret) }}
+  {{- fail "authVerifier.sessionJwt.existingSecret is required when TLS is disabled (session JWTs are otherwise signed with the TLS key)" }}
+{{- end }}
+{{- if and .Values.saml.enabled (not .Values.saml.existingSecret) }}
+  {{- fail "saml.existingSecret is required when saml.enabled is true" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cosmian-auth-verifier.fullname" . }}
+  labels:
+    {{- include "cosmian-auth-verifier.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  {{- if eq $db.backend "sqlite" }}
+  # A single pod owns the sqlite file: never run two side by side.
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "cosmian-auth-verifier.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "cosmian-auth-verifier.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "cosmian-auth-verifier.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- end }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: auth-verifier
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "cosmian-auth-verifier.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Render the configuration template with the Secret-provided URLs
+          # (TOML-escaped), then start the server on it.
+          command:
+            - /bin/bash
+            - -c
+          args:
+            - |
+              set -euo pipefail
+              bs='\' dq='"'
+              escape() { local v=${1//"$bs"/"$bs$bs"}; printf '%s' "${v//"$dq"/"$bs$dq"}"; }
+              conf=$(</etc/cosmian/config/auth_verifier.toml.tpl)
+              if [[ -n "${AUTH_VERIFIER_DATABASE_URL:-}" ]]; then
+                url=$(escape "$AUTH_VERIFIER_DATABASE_URL")
+                conf=${conf//"@DATABASE_URL@"/"$url"}
+              fi
+              if [[ -n "${AUTH_VERIFIER_SESSION_STORE_URL:-}" ]]; then
+                url=$(escape "$AUTH_VERIFIER_SESSION_STORE_URL")
+                conf=${conf//"@SESSION_STORE_URL@"/"$url"}
+              fi
+              umask 077
+              printf '%s\n' "$conf" > /run/auth-verifier/auth_verifier.toml
+              exec /bin/auth_verifier /run/auth-verifier/auth_verifier.toml
+          env:
+            {{- if ne $db.backend "sqlite" }}
+            - name: AUTH_VERIFIER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $db.existingSecret | default (include "cosmian-auth-verifier.dbSecretName" .) }}
+                  key: database-url
+            {{- end }}
+            {{- if $ss.enabled }}
+            - name: AUTH_VERIFIER_SESSION_STORE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ss.existingSecret | default (include "cosmian-auth-verifier.dbSecretName" .) }}
+                  key: session-store-url
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: {{ $scheme }}
+              containerPort: {{ $av.port }}
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: {{ $scheme }}
+              scheme: {{ upper $scheme }}
+            {{- toYaml .Values.probes.startup | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: {{ $scheme }}
+              scheme: {{ upper $scheme }}
+            {{- toYaml .Values.probes.liveness | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.path }}
+              port: {{ $scheme }}
+              scheme: {{ upper $scheme }}
+            {{- toYaml .Values.probes.readiness | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config-template
+              mountPath: /etc/cosmian/config
+              readOnly: true
+            - name: config
+              mountPath: /run/auth-verifier
+            - name: tmp
+              mountPath: /tmp
+            {{- if eq $db.backend "sqlite" }}
+            - name: sqlite-data
+              mountPath: {{ $db.sqlitePath }}
+            {{- end }}
+            {{- if $av.tls.enabled }}
+            - name: tls
+              mountPath: /etc/cosmian/tls
+              readOnly: true
+            {{- if $av.tls.clientCaSecret }}
+            - name: client-ca
+              mountPath: /etc/cosmian/client-ca
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- if $av.sessionJwt.existingSecret }}
+            - name: session-jwt
+              mountPath: /etc/cosmian/session-jwt
+              readOnly: true
+            {{- end }}
+            {{- if $av.certificateJwt.existingSecret }}
+            - name: certificate-jwt
+              mountPath: /etc/cosmian/certificate-jwt
+              readOnly: true
+            {{- end }}
+            {{- if .Values.saml.enabled }}
+            - name: saml-sp
+              mountPath: /etc/cosmian/saml-sp
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: config-template
+          configMap:
+            name: {{ include "cosmian-auth-verifier.fullname" . }}
+        # The rendered configuration holds database credentials: keep it in RAM.
+        - name: config
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: tmp
+          emptyDir: {}
+        {{- if eq $db.backend "sqlite" }}
+        - name: sqlite-data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "cosmian-auth-verifier.pvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if $av.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ $av.tls.existingSecret }}
+            defaultMode: 0440
+        {{- if $av.tls.clientCaSecret }}
+        - name: client-ca
+          secret:
+            secretName: {{ $av.tls.clientCaSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- end }}
+        {{- with $av.sessionJwt.existingSecret }}
+        - name: session-jwt
+          secret:
+            secretName: {{ . }}
+            defaultMode: 0440
+        {{- end }}
+        {{- with $av.certificateJwt.existingSecret }}
+        - name: certificate-jwt
+          secret:
+            secretName: {{ . }}
+            defaultMode: 0440
+        {{- end }}
+        {{- if .Values.saml.enabled }}
+        - name: saml-sp
+          secret:
+            secretName: {{ .Values.saml.existingSecret }}
+            defaultMode: 0440
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

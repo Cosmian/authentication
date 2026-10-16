@@ -950,6 +950,9 @@ impl Database for SqliteDatabase {
             AuthScheme::Fido2 => "SELECT id FROM admin WHERE fido2 = ?",
             AuthScheme::DigitalCredentials => "SELECT id FROM admin WHERE digital_credentials =?",
             AuthScheme::ClientCertificate => "SELECT id FROM admin WHERE certificate = ?",
+            // SAML is a user-facing realm auth scheme, not an admin credential: no admin
+            // authenticates via SAML, so there is never a matching admin row.
+            AuthScheme::Saml => return Ok(Vec::new()),
         };
 
         let rows = sqlx::query(query).bind(value).fetch_all(&self.pool).await?;

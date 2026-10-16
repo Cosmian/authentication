@@ -13,6 +13,7 @@ const apiProxy: Record<string, { target: string; secure: boolean; changeOrigin: 
     "/admins": proxyOpts,
     "/auth": proxyOpts,
     "/public": proxyOpts,
+    "/saml": proxyOpts,
 };
 
 export default defineConfig(() => ({

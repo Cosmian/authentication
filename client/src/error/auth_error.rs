@@ -41,6 +41,9 @@ pub enum AuthError {
     #[error("Session not found")]
     SessionNotFound,
 
+    #[error("SAML error: {0}")]
+    Saml(String),
+
     #[error("TOTP/2FA error: {0}")]
     Totp(String),
 
@@ -58,7 +61,7 @@ impl actix_web::ResponseError for AuthError {
         match self {
             Self::BadRequest(_) => actix_web::HttpResponse::BadRequest().json(format!("{self}")),
             Self::Conflict(_) => actix_web::HttpResponse::Conflict().json(format!("{self}")),
-            Self::JWT(_) | Self::Session(_) | Self::Cookie(_) => {
+            Self::JWT(_) | Self::Session(_) | Self::Cookie(_) | Self::Saml(_) => {
                 actix_web::HttpResponse::Unauthorized().json(format!("{self}"))
             }
             Self::Forbidden(_) => actix_web::HttpResponse::Forbidden().json(format!("{self}")),
