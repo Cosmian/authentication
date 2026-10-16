@@ -7,6 +7,7 @@
 
 - Add an `admin-ui-lockfile` pre-commit hook running a frozen, lockfile-only `pnpm install` when admin-ui's `package.json`, `pnpm-lock.yaml` or `pnpm-workspace.yaml` change, and document the check in the admin-ui agent instructions, so a lockfile out of sync with `package.json` is caught before commit instead of failing every Admin UI CI job.
 - Exclude `pnpm-lock.yaml` from the `yamlfmt` pre-commit hook, which rewrote pnpm's long keys into explicit `? :` form that pnpm reverts on every install, and flatten the nested backlog list in the admin-ui agent instructions, on whose indentation markdownlint and prettier disagreed so no commit touching that file could pass both hooks.
+- Label admin-ui Dependabot PRs with the existing `frontend` label instead of `admin-ui`, which does not exist in the repository and made Dependabot post a warning on every PR.
 
 ## Docs
 
