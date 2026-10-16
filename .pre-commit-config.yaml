@@ -36,7 +36,7 @@ repos:
     hooks:
       - id: yamlfmt
         args: [--mapping, "2", --sequence, "4", --offset, "2"]
-        exclude: ^charts/[^/]+/templates/
+        exclude: ^charts/[^/]+/templates/|pnpm-lock\.yaml$
 
   - repo: https://github.com/crate-ci/typos
     rev: v1.31.1
@@ -106,6 +106,13 @@ repos:
         language: system
         entry: cargo fmt --all -- --check
         types: [rust]
+        pass_filenames: false
+
+      - id: admin-ui-lockfile
+        name: admin-ui lockfile in sync with package.json (CI frozen install)
+        language: system
+        entry: bash -c 'cd admin-ui && pnpm install --frozen-lockfile --lockfile-only --ignore-scripts'
+        files: ^admin-ui/(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml)$
         pass_filenames: false
 
       - id: admin-ui-format
