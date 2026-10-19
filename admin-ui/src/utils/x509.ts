@@ -35,7 +35,7 @@ function readTlv(bytes: Uint8Array, offset: number): Tlv {
 
 function children(bytes: Uint8Array, parent: Tlv): Tlv[] {
     const result: Tlv[] = [];
-    for (let offset = parent.start; offset < parent.end; ) {
+    for (let offset = parent.start; offset < parent.end;) {
         const child = readTlv(bytes, offset);
         result.push(child);
         offset = child.end;

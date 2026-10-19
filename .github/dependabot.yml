@@ -10,11 +10,11 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - dependencies
-      - admin-ui
+      - frontend
     groups:
       admin-ui-minor-patch:
         applies-to: version-updates
         update-types: [minor, patch]
       admin-ui-security:
         applies-to: security-updates
-        patterns: ["*"]
+        patterns: ['*']

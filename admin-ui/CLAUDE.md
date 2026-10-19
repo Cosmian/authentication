@@ -14,13 +14,19 @@ pnpm test:integration # vitest --run -c tests/vitest.int.config.ts
 pnpm test:e2e         # playwright test
 ```
 
+**Lockfile**: after touching `package.json`, `pnpm-lock.yaml` or `pnpm-workspace.yaml` (including
+Dependabot PRs), run `pnpm install --frozen-lockfile --lockfile-only --ignore-scripts`. CI installs with
+`--frozen-lockfile`, so a lockfile missing the `overrides:` block fails every admin-ui job with
+`ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`; fix it with `pnpm install --lockfile-only` and commit the lockfile.
+Any lockfile change also requires regenerating `nix/expected-hashes/admin-ui.pnpm.*.sha256` (see root `AGENTS.md` §6).
+
 ## Stack
 
 React 19 · TypeScript 5.8 · Vite 7 · Ant Design 5 · Tailwind CSS 4 · React Router 7 · Vitest 4 · Playwright 1.59 · pnpm
 
 ## Project Structure
 
-```
+```text
 src/
 ├── main.tsx              # Entry: createRoot, StrictMode, BrowserRouter
 ├── App.tsx               # ConfigProvider, providers, routes
@@ -125,10 +131,11 @@ Coverage target: statements ≥80%, branches ≥75%
 
 ## Backlog / Technical Debt
 
-- **Remove remaining `useMemo` calls** — the following files still use `useMemo` for API factory instances and derived lists; replace with plain variable declarations on the next pass:
-    - `src/pages/RealmsPage.tsx` — `const api = useMemo(...)`
-    - `src/pages/AdminsPage.tsx` — `const api = useMemo(...)`
-    - `src/pages/CredentialsPage.tsx` — `const api = useMemo(...)`
-    - `src/pages/SessionsPage.tsx` — `const api = useMemo(...)`
-    - `src/components/realms/RealmFormDrawer.tsx` — `const api = useMemo(...)`
-    - `src/components/layout/Sidebar.tsx` — `const filteredItems = useMemo(...)`
+**Remove remaining `useMemo` calls** — the following files still use `useMemo` for API factory instances and derived lists; replace with plain variable declarations on the next pass:
+
+- `src/pages/RealmsPage.tsx` — `const api = useMemo(...)`
+- `src/pages/AdminsPage.tsx` — `const api = useMemo(...)`
+- `src/pages/CredentialsPage.tsx` — `const api = useMemo(...)`
+- `src/pages/SessionsPage.tsx` — `const api = useMemo(...)`
+- `src/components/realms/RealmFormDrawer.tsx` — `const api = useMemo(...)`
+- `src/components/layout/Sidebar.tsx` — `const filteredItems = useMemo(...)`

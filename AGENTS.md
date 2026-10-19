@@ -283,6 +283,7 @@ bash .github/scripts/nix.sh --variant saml docker --load --test
 | `server.vendor.static.sha256`               | Cargo vendor hash for static builds        |
 | `server.vendor.dynamic.sha256`              | Cargo vendor hash for dynamic builds       |
 | `auth-verifier.<static\|dynamic\|static-saml>.<arch>.<os>.sha256` | Expected binary hash for determinism check |
+| `admin-ui.pnpm.<linux-x86_64\|linux-aarch64\|darwin>.sha256` | pnpm deps hash for the Nix admin-ui build |
 
 When `Cargo.lock` changes, the vendor hashes become stale. Regenerate:
 
@@ -290,6 +291,17 @@ When `Cargo.lock` changes, the vendor hashes become stale. Regenerate:
 # Put fake hash, run build, read "got:" error, paste correct hash
 echo "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" > nix/expected-hashes/server.vendor.static.sha256
 nix-build -A auth-verifier-static 2>&1 | grep "got:"
+```
+
+When `admin-ui/pnpm-lock.yaml` changes (including Dependabot PRs), the three
+`admin-ui.pnpm.*` hashes become stale. They are always identical (`fetchDeps`
+fetches every platform's packages), so regenerate once and write the value to
+all three files, without a trailing newline:
+
+```bash
+printf 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' > nix/expected-hashes/admin-ui.pnpm.linux-x86_64.sha256
+nix-build -A admin-ui --no-out-link 2>&1 | grep "got:"
+for p in linux-x86_64 linux-aarch64 darwin; do printf '<got hash>' > nix/expected-hashes/admin-ui.pnpm.$p.sha256; done
 ```
 
 ---
