@@ -2,6 +2,54 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-10-20
+
+### ⚠️ Breaking changes
+
+### SAML 2.0 single sign-on (#111)
+
+- **Contract**: `AuthScheme::Saml` (`"sa"`) and `SamlParams` in `RealmAuthParams.saml_params`, mirrored in admin-ui types and `openapi.yaml`. `SamlParams.sp_signing_key` does not exist: the key is server configuration only.
+- **Feature gate**: optional, off-by-default `saml` Cargo feature (`samael`); realm requests carrying `saml_params` get `400` on builds without it. SAML is never an administrator credential: no admin is found by `AuthScheme::Saml` and SAML on realm `_` is refused.
+- **Endpoints** (under `/saml`, only when `[saml_sp_params]` is set, rate limited like `/login`): `GET /saml/{realm_id}/login` (checks `return_to` against the realm origin allowlist, stores the pending request for 10 min, redirects with an RSA-SHA256-signed `AuthnRequest`), `POST /saml/{realm_id}/acs` (`_ea_saml` cookie must match `RelayState` against login CSRF; issues the `_ea_` session and returns via a same-site page to keep the `SameSite=Strict` cookie) and `GET /saml/{realm_id}/metadata`.
+- **Realm validation**: IdP entityID, HTTPS Redirect SSO URL, signing certificates and NameID format are always derived from the pasted metadata. Expired, oversized or multi-entity metadata, a wrong ACS URL, return URLs outside the https allowlist, bad claim names and transient NameIDs without a subject attribute get a field-named `400`.
+- **SP key**: `[saml_sp_params]` (RSA key ≥ 2048 bits and matching certificate PEM paths) is checked at startup and required to enable SAML.
+- **Response validation**: samael checks signature, `InResponseTo`, issuer, validity window, recipient, destination and status. We add: IdP certificate required, `AudienceRestriction` naming our entity ID and `AuthnStatement` required, RSA/ECDSA with SHA-256/384/512 only, replay rejection (5 min after `IssueInstant`, 3 min skew). Failures return `401` `AuthError::Saml`.
+- **Identity mapping**: subject is the configured attribute (exactly one non-empty value) or the NameID (transient refused), optionally lowercased; roles come from the role attribute; only `attribute_claim_map` attributes become extra claims, within the 4 KiB budget.
+- **`SamlRequestStore`**: pending `AuthnRequest`s and a per-realm replay cache on SQLite, PostgreSQL, MySQL and Redis; atomic single-use, expired entries refused, exact-match IDs on MySQL, periodic purge on the stale-session collector's interval.
+- **Admin UI**: SAML realm settings with in-browser metadata parsing and preview, copyable SP entity ID/ACS URL, SP metadata download, per-field checks and server-error mapping; realm cards show a SAML tag and flag IdP certificates expiring within 30 days. `saml_params` is optional in `RealmAuthParams`, restoring the type-check. Fixed the realm drawer enabling TOTP when saving a realm whose `totp_params` the server omitted.
+- **Packaging**: static OpenSSL-only xmlsec 1.3.5 / libxml2 2.13.4 (`nix/xmlsec-static.nix`); separate `auth-verifier-static-saml` and `docker-image-saml` Nix builds (default artifacts unchanged); `--variant default|saml` on `nix.sh`, packaging scripts and mise tasks (output `result-<format>-static-saml/`, `-saml` suffix; `--variant saml --link dynamic` rejected); the DMG script skips `result-*` dirs.
+- **Helm chart** `charts/cosmian-auth-verifier`: renders `auth_verifier.toml`, injects DB/session-store URLs from Secrets, mounts TLS/JWT/certificate/SAML key Secrets, rejects settings the server would refuse, and switches to the `auth-verifier-saml` image when `saml.enabled`.
+- **CI**: `cargo-saml` Nix job (clippy and tests with `--features saml`) on Linux x86_64/aarch64 and macOS, with `<nixpkgs>` pinned so macOS uses a Nix bash; `static-saml` packages (deb, rpm, dmg) built and published; image pushed as `ghcr.io/cosmian/auth-verifier-saml`; package tests start with `[saml_sp_params]` (`test_docker_image.sh` checks it when `EXPECT_SAML=1`); new `SAML e2e` workflow (Keycloak) on Linux x86_64/aarch64, weekly and on SAML-related pushes/PRs, uploading Playwright traces on failure.
+- **Tests**: request-store suite (in-memory SQLite by default; PostgreSQL/MySQL/Redis via `TEST_SESSIONS_STORE`), xmlsec smoke test, settings-validation, response-validation (one broken property at a time) and identity-mapping tests, HTTPS end-to-end tests (signed redirect, login, replay, login-CSRF, return-URL allowlist, SP metadata, cross-realm ACS), a fake signing IdP helper (`tests::saml_idp`), admin UI tests with a Playwright realm-creation scenario, and real-Keycloak e2e (`mise run test:saml-e2e`, Keycloak 26.4 digest-pinned, new `e2e/` package).
+- **Docs**: `docs/saml.md` and `server/saml_testing.md`; SAML added as flow 8 and to the config, flows, API and client references, overview and README; commented `[saml_sp_params]` in packaged/dev configs; `/saml` endpoints in `openapi.yaml` and proxied in admin-ui dev/preview servers; fixed broken Mermaid diagrams; ADR-0003 (`samael` with bundled xmlsec).
+
+### Realm claim authorization (#89)
+
+- **Claim model**: a realm is *unclaimed* until it has its first admin and *claimed* afterwards. Not persisted: recomputed on every request from the admins' `realms` lists, so removing a realm's last admin immediately restores super-admin access.
+- **Access rule**: a direct member of a realm always has access. A super admin who is not a member has access only while the realm is unclaimed (bootstrap). Applies to `/realms/{realm}/…` (userpass, TOTP), `/sessions/…`, `PUT /admins/realms/{id}`, and admin CRUD whose target `realms` include the realm.
+- **Permanent super-admin exemptions** (safety net against orphaned realms): `GET /admins/realms`, `GET /admins/realms/{id}` and `DELETE /admins/realms/{id}`. A realm's own admins may delete it too. Realm creation and first-admin bootstrap stay super-admin-only.
+- **Admin CRUD**: the exclusive-ownership rule is claim-aware (every realm in the target's `realms` must pass the check; `PUT` checks current state and incoming body); an admin with an empty `realms` list is manageable by super admins only.
+- **Behaviour changes**: realm admins can now `PUT` their own realm's config (was super-admin-only); the userpass list is filtered to realms the requester can manage, using one `list_admins()` call per request.
+- **Code**: new `can_manage_realm`, `can_manage_admin_realms` and `realm_manageable_given_claims` in `server/src/server/endpoints/mod.rs`. `Admin::can_administer_realm` stays in the client crate as a static, DB-less UI hint, not an authorization decision.
+- **Docs and tests**: `authorization_and_administration.md` gains a Realm-Claim Lifecycle section and updated diagrams; `openapi.yaml` updated; admin, super-admin and TOTP API tests rewritten for the claimed/unclaimed matrix.
+
+### Credentialed CORS (#90)
+
+- Admin scopes (`/whoami`, `/certify`, `/sessions/*`, `/admins/*`, `/admins/realms/*`, `/auth/approle/*`, `/auth/kubernetes/*`) now send `Access-Control-Allow-Credentials` for configured `allowed_origins` (`build_admin_cors()` was missing `.supports_credentials()`), so cross-origin admin UIs can read cookie-authenticated responses. Origins are always explicit, never `*`. `/login` was unaffected.
+
+### Build, CI and dependencies (#88, #115, #117)
+
+- **`mise` task runner** (`mise.toml`, `.mise/`): thin wrapper over `.github/scripts/nix.sh` plus `ui:*` admin-ui tasks; pins the admin-ui Node/pnpm toolchain while Rust stays in `rust-toolchain.toml` and Nix stays the build engine. Packaging workflows use `mise run …` via `jdx/mise-action@v2`, pinned to mise `2026.9.2` (`2026.9.3` binaries were unpublished, giving `404`). Documented in `AGENTS.md`, `.github/copilot-instructions.md` and `admin-ui/DEV_GUIDE.md`.
+- **Dependabot**: admin-ui npm minor/patch and security updates grouped into single PRs; PRs labelled `frontend` instead of the nonexistent `admin-ui`.
+- **Lockfile repairs**: restored the `overrides` pins (`ws`, `esbuild`, `js-yaml`, `postcss`) that Dependabot dropped from `admin-ui/pnpm-lock.yaml` (every Admin UI CI job failed with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`); worked around pnpm losing them in the Nix sandbox (`nix/admin-ui.nix`); regenerated the stale `admin-ui.pnpm.*` Nix hashes, now documented in `AGENTS.md`, the expected-hashes README and the admin-ui agent instructions.
+- **Pre-commit**: new `admin-ui-lockfile` hook (frozen, lockfile-only `pnpm install`); `pnpm-lock.yaml` excluded from `yamlfmt`; nested list in the admin-ui agent instructions flattened (markdownlint and prettier disagreed); Helm templates excluded from `check-yaml`/`yamlfmt`.
+- **Security**: `rustls` 0.23.45 → 0.23.46 for RUSTSEC-2026-0349 and RUSTSEC-2026-0348 (the latter not reachable, `brotli` feature off); `spin` moved off yanked 0.9.8; RUSTSEC-2026-0285 patched and unused source orgs removed from `deny.toml`.
+- **Admin UI tests**: fixed the `window is not defined` failure by no-op'ing antd static `message.*` toasts in test setup and keeping a 50 ms teardown settle.
+
+### Docs and ADRs (#114)
+
+- ADR-0001/0002 moved to `server/documentation/adr/`, outside the public mdBook; navigation links and code comments cleaned up.
+
 ## [0.4.0] - 2026-09-05
 
 ### Features
