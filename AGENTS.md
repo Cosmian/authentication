@@ -55,6 +55,7 @@ mise run ui:lint                            # admin-ui: eslint + prettier + tsc
 mise run ui:test                            # admin-ui: unit tests
 mise run ui:build
 mise run ui:e2e
+mise run release:bump -- 0.5.0 0.6.0          # == bash .github/scripts/release/release.sh 0.5.0 0.6.0
 ```
 
 `mise` only pins the admin-ui Node/pnpm toolchain (`[tools]` in `mise.toml`).
@@ -104,7 +105,7 @@ nix/                Nix build expressions and expected vendor hashes
   scripts/          — CI and packaging scripts
     common.sh       — shared bash helpers
     nix.sh          — unified entrypoint for CI commands
-    release/        — version extraction and hash update scripts
+    release/        — version extraction and release version bump (release.sh)
     package/        — DEB / RPM / DMG packaging scripts
     test/           — test scripts (sqlite, psql, docker)
   workflows/        — GitHub Actions workflows
@@ -334,6 +335,18 @@ bash .github/scripts/nix.sh [--link static|dynamic] [--variant default|saml] COM
 | `main_base.yml`           | clippy, cargo-deny, cargo-test, packaging            |
 | `packaging.yml`           | Multi-platform packaging (Linux/ARM/macOS) + Docker  |
 | `packaging-tests.yml`     | Install packages in Docker containers and verify     |
+
+### Releasing
+
+1. On `release/X.Y.Z` from `develop`, fold `CHANGELOG/*.md` into a new
+   `## [X.Y.Z] - YYYY-MM-DD` entry of `CHANGELOG.md` and delete those files (manual).
+2. Run `bash .github/scripts/release/release.sh <old> <new>`: it bumps every versioned
+   file and `Cargo.lock`, and warns about leftovers or a missing changelog entry.
+3. Commit `build: release X.Y.Z`, run `packaging.yml` on the branch, merge into `main`,
+   tag `X.Y.Z` on `main`, then merge `main` back into `develop`. The tag build publishes
+   the GitHub release assets, the Docker images and the crates.
+
+Never tag before the version bump: the tag build packages whatever `Cargo.toml` says.
 
 ### Database test environment
 

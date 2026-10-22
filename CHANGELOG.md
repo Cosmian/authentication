@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.0] - 2026-10-20
+## [0.5.0] - 2026-10-22
 
 ### ⚠️ Breaking changes
 
@@ -40,6 +40,7 @@ All notable changes to this project will be documented in this file.
 ### Build, CI and dependencies (#88, #115, #117)
 
 - **`mise` task runner** (`mise.toml`, `.mise/`): thin wrapper over `.github/scripts/nix.sh` plus `ui:*` admin-ui tasks; pins the admin-ui Node/pnpm toolchain while Rust stays in `rust-toolchain.toml` and Nix stays the build engine. Packaging workflows use `mise run …` via `jdx/mise-action@v2`, pinned to mise `2026.9.2` (`2026.9.3` binaries were unpublished, giving `404`). Documented in `AGENTS.md`, `.github/copilot-instructions.md` and `admin-ui/DEV_GUIDE.md`.
+- **Release script**: `.github/scripts/release/release.sh <old> <new>` (`mise run release:bump`) bumps the version in `Cargo.toml`, the `auth_client` pin, `Cargo.lock`, the admin-ui and e2e `package.json` files and the Helm chart, fails when a listed file no longer carries the old version, and flags leftovers; writing the changelog stays manual. Documented in `AGENTS.md` §7.
 - **Dependabot**: admin-ui npm minor/patch and security updates grouped into single PRs; PRs labelled `frontend` instead of the nonexistent `admin-ui`.
 - **Lockfile repairs**: restored the `overrides` pins (`ws`, `esbuild`, `js-yaml`, `postcss`) that Dependabot dropped from `admin-ui/pnpm-lock.yaml` (every Admin UI CI job failed with `ERR_PNPM_LOCKFILE_CONFIG_MISMATCH`); worked around pnpm losing them in the Nix sandbox (`nix/admin-ui.nix`); regenerated the stale `admin-ui.pnpm.*` Nix hashes, now documented in `AGENTS.md`, the expected-hashes README and the admin-ui agent instructions.
 - **Pre-commit**: new `admin-ui-lockfile` hook (frozen, lockfile-only `pnpm install`); `pnpm-lock.yaml` excluded from `yamlfmt`; nested list in the admin-ui agent instructions flattened (markdownlint and prettier disagreed); Helm templates excluded from `check-yaml`/`yamlfmt`.
@@ -49,6 +50,7 @@ All notable changes to this project will be documented in this file.
 ### Docs and ADRs (#114)
 
 - ADR-0001/0002 moved to `server/documentation/adr/`, outside the public mdBook; navigation links and code comments cleaned up.
+- Initial super admin docs corrected: the server always creates `admin` / `change_me` in realm `_` (the documented `APP_REALM_ADMIN_USERNAME` / `APP_REALM_ADMIN_INITIAL_PASSWORD` environment variables never existed), and its `change_password` flag is not enforced because realm `_` accepts expired passwords; the installation guide now shows how to change the password.
 
 ## [0.4.0] - 2026-09-05
 

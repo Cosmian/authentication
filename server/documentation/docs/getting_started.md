@@ -77,18 +77,13 @@ See [server_configuration.md](server_configuration.md) for the full configuratio
 
 ## 4. Bootstrap the First Super Admin
 
-On the **first startup**, set these environment variables to create the initial super admin:
+On the **first startup**, the server creates the super admin `admin` with the password `change_me` in the admin realm `_`:
 
 ```bash
-export APP_REALM_ADMIN_USERNAME="admin"
-export APP_REALM_ADMIN_INITIAL_PASSWORD="change_me"
-
 ./target/release/auth_verifier auth_verifier.toml
 ```
 
-The server hashes the password with **Argon2id** and stores it. Remove or unset these variables before any subsequent restarts — they are silently ignored if the admin already exists.
-
-> **Security:** Never commit `APP_REALM_ADMIN_INITIAL_PASSWORD` to source control. Rotate the password immediately after bootstrapping.
+> **Security:** these credentials are well-known and the server does not force a change. Change the password right after the first start, as shown in [Installation](installation.md#5-bootstrap-the-first-administrator).
 
 ---
 

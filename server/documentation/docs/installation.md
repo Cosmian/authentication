@@ -113,12 +113,25 @@ the server automatically creates a super-admin account:
 | Realm | `_` (the admin realm) |
 | Username | `admin` |
 | Initial password | `change_me` |
-| `change_password` | `true` — the password **must** be changed on first login |
+| `change_password` | `true`, but **not enforced**: realm `_` accepts expired passwords |
 
-> **Security:** the initial credentials are well-known. Log in immediately after
-> the first start and change the password (the `change_password` flag forces a
-> reset on first login). Restrict network access to the admin API (`/login`,
-> `/admins/*`, `/auth/approle/*`, …) to trusted operators.
+These values are fixed: no configuration field or environment variable changes them.
+
+> **Security:** the initial credentials are well-known and nothing forces you to
+> change them. Right after the first start, change the password from the admin UI
+> (**Credentials**, realm `_`) or through the API:
+>
+> ```bash
+> curl --cacert ca.cert.pem -c cookies.txt \
+>      -X POST "https://auth.example.com:8443/login?realm=_" -u "admin:change_me"
+> curl --cacert ca.cert.pem -b cookies.txt \
+>      -X PUT "https://auth.example.com:8443/realms/_/userpass/admin" \
+>      -H "Content-Type: application/json" \
+>      -d '{"realm":"_","username":"admin","password_input":{"plaintext":"<new password>"},"change_password":false}'
+> ```
+>
+> Restrict network access to the admin API (`/login`, `/admins/*`,
+> `/auth/approle/*`, …) to trusted operators.
 
 ---
 

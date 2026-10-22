@@ -3,8 +3,8 @@ apiVersion: v2
 name: cosmian-auth-verifier
 description: A Helm chart for deploying the Cosmian Authentication Server (auth_verifier), with optional SAML 2.0 single sign-on, on Kubernetes.
 type: application
-version: 0.4.0
-appVersion: 0.4.0
+version: 0.5.0
+appVersion: 0.5.0
 kubeVersion: '>=1.24.0-0'
 home: https://github.com/Cosmian/authentication
 sources:
@@ -26,6 +26,6 @@ annotations:
       url: https://github.com/Cosmian/authentication
   artifacthub.io/images: |
     - name: auth-verifier
-      image: ghcr.io/cosmian/auth-verifier:0.4.0
+      image: ghcr.io/cosmian/auth-verifier:0.5.0
     - name: auth-verifier-saml
-      image: ghcr.io/cosmian/auth-verifier-saml:0.4.0
+      image: ghcr.io/cosmian/auth-verifier-saml:0.5.0
