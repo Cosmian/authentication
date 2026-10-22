@@ -342,9 +342,11 @@ bash .github/scripts/nix.sh [--link static|dynamic] [--variant default|saml] COM
    `## [X.Y.Z] - YYYY-MM-DD` entry of `CHANGELOG.md` and delete those files (manual).
 2. Run `bash .github/scripts/release/release.sh <old> <new>`: it bumps every versioned
    file and `Cargo.lock`, and warns about leftovers or a missing changelog entry.
-3. Commit `build: release X.Y.Z`, run `packaging.yml` on the branch, merge into `main`,
-   tag `X.Y.Z` on `main`, then merge `main` back into `develop`. The tag build publishes
-   the GitHub release assets, the Docker images and the crates.
+3. Commit `build: release X.Y.Z` and merge the branch into `develop` through a PR
+   (packaging CI runs on it).
+4. Bring `main` up to `develop` (PR `develop` → `main`), then tag `X.Y.Z` on `main`.
+   The tag build publishes the GitHub release assets, the Docker images and the crates.
+   If `main` received commits of its own, merge `main` back into `develop`.
 
 Never tag before the version bump: the tag build packages whatever `Cargo.toml` says.
 
