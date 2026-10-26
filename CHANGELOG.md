@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.0] - 2026-10-22
+## [0.5.0] - 2026-10-26
+
+Replaces the 0.5.0 tag of 2026-10-20, withdrawn because it was cut before the version bump: its packages and images reported version 0.4.0.
 
 ### ⚠️ Breaking changes
 
