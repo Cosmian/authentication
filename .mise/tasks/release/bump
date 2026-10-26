@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+#MISE description="Bump the release version in every versioned file. Usage: mise run release:bump -- <old_version> <new_version>"
+set -euo pipefail
+exec bash "${MISE_CONFIG_ROOT}/.github/scripts/release/release.sh" "$@"

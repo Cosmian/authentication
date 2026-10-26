@@ -32,7 +32,7 @@ A fully commented sample configuration is provided in `auth_verifier.toml` at th
   - [Stale Session Collector](#stale-session-collector)
   - [Forward Proxy](#forward-proxy)
   - [API Documentation (Swagger UI)](#api-documentation-swagger-ui)
-  - [Bootstrap Environment Variables](#bootstrap-environment-variables)
+  - [Initial Super Admin](#initial-super-admin)
   - [Complete Example — Production (PostgreSQL + Redis)](#complete-example--production-postgresql--redis)
   - [Complete Example — Development (SQLite in-memory)](#complete-example--development-sqlite-in-memory)
   - [Realm Authentication Parameters](#realm-authentication-parameters)
@@ -332,22 +332,9 @@ The YAML schema is embedded at compile time from `server/documentation/openapi.y
 
 ---
 
-## Bootstrap Environment Variables
+## Initial Super Admin
 
-These environment variables are read **once on first startup** to create the initial super admin. They are ignored if the admin already exists.
-
-| Variable | Description |
-|----------|-------------|
-| `APP_REALM_ADMIN_USERNAME` | Username for the initial super admin |
-| `APP_REALM_ADMIN_INITIAL_PASSWORD` | Plaintext password (hashed with Argon2id at boot) |
-
-```bash
-export APP_REALM_ADMIN_USERNAME="admin"
-export APP_REALM_ADMIN_INITIAL_PASSWORD="$(openssl rand -base64 32)"
-./auth_verifier auth_verifier.toml
-```
-
-> **Security:** Unset these variables after the first run. Never store them in the TOML file itself.
+The initial super admin is not configurable: on first startup the server creates `admin` with the password `change_me` in realm `_`, and does not force a password change. Change it right after the first start, as shown in [Installation](installation.md#5-bootstrap-the-first-administrator).
 
 ---
 

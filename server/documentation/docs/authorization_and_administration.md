@@ -253,20 +253,15 @@ The `/realms/{realm}/userpass` endpoints read the session cookie and check that 
 
 ## Bootstrapping the First Super Admin
 
-The first super admin is seeded at server startup from two environment variables:
+At startup the server creates whichever of these is missing:
 
-| Variable                           | Description                                       |
-| ---------------------------------- | ------------------------------------------------- |
-| `APP_REALM_ADMIN_USERNAME`         | Username for the initial super admin              |
-| `APP_REALM_ADMIN_INITIAL_PASSWORD` | Plaintext password (hashed with Argon2id at boot) |
+1. The `_` realm, with username/password authentication and `allow_expired_passwords: true`.
+2. A `UserPass` entry `admin` in realm `_`, with the password `change_me` and `change_password: true`.
+3. An `Admin` record `admin` with `realms: ["_"]` and `userpass: "admin"`.
 
-At startup the server:
-
-1. Creates the `_` realm if it does not exist.
-2. Creates a `UserPass` entry for `APP_REALM_ADMIN_USERNAME` in realm `_`.
-3. Creates a `Admin` record with `realms: ["_"]` and `userpass: APP_REALM_ADMIN_USERNAME`.
-
-After bootstrapping, rotate or remove `APP_REALM_ADMIN_INITIAL_PASSWORD` from the environment.
+The username and initial password are fixed. Because `_` accepts expired passwords, the
+`change_password` flag does not block the login: change the password right after the first
+start, as shown in [Installation](installation.md#5-bootstrap-the-first-administrator).
 
 ---
 
@@ -336,7 +331,7 @@ Cookie: _ea_=<super_admin_cookie>
 ```
 
 > **Warning:** This grants full administrative access to every realm and every user. Only perform this operation when necessary, and audit the super admin list regularly.
-
+>
 > **Limitation:** this does **not** work for an admin that already exclusively belongs to a claimed realm (e.g. Alice above, once `my_realm` has been claimed) — see [Limitations and Known Caveats](#limitations-and-known-caveats).
 
 ---
