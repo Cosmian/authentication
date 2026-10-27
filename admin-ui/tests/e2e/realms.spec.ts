@@ -203,7 +203,8 @@ test.describe("Realms page", () => {
         await page.getByRole("button", { name: "Delete" }).last().click();
 
         // The realm must no longer appear in the cards.
-        await expect(page.getByText("my-service")).not.toBeVisible();
+        // Scope to `.ant-card`: the confirm modal and the success toast also show the realm name.
+        await expect(page.locator(".ant-card").filter({ hasText: "my-service" })).toHaveCount(0);
     });
 
     test("should create a SAML realm from pasted IdP metadata", async ({ page }) => {
