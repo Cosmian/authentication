@@ -27,5 +27,9 @@ pnpm exec playwright test <spec-name>
 - Prefer role-based locators (`getByRole("cell" | "tab" | "button", ...)`). Use
   `exact: true` or an anchored regex when a substring would match multiple elements
   (e.g. a role name that is also a substring of its `role_id` cell).
+- After a create, update or delete, assert on the element that holds the data (`.ant-card`,
+  `getByRole("cell" | "row")`), not a page-wide `getByText(name)`: the confirm modal and the
+  success toast repeat the name, and several matches fail at once with a strict-mode
+  violation. Assert absence with `toHaveCount(0)` on that scoped locator.
 - Token self-service endpoints authenticate via the `X-Vault-Token` header, not the
   admin cookie — assert the header is present in their mocks.
