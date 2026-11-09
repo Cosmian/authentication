@@ -116,7 +116,7 @@ These endpoints manage `UserPass` (username/password) credentials stored per rea
 | `GET` | `/realms/{realm}/userpass` | Admin of `realm` **or** super admin |
 | `GET` | `/admins/userpass` | Super admin only |
 
-> **Cookie-realm constraint:** The `/realms/{R}/…` endpoints authenticate the caller using the cookie issued by `POST /login?realm={R}`. A session created by logging into realm `_` can only authenticate calls to `/realms/_/…`. A realm admin who logs into `_` can therefore only manage credentials in `_` — and only if `can_administer_realm("_")` is true (i.e., they are also a super admin).
+> **Admin sessions come from `_`:** admin endpoints (`/admins/*`, `/realms/*`, `/auth/approle/*`, `/auth/kubernetes/*`) only accept a session opened on realm `_` by an admin; a session of any other realm gets `401`. A `_` session authorises calls on `/realms/{R}/…` for every realm the admin may manage (`can_manage_realm`).
 
 ---
 

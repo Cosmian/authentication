@@ -256,19 +256,20 @@ certificate, `AuthnRequestsSigned="true"`), to import into the IdP.
 
 ## Session Management
 
+Every `/sessions` call needs a valid `_ea_` cookie. A caller reaches its **own** sessions (same realm and username, any auth scheme); admins also reach the sessions of the realms they may manage (a realm admin its own realms, the super admin `_` and the realms that have no admin of their own yet). A session the caller may not access is reported as not found, and a refused call returns `403`. `session_id` is the SHA-256 (hex) of the `_ea_` cookie value, and the cookie value itself is never returned.
+
 ### `GET /sessions/{session_id}`
 
-Retrieve session data by session ID. Returns `null` (not an error) when the session does not exist or has expired.
+Retrieve session data by session ID. Returns `null` (not an error) when the session does not exist, has expired, or is not one the caller may access.
 
 **Response — `200 OK`** (session found)
 
 ```json
 {
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_id": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "realm_id": "my-service",
   "username": "alice",
   "auth_scheme": "up",
-  "cookie_string": "eyJ…",
   "max_age_seconds": 3600,
   "max_stale_age_seconds": 1800,
   "created_at": 1744996400
@@ -316,7 +317,7 @@ Retrieve session data and optionally apply a bulk logout action in the same requ
 
 ### `POST /sessions/realms/{realm_id}/clients`
 
-Return all session IDs for a set of authenticated clients in a realm.
+Return all session IDs for a set of authenticated clients in a realm. Admins of the realm may ask for any client; everybody else only for their own username (`403` otherwise).
 
 #### Request body
 
@@ -342,7 +343,7 @@ Return all session IDs for a set of authenticated clients in a realm.
 
 ### `DELETE /sessions`
 
-Delete sessions by ID.
+Delete sessions by ID. Every session must be the caller's own or belong to a realm the caller administers; otherwise the request is refused with `403` and nothing is deleted.
 
 #### Request body
 
@@ -360,7 +361,7 @@ Delete sessions by ID.
 
 ### `DELETE /sessions/expired`
 
-Delete all expired sessions from the session store.
+Delete all expired sessions from the session store. Super admins only.
 
 **Response — `204 No Content`** — empty body.
 
@@ -368,7 +369,7 @@ Delete all expired sessions from the session store.
 
 ### `DELETE /sessions/realms/{realm_id}`
 
-Delete all sessions for a given realm (administrative bulk logout).
+Delete all sessions for a given realm (administrative bulk logout). Admins of that realm only.
 
 **Response — `204 No Content`** — empty body.
 
@@ -376,7 +377,7 @@ Delete all sessions for a given realm (administrative bulk logout).
 
 ## Machine Authentication (AppRole / Kubernetes / Token)
 
-Endpoints for machine-to-machine authentication. These sit under the `/auth/` prefix. Login endpoints are **unauthenticated** (the credential is the request body). Role management endpoints require an active admin session cookie. Token self-service endpoints require a valid `X-Vault-Token` header.
+Endpoints for machine-to-machine authentication. These sit under the `/auth/` prefix. Login endpoints are **unauthenticated** (the credential is the request body). Role management endpoints require a super admin session cookie. Token self-service endpoints require a valid `X-Vault-Token` header.
 
 For complete request/response examples and field descriptions see [app_auth_api.md](app_auth_api.md).
 
@@ -1089,15 +1090,14 @@ described in [SAML 2.0 single sign-on](saml.md#step-2--configure-the-realm).
 > `{ "hashed": "<PHC string>" }` in `password_input` on create/update — see
 > [`POST /realms/{realm_id}/userpass`](#post-realmsrealm_iduserpass).
 
-### `SessionData`
+### `SessionInfo`
 
 ```json
 {
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_id": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "realm_id": "my-service",
   "username": "alice",
   "auth_scheme": "up",
-  "cookie_string": "eyJ…",
   "max_age_seconds": 3600,
   "max_stale_age_seconds": 1800,
   "created_at": 1744996400

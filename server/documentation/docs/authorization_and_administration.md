@@ -192,11 +192,21 @@ All `/realms/{realm}/userpass` and `/realms/{realm}/totp/*` endpoints require `c
 
 ### Session Management
 
-| Method   | Endpoint                 | Super Admin |               Realm Admin                |
-| -------- | ------------------------ | :---------: | :--------------------------------------: |
-| `GET`    | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
-| `DELETE` | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
-| `GET`    | `/sessions`              |      ✅      |    ✅ filtered to administered realms     |
+All `/sessions` calls need a valid session cookie, but not an admin one: a caller always reaches its **own** sessions (same realm and username, whatever the login scheme), which is what a backend API server needs to log a user out. Admins reach more:
+
+| Operation                                   | Any client       | Realm admin                    | Super admin                                    |
+| ------------------------------------------- | :--------------: | :----------------------------: | :--------------------------------------------: |
+| `GET`/`POST /sessions/{session_id}`         | ✅ own sessions   | ✅ sessions of its realms       | ✅ realms without an admin of their own, and `_` |
+| `POST /sessions/realms/{realm}/clients`     | ✅ own username   | ✅ any client of its realms     | ✅ same                                         |
+| `DELETE /sessions` (by ID)                  | ✅ own sessions   | ✅ sessions of its realms       | ✅ same                                         |
+| `DELETE /sessions/realms/{realm}`           | ❌                | ✅ its realms                   | ✅ realms without an admin of their own, and `_` |
+| `DELETE /sessions/expired`                  | ❌                | ❌                              | ✅                                              |
+
+The realm-claim rule applies as everywhere else: once a realm has its own admin, the super admin no longer reaches its sessions. A session the caller may not access is reported as not found, and a `DELETE` naming one is refused as a whole. Session responses never include the cookie value, which is the session credential. Sessions cannot be created through the API.
+
+### Machine Authentication
+
+`/auth/approle/*` and `/auth/kubernetes/*` role management (everything except the unauthenticated `login` endpoints) is for **super admins only**: the roles are global, not tied to a realm.
 
 ### Public / unauthenticated
 
@@ -240,14 +250,11 @@ Granting or revoking realm membership (`add_admin_to_realm` / `remove_admin_from
 
 ---
 
-## Cookie-Realm Constraint
+## Admin Sessions Come From the `_` Realm
 
-Session cookies are scoped to the realm through which the user logged in. A cookie issued by `POST /login?realm=_` can only authenticate requests that require the `_` realm's session.
+Admin endpoints (`/admins/*`, `/realms/*`, `/auth/approle/*`, `/auth/kubernetes/*`) only accept a session opened on the `_` realm by an admin. A session of any other realm is rejected with `401`, even when its username equals an admin's login: the admin lookup uses the username and login scheme of the session, and only the `_` realm holds admin logins.
 
-The `/realms/{realm}/userpass` endpoints read the session cookie and check that the cookie's realm matches (or the caller is a super admin). Practically this means:
-
-- A realm admin for `finance` who logs into `_` **cannot** manage `/realms/finance/userpass` entries — their cookie is for `_`, not for `finance`. They would need to authenticate as a client against the `finance` realm separately.
-- A super admin who logs into `_` **can** manage `/realms/_/userpass` entries directly.
+A `_` session is not tied to `/realms/_/…`: it authorises calls on `/realms/{realm}/…` for every realm the admin may manage (see [Realm-Claim Lifecycle](#realm-claim-lifecycle)).
 
 ---
 

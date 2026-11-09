@@ -23,12 +23,12 @@ The HTTP layer is organized as Actix scopes with layered middleware, assembled i
 | `/public` | Unauthenticated (version, JWKS) | None |
 | `/login` | Credential authentication | `ExtractRealm` → `UsernamePasswordAuth` → `JwtAuth` → `EnsureAuth` |
 | `/whoami` | Session introspection | `ExtractRealm` → `CookieAuthSameServer` |
-| `/sessions` | Session validation/revocation API | `ExtractRealm` |
+| `/sessions` | Session lookup/revocation API | `ExtractRealm` → `CookieAuthSameServer`; authorized per caller in the handlers (own sessions, or realms the admin manages) |
 | `/realms` | Realm-scoped credentials and TOTP | `ExtractRealm` → `CookieAuthSameServer` → `AdminAuth` |
 | `/admins` | Admin CRUD | `InjectAdminRealm` → `CookieAuthSameServer` → `AdminAuth` |
 | `/admins/realms` | Realm management (super admin) | `InjectAdminRealm` → `CookieAuthSameServer` → `AdminAuth` |
 
-Middleware runs bottom-to-top in each scope (last `.wrap()` runs first).
+Middleware runs bottom-to-top in each scope (last `.wrap()` runs first). `AdminAuth` only maps sessions opened on realm `_` to an `Admin`; `/auth/approle` and `/auth/kubernetes` add the `require_super_admin` guard.
 
 ## Key Domain Concepts
 
