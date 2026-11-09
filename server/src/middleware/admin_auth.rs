@@ -3,11 +3,16 @@
 //! This middleware is responsible for finding the Admin associated with Client Claims extracted by previous middlewares (e.g. CookieAuthSameServer).
 //! It retrieves the Admin information from the database and sets it in the request extensions for downstream handlers
 
-use crate::{AuthError, models::ClientClaims};
+use crate::{
+    AuthError,
+    database::Database,
+    models::{ADMIN_REALM, Admin, ClientClaims},
+};
 use actix_web::{
     Error, HttpMessage,
-    body::{BoxBody, EitherBody},
+    body::{BoxBody, EitherBody, MessageBody},
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
+    middleware::Next,
 };
 use cosmian_logger::{debug, trace};
 use futures::{
@@ -20,6 +25,54 @@ use std::{
     sync::Arc,
     task::{Context, Poll},
 };
+
+/// Finds the admin a session belongs to.
+///
+/// Admins log in on the admin realm only: a session opened on any other realm never maps to an
+/// admin, even when its username equals an admin's login.
+pub async fn find_admin_for_claims(
+    database: &dyn Database,
+    client_claims: &ClientClaims,
+) -> Result<Option<Admin>, AuthError> {
+    if client_claims.private.realm_id.as_deref() != Some(ADMIN_REALM) {
+        return Ok(None);
+    }
+    let auth_scheme = client_claims
+        .private
+        .auth_scheme
+        .ok_or_else(|| AuthError::Session("No auth scheme found in token claims".to_string()))?;
+    let value = client_claims.registered.sub.as_ref().ok_or_else(|| {
+        AuthError::Session("No subject (username) found in token claims".to_string())
+    })?;
+
+    let admins = database
+        .find_admins_by_auth_scheme(auth_scheme, value)
+        .await
+        .map_err(|e| {
+            AuthError::Unexpected(format!(
+                "Failed to query admin by auth scheme and value: {e}"
+            ))
+        })?;
+    Ok(admins.into_iter().next())
+}
+
+/// Lets only super admins through. Use with `middleware::from_fn`, wrapped *before* [`AdminAuth`]
+/// so that it runs after it.
+pub async fn require_super_admin(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, Error> {
+    if !req
+        .extensions()
+        .get::<Admin>()
+        .is_some_and(Admin::is_super_admin)
+    {
+        return Err(
+            AuthError::Forbidden("Only super admins can use this endpoint".to_string()).into(),
+        );
+    }
+    next.call(req).await
+}
 
 /// `AdminAuth` is an Actix web middleware for fetching an Admin using the ClientClaims.
 #[derive(Clone)]
@@ -111,33 +164,16 @@ where
                         .to_string(),
                 )
             })?;
-            let auth_scheme = client_claims.private.auth_scheme.as_ref().ok_or_else(|| {
-                AuthError::Session("No auth scheme found in token claims".to_string())
-            })?;
-            let value = client_claims.registered.sub.as_ref().ok_or_else(|| {
-                AuthError::Session("No subject (username) found in token claims".to_string())
-            })?;
-
-            let admin = database
-                .find_admins_by_auth_scheme(*auth_scheme, value)
-                .await
-                .map_err(|e| {
-                    AuthError::Unexpected(format!(
-                        "Failed to query admin by auth scheme and value: {e}"
-                    ))
-                })?
-                .into_iter()
-                .next()
+            let admin = find_admin_for_claims(database.as_ref(), &client_claims)
+                .await?
                 .ok_or_else(|| {
                     AuthError::Session(
-                        "No admin found for the given auth scheme and value".to_string(),
+                        "No admin found: admin endpoints need a session opened on the admin realm by an admin"
+                            .to_string(),
                     )
                 })?;
 
-            debug!(
-                "Admin Auth: Retrieved admin '{}' from database for auth scheme '{:?}' and value '{}'",
-                admin.id, auth_scheme, value
-            );
+            debug!("Admin Auth: Retrieved admin '{}' from database", admin.id);
 
             // Set the Admin information in the request extensions for downstream handlers to use
             req.extensions_mut().insert(admin);
