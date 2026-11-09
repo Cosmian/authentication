@@ -1,7 +1,7 @@
 //! Shared test helpers used across multiple integration test modules.
 
 use crate::{
-    AuthResult, AuthenticationNextStep, Realm, RealmAuthParams,
+    AuthResult, AuthenticationNextStep, Realm, RealmAuthParams, UsernamePasswordParams,
     client::{AuthClient, AuthClientScheme},
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
     models::{ADMIN_REALM, Admin, PasswordInput, UserPass},
@@ -25,6 +25,19 @@ pub fn test_realm(id: &str) -> Realm {
         session_max_age_seconds: 3600,
         session_max_stale_age_seconds: 3600,
         certificate_max_age_seconds: 365 * 24 * 3600,
+    }
+}
+
+/// Like [`test_realm`], with username/password login enabled.
+pub fn test_userpass_realm(id: &str) -> Realm {
+    Realm {
+        auth_params: RealmAuthParams {
+            username_password_params: Some(UsernamePasswordParams {
+                allow_expired_passwords: false,
+            }),
+            ..Default::default()
+        },
+        ..test_realm(id)
     }
 }
 
@@ -132,6 +145,44 @@ pub async fn authenticate_as_admin(ctx: &TestsContext) -> AuthResult<AuthClient>
     );
     assert!(cookie.is_some(), "Expected a session cookie after login");
     Ok(client)
+}
+
+/// Create `username` (password `"user_pass"`) in `realm_id` as the super admin, creating the
+/// realm if needed, and log in. Returns the client (holding its `_ea_` cookie) and the session id.
+///
+/// Call it before the realm gets its first admin: the super admin loses write access afterwards.
+pub async fn login_realm_user(
+    ctx: &TestsContext,
+    realm_id: &str,
+    username: &str,
+) -> AuthResult<(AuthClient, String)> {
+    let super_admin = authenticate_as_admin(ctx).await?;
+    if super_admin
+        .get_realm_as_super_admin(realm_id)
+        .await
+        .is_err()
+    {
+        super_admin
+            .create_realm_as_super_admin(&test_userpass_realm(realm_id))
+            .await?;
+    }
+    super_admin
+        .create_admin_credentials_in_realm(
+            realm_id,
+            &create_userpass(realm_id, username, "user_pass", false)?,
+        )
+        .await?;
+    let client = ctx.get_test_client(AuthClientScheme::UsernamePassword {
+        username: username.to_string(),
+        password: "user_pass".to_string(),
+    });
+    let (result, _) = client.login(realm_id, None).await?;
+    assert!(
+        matches!(result.next_step, AuthenticationNextStep::Authenticated),
+        "Expected Authenticated after login of '{username}' in '{realm_id}'"
+    );
+    let session_id = result.session_id.expect("login must return a session id");
+    Ok((client, session_id))
 }
 
 /// Create a realm, register userpass credentials for a realm-admin user, create

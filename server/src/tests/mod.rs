@@ -50,3 +50,5 @@ mod totp_tests;
 mod admin_api;
 
 mod username_password_tests;
+
+mod sessions_authz_tests;
