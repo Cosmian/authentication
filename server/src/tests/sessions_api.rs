@@ -33,8 +33,7 @@ async fn authenticate_admin(ctx: &crate::tests::TestsContext) -> AuthResult<(Str
 
 // ── get_session ──────────────────────────────────────────────────────────────
 
-/// A freshly-issued session ID must return a `SessionData` with a non-empty cookie string
-/// and fields matching the authenticated client.
+/// A freshly-issued session ID must return a `SessionInfo` matching the authenticated client.
 #[actix_web::test]
 async fn test_get_session_returns_claims() -> AuthResult<()> {
     // init_test_logging(Some("info"));
@@ -48,10 +47,6 @@ async fn test_get_session_returns_claims() -> AuthResult<()> {
         "Expected session data for a valid session ID"
     );
     let session_data = session_data.unwrap();
-    assert!(
-        !session_data.cookie_string.is_empty(),
-        "Expected a non-empty cookie string"
-    );
     assert_eq!(
         session_data.session_id, session_id,
         "session_id field must round-trip"

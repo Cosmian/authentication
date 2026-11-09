@@ -29,7 +29,7 @@ pub use totp_endpoints::{totp_disable, totp_generate, totp_verify};
 mod sessions_endpoints;
 pub use sessions_endpoints::{
     delete_expired_sessions, delete_sessions, delete_sessions_for_realm, get_session,
-    get_session_by_id, get_sessions_for_clients, upsert_session,
+    get_session_by_id, get_sessions_for_clients,
 };
 
 mod auth_token;

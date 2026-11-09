@@ -9,7 +9,7 @@ pub struct Version {
 mod sessions;
 pub use sessions::{
     DeleteSessionsRequest, GetSessionRequest, GetSessionsForClientsRequest,
-    GetSessionsForClientsResponse, SessionsAction, UpsertSessionRequest,
+    GetSessionsForClientsResponse, SessionInfo, SessionsAction,
 };
 
 mod totp;

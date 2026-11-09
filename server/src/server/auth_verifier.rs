@@ -1,7 +1,7 @@
 use crate::{
     AdminAuth, AppTokenExtract, AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm,
     InjectAdminRealm, UsernamePasswordAuth,
-    middleware::{EnsureAuth, JwksManager, JwtAuth, LoginRateLimit},
+    middleware::{EnsureAuth, JwksManager, JwtAuth, LoginRateLimit, require_super_admin},
     server::{
         endpoints::{
             add_admin_to_realm,
@@ -53,7 +53,6 @@ use crate::{
             update_admin,
             update_realm,
             update_userpass,
-            upsert_session,
             version_endpoint,
             whoami,
         },
@@ -66,6 +65,7 @@ use actix_web::{
     App, Error, HttpResponse, HttpServer,
     body::MessageBody,
     dev::{ServerHandle, ServiceFactory, ServiceRequest, ServiceResponse},
+    middleware::from_fn,
     web::{self, Data, JsonConfig, PayloadConfig},
 };
 use cosmian_logger::{debug, info, trace, warn};
@@ -543,7 +543,6 @@ fn build_app(
         ))
         .wrap(ExtractRealm::new(database.clone()))
         .wrap(build_admin_cors(&allowed_origins))
-        .service(upsert_session)
         .service(get_session_by_id)
         .service(get_session)
         .service(get_sessions_for_clients)
@@ -592,8 +591,9 @@ fn build_app(
         .wrap(Cors::permissive())
         .service(k8s_login);
 
-    // AppRole admin CRUD
+    // AppRole admin CRUD (global roles: super admins only)
     let approle_admin_scope = web::scope("/auth/approle")
+        .wrap(from_fn(require_super_admin))
         .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),
@@ -608,8 +608,9 @@ fn build_app(
         .service(approle_get_role)
         .service(approle_list_roles);
 
-    // K8s admin CRUD
+    // K8s admin CRUD (global roles: super admins only)
     let k8s_admin_scope = web::scope("/auth/kubernetes")
+        .wrap(from_fn(require_super_admin))
         .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),

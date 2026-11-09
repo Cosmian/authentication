@@ -423,21 +423,17 @@ components:
             POST /certify when explicitly named in that request's `claims` field. Rejected
             with 400 if its serialized size exceeds 4 KiB.
           example: {as_registrant: acme-corp}
-    SessionData:
+    SessionInfo:
       type: object
       description: |
-        ⚠️  SECURITY NOTE: `cookie_string` contains the raw JWT stored in the session and
-        `session_id` is the opaque lookup key. These fields MUST NOT be returned by any
-        admin list endpoint — doing so would expose all active JWTs to any authenticated
-        admin, enabling session hijacking via Bearer token replay.
-        A future `SessionSummary` schema (see openapi TODO) must be defined for list
-        endpoints, omitting `cookie_string` and `session_id`.
-      required: [session_id, realm_id, username, auth_scheme, cookie_string, max_age_seconds, max_stale_age_seconds, created_at]
+        A session as returned by `/sessions`. The stored session cookie value is the session
+        credential and is never returned.
+      required: [session_id, realm_id, username, auth_scheme, max_age_seconds, max_stale_age_seconds, created_at]
       properties:
         session_id:
           type: string
-          format: uuid
-          example: 550e8400-e29b-41d4-a716-446655440000
+          description: SHA-256 (hex) of the `_ea_` cookie value.
+          example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
         realm_id:
           type: string
           example: my-service
@@ -446,9 +442,6 @@ components:
           example: alice
         auth_scheme:
           $ref: '#/components/schemas/AuthScheme'
-        cookie_string:
-          type: string
-          example: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
         max_age_seconds:
           type: integer
           format: int64
@@ -1466,41 +1459,12 @@ paths:
           description: Certificate signing is not configured on this server.
 
   /sessions:
-    post:
-      tags: [Sessions]
-      summary: Create or update a session (internal)
-      operationId: upsertSession
-      description: Internal server-to-server endpoint. Creates or replaces a session in the store.
-      security:
-        - cookieAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [session_id, realm, authenticated_client, session_value]
-              properties:
-                session_id:
-                  type: string
-                  format: uuid
-                  example: 550e8400-e29b-41d4-a716-446655440000
-                realm:
-                  $ref: '#/components/schemas/Realm'
-                authenticated_client:
-                  $ref: '#/components/schemas/AuthenticatedClientScheme'
-                session_value:
-                  type: string
-                  example: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
-      responses:
-        '204':
-          $ref: '#/components/responses/NoContent'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
     delete:
       tags: [Sessions]
       summary: Delete sessions by ID (explicit logout)
+      description: |
+        Each session must be the caller's own, or belong to a realm the caller administers;
+        otherwise the whole request is refused and nothing is deleted. Unknown IDs are ignored.
       operationId: deleteSessions
       security:
         - cookieAuth: []
@@ -1515,11 +1479,13 @@ paths:
           $ref: '#/components/responses/NoContent'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /sessions/expired:
     delete:
       tags: [Sessions]
-      summary: Purge all expired sessions
+      summary: Purge all expired sessions (super admin only)
       operationId: deleteExpiredSessions
       security:
         - cookieAuth: []
@@ -1528,12 +1494,18 @@ paths:
           $ref: '#/components/responses/NoContent'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /sessions/{session_id}:
     get:
       tags: [Sessions]
       summary: Retrieve session data by ID
-      description: Returns null (HTTP 200, not 404) when the session does not exist or has expired.
+      description: |
+        Callers see their own sessions (same realm and username), and those of any realm they
+        administer. Returns null (HTTP 200, not 404) when the session does not exist, has
+        expired, or is not one the caller may see. `session_id` is the SHA-256 (hex) of the
+        `_ea_` cookie value.
       operationId: getSessionById
       parameters:
         - $ref: '#/components/parameters/sessionId'
@@ -1546,17 +1518,16 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/SessionData'
+                  - $ref: '#/components/schemas/SessionInfo'
                   - type: 'null'
               examples:
                 found:
                   summary: Session found
                   value:
-                    session_id: 550e8400-e29b-41d4-a716-446655440000
+                    session_id: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
                     realm_id: my-service
                     username: alice
                     auth_scheme: up
-                    cookie_string: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
                     max_age_seconds: 3600
                     max_stale_age_seconds: 1800
                     created_at: 1744996400
@@ -1569,6 +1540,10 @@ paths:
     post:
       tags: [Sessions]
       summary: Retrieve session data and optionally perform bulk logout
+      description: |
+        Same visibility as `GET`. A `sessions_action` also needs the listed
+        `authenticated_clients` to be the caller itself, unless the caller administers the
+        session's realm.
       operationId: getSession
       parameters:
         - $ref: '#/components/parameters/sessionId'
@@ -1607,10 +1582,12 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/SessionData'
+                  - $ref: '#/components/schemas/SessionInfo'
                   - type: 'null'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1618,6 +1595,9 @@ paths:
     post:
       tags: [Sessions]
       summary: Get all session IDs for a set of clients in a realm
+      description: |
+        Admins of the realm may list any client's sessions. Everybody else may only list their
+        own (same realm, same username, any auth scheme).
       operationId: getSessionsForClients
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -1643,11 +1623,16 @@ paths:
                 $ref: '#/components/schemas/GetSessionsForClientsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /sessions/realms/{realm_id}:
     delete:
       tags: [Sessions]
       summary: Revoke all sessions for a realm (administrative bulk logout)
+      description: |
+        Admins of the realm only: a realm admin for its own realms; the super admin for `_` and
+        for realms that have no admin of their own yet.
       operationId: deleteSessionsForRealm
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -2409,7 +2394,7 @@ paths:
       description: |
         Idempotent create/update. When a role with the same name already exists its
         `role_id` is preserved; only policy and TTL settings are updated.
-        Requires admin session cookie.
+        Requires a super admin session cookie.
       operationId: appRoleCreateRole
       parameters:
         - $ref: '#/components/parameters/roleName'
@@ -2645,7 +2630,7 @@ paths:
       description: |
         Configure which Kubernetes service accounts and namespaces may log in
         with this role, and which JWKS endpoint to validate their JWTs against.
-        Requires admin session cookie.
+        Requires a super admin session cookie.
       operationId: k8sCreateRole
       parameters:
         - $ref: '#/components/parameters/roleName'

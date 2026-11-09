@@ -39,11 +39,11 @@ pub use dto::{
     K8sRoleConfigData,
     K8sRoleConfigResponse,
     K8sRoleRequest,
+    SessionInfo,
     SessionsAction,
     TotpGenerateRequest,
     TotpGenerateResponse,
     TotpVerifyRequest,
-    UpsertSessionRequest,
     Version,
 };
 
