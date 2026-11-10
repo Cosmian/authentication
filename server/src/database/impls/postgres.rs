@@ -489,20 +489,6 @@ impl Database for PostgresDatabase {
         Ok(())
     }
 
-    async fn delete_userpass_by_username(&self, username: &str) -> AuthDbResult<()> {
-        sqlx::query(
-            r#"
-            DELETE FROM userpass
-            WHERE username = $1
-            "#,
-        )
-        .bind(username)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"

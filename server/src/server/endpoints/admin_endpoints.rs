@@ -7,10 +7,10 @@
 //! | Endpoint | Who may call it |
 //! |---|---|
 //! | `POST /admins` | Realm admin (exclusive ownership) **or** super admin, but only for realms that don't have an admin of their own yet |
-//! | `GET /admins/{id}` | Realm admin (exclusive ownership) **or** super admin, but only while the target's realm(s) have no admin of their own |
-//! | `PUT /admins/{id}` | Same as `GET /admins/{id}`, applied to both the current and the new realm list |
-//! | `DELETE /admins/{id}` | Same as `GET /admins/{id}` |
-//! | `GET /admins` | Super admin (results filtered to admins the requester may still see) |
+//! | `GET /admins/{id}` | Super admin (any admin, read-only, to contact the admins of a claimed realm) **or** realm admin (exclusive ownership) |
+//! | `PUT /admins/{id}` | Realm admin (exclusive ownership) **or** super admin, but only while the target's realm(s) have no admin of their own; applied to both the current and the new realm list |
+//! | `DELETE /admins/{id}` | Same as `PUT /admins/{id}` |
+//! | `GET /admins` | Super admin, all admins |
 //! | `PUT /admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin, but only while `realm_id` has no admin of its own yet |
 //! | `DELETE /admins/{id}/realms/{realm_id}` | Same as above |
 //!
@@ -20,10 +20,9 @@
 use crate::{
     AuthError,
     database::Database,
-    models::Admin,
+    models::{ADMIN_REALM, Admin},
     server::endpoints::{
-        admin_from_request, can_manage_admin_realms, can_manage_realm,
-        realm_manageable_given_claims,
+        admin_from_request, admins_using_login, can_manage_admin_realms, can_manage_realm,
     },
 };
 use actix_web::{
@@ -31,7 +30,6 @@ use actix_web::{
     web::{Data, Json, Path},
 };
 use cosmian_logger::info;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 /// 2FA is managed through the TOTP endpoints only: a request body never sets it, and an update
@@ -40,6 +38,40 @@ fn set_totp_from(admin: &mut Admin, stored: Option<&Admin>) {
     admin.totp_enabled = stored.and_then(|s| s.totp_enabled);
     admin.totp_secret = stored.and_then(|s| s.totp_secret.clone());
     admin.totp_auth_url = stored.and_then(|s| s.totp_auth_url.clone());
+}
+
+/// Checks that `requester` may point the admin `admin_id` at the `_` login `userpass`: it must
+/// manage every other record using that login (a super admin when none does), and no other record
+/// may be linked to it already.
+async fn validate_login_link(
+    requester: &Admin,
+    admin_id: &str,
+    userpass: &str,
+    database: &Data<Arc<dyn Database>>,
+) -> Result<(), AuthError> {
+    let others: Vec<Admin> = admins_using_login(database, userpass)
+        .await?
+        .into_iter()
+        .filter(|a| a.id != admin_id)
+        .collect();
+    let mut allowed = !others.is_empty() || requester.is_super_admin();
+    for other in &others {
+        allowed &= can_manage_admin_realms(requester, &other.realms, database).await?;
+    }
+    if !allowed {
+        return Err(AuthError::Forbidden(format!(
+            "You may only link an admin to the login '{userpass}' if you manage every admin using it"
+        )));
+    }
+    if others
+        .iter()
+        .any(|a| a.userpass.as_deref() == Some(userpass))
+    {
+        return Err(AuthError::Conflict(format!(
+            "The login '{userpass}' is already linked to another admin"
+        )));
+    }
+    Ok(())
 }
 
 /// Create a new admin.
@@ -51,14 +83,7 @@ fn set_totp_from(admin: &mut Admin, stored: Option<&Admin>) {
 /// add more). An admin with an empty `realms` list may only be created by a
 /// super admin.
 ///
-/// # TODO — should we enforce `userpass` FK convention
-/// The `userpass` field is intended to reference a `UserPass` entry whose
-/// `username` matches `admin.id` in the `_` realm.  Currently the server
-/// accepts any arbitrary string (or `null`), which means a caller can point one
-/// admin at another admin's credentials.  This should be validated:
-///   - if `admin.userpass` is `Some`, assert `admin.userpass == admin.id`
-///   - ideally create/update the corresponding `_`-realm `UserPass` record
-///     atomically in the same request rather than requiring a separate call.
+/// `userpass`, the `_` login of the admin, is checked by [`validate_login_link`].
 #[post("")]
 pub async fn create_admin(
     req: HttpRequest,
@@ -76,6 +101,10 @@ pub async fn create_admin(
             ));
     }
 
+    if let Some(userpass) = admin.userpass.as_deref() {
+        validate_login_link(&requester, &admin.id, userpass, &database).await?;
+    }
+
     database.create_admin(&admin).await?;
     info!(
         "create_admin: '{}' created admin '{}'",
@@ -87,12 +116,10 @@ pub async fn create_admin(
 
 /// Retrieve an admin by ID.
 ///
-/// Realm admins may retrieve an admin only if the admin's `realms` list is
-/// non-empty and every realm it contains is administered by the requester
-/// (i.e. the admin belongs exclusively to the requester's realm(s)). Super
-/// admins may do the same, but only while those realm(s) have no admin of
-/// their own — since the target here already is one, that only ever holds for
-/// an unaffiliated (empty `realms`) admin.
+/// Super admins may read any admin, including those of claimed realms, to be able to contact
+/// them. Realm admins may retrieve an admin only if the admin's `realms` list is non-empty and
+/// every realm it contains is administered by the requester (i.e. the admin belongs exclusively
+/// to the requester's realm(s)).
 #[get("/{admin_id}")]
 pub async fn get_admin(
     req: HttpRequest,
@@ -107,7 +134,9 @@ pub async fn get_admin(
         .await?
         .ok_or_else(|| AuthError::BadRequest(format!("Admin '{}' not found", admin_id)))?;
 
-    if !can_manage_admin_realms(&requester, &target.realms, &database).await? {
+    if !requester.is_super_admin()
+        && !can_manage_admin_realms(&requester, &target.realms, &database).await?
+    {
         return Err(AuthError::Forbidden(format!(
             "Access denied: admin '{}' does not belong exclusively to your administered realm(s)",
             admin_id
@@ -119,16 +148,14 @@ pub async fn get_admin(
 
 /// Update an existing admin.
 ///
-/// Same authorization as [`get_admin`], applied to the admin's current
-/// `realms` list, plus a second check applying the same rule to the new
-/// `realms` list in the request body (privilege-escalation guard).
+/// The exclusive-ownership rule (every realm of the admin must be one the requester manages)
+/// applies to the admin's current `realms` list, plus a second check applying the same rule to the
+/// new `realms` list in the request body (privilege-escalation guard).
 ///
 /// The `id` path parameter is authoritative — the `id` field in the JSON body
 /// is overwritten to keep them consistent.
 ///
-/// # TODO — enforce `userpass` FK convention
-/// See the same note on `create_admin`: `userpass` should equal `admin.id` when
-/// set, and the `_`-realm credential should be managed atomically.
+/// A changed `userpass` is checked by [`validate_login_link`].
 #[put("/{admin_id}")]
 pub async fn update_admin(
     req: HttpRequest,
@@ -168,6 +195,12 @@ pub async fn update_admin(
         requester.id, admin_id
     );
 
+    if admin.userpass != target.userpass
+        && let Some(userpass) = admin.userpass.as_deref()
+    {
+        validate_login_link(&requester, &admin_id, userpass, &database).await?;
+    }
+
     admin.id = admin_id;
     set_totp_from(&mut admin, Some(&target));
     database.update_admin(&admin).await?;
@@ -177,13 +210,13 @@ pub async fn update_admin(
 
 /// Delete an admin by ID.
 ///
-/// Same authorization as [`get_admin`] when the admin exists. Deleting a
+/// The exclusive-ownership rule applies when the admin exists (see [`update_admin`]). Deleting a
 /// nonexistent admin is a super-admin-only idempotent no-op (mirrors the
 /// nonexistent-admin behavior of the pre-claim-aware authorization rules);
 /// a realm admin gets a "not found" error either way.
 ///
-/// Associated `userpass` credentials (if any) are cascade-deleted so that no
-/// orphaned entries remain in the `userpass` table.
+/// The admin's own `_` login is deleted with it, unless another admin record still uses it.
+/// Credentials of the same name in other realms are never touched.
 #[delete("/{admin_id}")]
 pub async fn delete_admin(
     req: HttpRequest,
@@ -222,16 +255,18 @@ pub async fn delete_admin(
 
     database.delete_admin(&admin_id).await?;
 
-    // Cascade-delete associated userpass credentials.
-    if let Some(username) = target.as_ref().and_then(|u| u.userpass.as_deref()) {
-        database.delete_userpass_by_username(username).await?;
+    // Delete the admin's own `_` login, unless another record uses it.
+    if let Some(username) = target.as_ref().and_then(|u| u.userpass.as_deref())
+        && admins_using_login(&database, username).await?.is_empty()
+    {
+        database.delete_userpass(ADMIN_REALM, username).await?;
     }
 
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// List all admins. Super admins only, and the result is filtered to the
-/// admins the requester may still see (see [`get_admin`]).
+/// List all admins. Super admins only. A super admin sees every admin, including those of claimed
+/// realms, to be able to contact them; it still cannot change them (see [`update_admin`]).
 ///
 /// Mapped to the scope root so the full URL is `GET /admins`.
 #[get("")]
@@ -247,31 +282,7 @@ pub async fn list_admins(
         ));
     }
 
-    let admins = database.list_admins().await?;
-
-    // Compute the claimed-realm set once from the list already fetched above,
-    // instead of calling `database.list_admins()` again for every admin in
-    // it (each of which could itself re-scan every realm it has).
-    let claimed_realms: HashSet<String> = admins
-        .iter()
-        .flat_map(|a| a.realms.iter().cloned())
-        .collect();
-
-    let visible: Vec<_> = admins
-        .into_iter()
-        .filter(|admin| {
-            if admin.realms.is_empty() {
-                requester.is_super_admin()
-            } else {
-                admin
-                    .realms
-                    .iter()
-                    .all(|r| realm_manageable_given_claims(&requester, r, &claimed_realms))
-            }
-        })
-        .collect();
-
-    Ok(HttpResponse::Ok().json(visible))
+    Ok(HttpResponse::Ok().json(database.list_admins().await?))
 }
 
 /// Grant an admin membership in a realm.
