@@ -16,3 +16,4 @@
 ## Docs
 
 - Authorization guide, API reference, OpenAPI, session management, client library, getting started and flows now describe the `/sessions` access rules, that a backend forwards the user's own cookie (`session_id` is the SHA-256 hex of the cookie value), and that admin sessions come from `_`; fixed the wrong "Cookie-Realm Constraint" text.
+- The admin UI `SessionData` type, unused but copying the leaked field, is now `SessionInfo` without `cookie_string`.

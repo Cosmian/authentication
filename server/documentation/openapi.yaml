@@ -15,7 +15,8 @@ info:
     Authorization: Basic <base64(username:password)>
     ```
     The server responds with `Set-Cookie: _ea_=<value>; HttpOnly; Secure; SameSite=Strict`.
-    Pass this cookie on every subsequent admin request.
+    Pass this cookie on every subsequent admin request. A session opened on any other realm is
+    rejected with `401` on admin endpoints, even if its username matches an admin's login.
 
 servers:
   - url: https://localhost:8443
@@ -27,7 +28,10 @@ tags:
   - name: Auth
     description: Login and session claims
   - name: Sessions
-    description: Session store management
+    description: |
+      Session store management. Any valid session cookie may be used, but a caller only reaches
+      its own sessions (same realm and username) plus, for admins, those of the realms they
+      administer. Session data never includes the session cookie value.
   - name: Realms
     description: |
       Realm CRUD. Creation is super-admin-only. Once a realm has its own
@@ -57,12 +61,12 @@ tags:
     description: |
       AppRole authentication (`/auth/approle/...`).
       The `login` endpoint is unauthenticated.
-      Role management (create, delete, list, secret-id) requires admin session cookie.
+      Role management (create, delete, list, secret-id) requires a super admin session cookie.
   - name: Kubernetes Auth
     description: |
       Kubernetes service-account JWT authentication (`/auth/kubernetes/...`).
       The `login` endpoint validates the JWT against the role's JWKS URL.
-      Role management requires admin session cookie.
+      Role management requires a super admin session cookie.
   - name: SAML
     description: |
       SAML 2.0 SP-initiated Web Browser SSO (`/saml/{realm_id}/...`). Present only on
@@ -2394,7 +2398,7 @@ paths:
       description: |
         Idempotent create/update. When a role with the same name already exists its
         `role_id` is preserved; only policy and TTL settings are updated.
-        Requires a super admin session cookie.
+        Requires admin session cookie.
       operationId: appRoleCreateRole
       parameters:
         - $ref: '#/components/parameters/roleName'
@@ -2630,7 +2634,7 @@ paths:
       description: |
         Configure which Kubernetes service accounts and namespaces may log in
         with this role, and which JWKS endpoint to validate their JWTs against.
-        Requires a super admin session cookie.
+        Requires admin session cookie.
       operationId: k8sCreateRole
       parameters:
         - $ref: '#/components/parameters/roleName'
