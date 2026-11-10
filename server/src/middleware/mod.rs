@@ -20,7 +20,7 @@ mod totp;
 pub use totp::TotpMiddleware;
 
 mod admin_auth;
-pub use admin_auth::{AdminAuth, find_admin_for_claims, require_super_admin};
+pub use admin_auth::{AdminAuth, find_admin_by_login, find_admin_for_claims, require_super_admin};
 
 mod username_password;
 pub use username_password::UsernamePasswordAuth;

@@ -4,7 +4,7 @@
 //! It retrieves the Admin information from the database and sets it in the request extensions for downstream handlers
 
 use crate::{
-    AuthError,
+    AuthError, AuthScheme,
     database::Database,
     models::{ADMIN_REALM, Admin, ClientClaims},
 };
@@ -26,6 +26,30 @@ use std::{
     task::{Context, Poll},
 };
 
+/// Finds the admin logging in with `value` under `auth_scheme`.
+///
+/// Records sharing a login are ambiguous: the lookup refuses them rather than picking one.
+pub async fn find_admin_by_login(
+    database: &dyn Database,
+    auth_scheme: AuthScheme,
+    value: &str,
+) -> Result<Option<Admin>, AuthError> {
+    let mut admins = database
+        .find_admins_by_auth_scheme(auth_scheme, value)
+        .await
+        .map_err(|e| {
+            AuthError::Unexpected(format!(
+                "Failed to query admin by auth scheme and value: {e}"
+            ))
+        })?;
+    if admins.len() > 1 {
+        return Err(AuthError::Session(
+            "Several admins share this login: refusing it".to_string(),
+        ));
+    }
+    Ok(admins.pop())
+}
+
 /// Finds the admin a session belongs to.
 ///
 /// Admins log in on the admin realm only: a session opened on any other realm never maps to an
@@ -44,16 +68,7 @@ pub async fn find_admin_for_claims(
     let value = client_claims.registered.sub.as_ref().ok_or_else(|| {
         AuthError::Session("No subject (username) found in token claims".to_string())
     })?;
-
-    let admins = database
-        .find_admins_by_auth_scheme(auth_scheme, value)
-        .await
-        .map_err(|e| {
-            AuthError::Unexpected(format!(
-                "Failed to query admin by auth scheme and value: {e}"
-            ))
-        })?;
-    Ok(admins.into_iter().next())
+    find_admin_by_login(database, auth_scheme, value).await
 }
 
 /// Lets only super admins through. Use with `middleware::from_fn`, wrapped *before* [`AdminAuth`]
