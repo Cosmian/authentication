@@ -84,9 +84,8 @@ export interface Admin {
     fido2: string | null;
     digital_credentials: Record<string, string> | null;
     client_certificate: string | null;
-    totp_enabled: boolean | null;
-    totp_secret: string | null;
-    totp_auth_url: string | null;
+    /** Server-owned and read-only: 2FA is managed through the TOTP endpoints, and the secret is never returned. */
+    totp_enabled?: boolean | null;
 }
 
 /** How to set a user's password on create/update — mutually exclusive by construction. */
