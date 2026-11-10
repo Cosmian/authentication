@@ -2,7 +2,7 @@
 //! Kubernetes admin endpoints, and the admin API from a session opened on another realm.
 
 use crate::{
-    AuthError, AuthResult, AuthScheme, AuthenticatedClientScheme, SessionsAction,
+    AuthResult, AuthScheme, AuthenticatedClientScheme, SessionsAction,
     client::{AuthClient, AuthClientScheme},
     database::APP_REALM_ADMIN_USERNAME,
     dto::{AppRoleRoleRequest, AppRoleSecretIdRequest, K8sRoleRequest},
@@ -10,15 +10,11 @@ use crate::{
     tests::{
         helpers::{
             admin_scheme, authenticate_as_admin, authenticate_new_realm_admin,
-            create_and_authenticate_realm_admin, login_realm_user,
+            create_and_authenticate_realm_admin, is_http, login_realm_user,
         },
         start_default_test_server,
     },
 };
-
-fn is_http<T>(result: &AuthResult<T>, status: u16) -> bool {
-    matches!(result, Err(AuthError::FailedHttpStatus(m)) if m.contains(&status.to_string()))
-}
 
 fn up(username: &str) -> AuthenticatedClientScheme {
     AuthenticatedClientScheme {

@@ -1,7 +1,7 @@
 //! Shared test helpers used across multiple integration test modules.
 
 use crate::{
-    AuthResult, AuthenticationNextStep, Realm, RealmAuthParams, UsernamePasswordParams,
+    AuthError, AuthResult, AuthenticationNextStep, Realm, RealmAuthParams, UsernamePasswordParams,
     client::{AuthClient, AuthClientScheme},
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
     models::{ADMIN_REALM, Admin, PasswordInput, UserPass},
@@ -26,6 +26,11 @@ pub fn test_realm(id: &str) -> Realm {
         session_max_stale_age_seconds: 3600,
         certificate_max_age_seconds: 365 * 24 * 3600,
     }
+}
+
+/// Whether `result` failed with an HTTP error carrying `status`.
+pub fn is_http<T>(result: &AuthResult<T>, status: u16) -> bool {
+    matches!(result, Err(AuthError::FailedHttpStatus(m)) if m.contains(&status.to_string()))
 }
 
 /// Like [`test_realm`], with username/password login enabled.

@@ -52,3 +52,5 @@ mod admin_api;
 mod username_password_tests;
 
 mod sessions_authz_tests;
+
+mod admin_logins_tests;
