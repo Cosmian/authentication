@@ -161,7 +161,24 @@ async fn test_2fa_is_enforced_when_the_admin_id_differs_from_the_login() -> Auth
     assert!(matches!(step, AuthenticationNextStep::Authenticated));
     ctx.stop_server().await
 }
+/// A realm admin enrols and removes the 2FA of its own login.
+#[actix_web::test]
+async fn test_realm_admin_manages_its_own_2fa() -> AuthResult<()> {
+    let ctx = start_default_test_server().await?;
+    let alice = create_and_authenticate_realm_admin(&ctx, "acme").await?;
 
+    let secret = enrol_totp(&alice, REALM_ADMIN_LOGIN).await?;
+    let step = login_step(&ctx, REALM_ADMIN_LOGIN, REALM_ADMIN_PASSWORD, None).await?;
+    assert!(matches!(step, AuthenticationNextStep::TotpRequired));
+    let code = totp_code(&secret, REALM_ADMIN_LOGIN)?;
+    let step = login_step(&ctx, REALM_ADMIN_LOGIN, REALM_ADMIN_PASSWORD, Some(code)).await?;
+    assert!(matches!(step, AuthenticationNextStep::Authenticated));
+
+    alice.disable_totp(ADMIN_REALM, REALM_ADMIN_LOGIN).await?;
+    let step = login_step(&ctx, REALM_ADMIN_LOGIN, REALM_ADMIN_PASSWORD, None).await?;
+    assert!(matches!(step, AuthenticationNextStep::Authenticated));
+    ctx.stop_server().await
+}
 // ── B: links and deletion ────────────────────────────────────────────────────
 
 /// A realm admin cannot point an admin record at a login it does not manage, and deleting an
