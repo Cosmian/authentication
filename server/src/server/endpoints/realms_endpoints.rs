@@ -264,7 +264,11 @@ pub async fn list_userpass_by_realm(
         )));
     }
 
-    let userpass_list = database.list_userpass_by_realm(&realm_id).await?;
+    let mut userpass_list = database.list_userpass_by_realm(&realm_id).await?;
+    // Never return the stored password hashes to callers.
+    for entry in &mut userpass_list {
+        entry.password_hash.clear();
+    }
 
     Ok(HttpResponse::Ok().json(userpass_list))
 }
@@ -296,6 +300,11 @@ pub async fn list_all_userpass(
     let visible: Vec<_> = userpass_list
         .into_iter()
         .filter(|entry| realm_manageable_given_claims(&requester, &entry.realm, &claimed_realms))
+        .map(|mut entry| {
+            // Never return the stored password hashes to callers.
+            entry.password_hash.clear();
+            entry
+        })
         .collect();
 
     Ok(HttpResponse::Ok().json(visible))
