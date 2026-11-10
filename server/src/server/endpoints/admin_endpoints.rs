@@ -34,6 +34,14 @@ use cosmian_logger::info;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+/// 2FA is managed through the TOTP endpoints only: a request body never sets it, and an update
+/// keeps what is stored (`None` for a new admin).
+fn set_totp_from(admin: &mut Admin, stored: Option<&Admin>) {
+    admin.totp_enabled = stored.and_then(|s| s.totp_enabled);
+    admin.totp_secret = stored.and_then(|s| s.totp_secret.clone());
+    admin.totp_auth_url = stored.and_then(|s| s.totp_auth_url.clone());
+}
+
 /// Create a new admin.
 ///
 /// Realm admins may create an admin only if the admin's `realms` list is
@@ -57,7 +65,8 @@ pub async fn create_admin(
     created_admin: Json<Admin>,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
-    let admin = created_admin.into_inner();
+    let mut admin = created_admin.into_inner();
+    set_totp_from(&mut admin, None);
     let requester = admin_from_request(&req)?;
 
     if !can_manage_admin_realms(&requester, &admin.realms, &database).await? {
@@ -160,6 +169,7 @@ pub async fn update_admin(
     );
 
     admin.id = admin_id;
+    set_totp_from(&mut admin, Some(&target));
     database.update_admin(&admin).await?;
 
     Ok(HttpResponse::Ok().json(admin))
