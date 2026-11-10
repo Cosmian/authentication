@@ -47,12 +47,17 @@ tags:
     description: |
       Username/password credential management per realm. Requires
       administering the realm; a super admin qualifies only while the realm
-      has no admin of its own yet (claim-aware).
+      has no admin of its own yet (claim-aware). In the admin realm `_` the
+      credentials are the admins' logins: each one needs the caller to manage
+      every admin record using it (a super admin when none does), so realm
+      admins manage their own and their colleagues' logins, and the super
+      admin cannot touch those of a claimed realm's admins. Password hashes
+      are never returned.
   - name: TOTP
     description: |
-      Two-factor authentication management. Requires administering the
-      realm; a super admin qualifies only while the realm has no admin of
-      its own yet (claim-aware).
+      Two-factor authentication management, for admin logins in the admin
+      realm `_` only (any other realm answers 400). Requires managing the
+      login, as for its credential.
   - name: App Token
     description: |
       App token self-service endpoints (`/auth/token/...`).
@@ -304,7 +309,10 @@ components:
         userpass:
           type: string
           nullable: true
-          description: Foreign key into the userpass table (username, not password).
+          description: |
+            Username of the admin's login, a credential of the admin realm `_` (a username, not a
+            password). Setting it needs the caller to manage every other admin record using that
+            login (a super admin when none does), and no other record may be linked to it (409).
           example: alice
         jwt:
           type: string
@@ -327,17 +335,12 @@ components:
         totp_enabled:
           type: boolean
           nullable: true
+          readOnly: true
+          description: |
+            Whether 2FA is active. Ignored in request bodies: 2FA is managed through the TOTP
+            endpoints, and an update keeps the stored 2FA. The TOTP secret and enrolment URL are
+            never returned.
           example: false
-        totp_secret:
-          type: string
-          nullable: true
-          description: Base32-encoded TOTP secret. Read-only via GET.
-          example:
-        totp_auth_url:
-          type: string
-          nullable: true
-          description: otpauth:// URL for QR code enrollment. Read-only via GET.
-          example:
       example:
         id: alice
         realms: [my-service]
@@ -347,8 +350,6 @@ components:
         digital_credentials:
         client_certificate:
         totp_enabled: false
-        totp_secret:
-        totp_auth_url:
 
     PasswordInput:
       description: |
@@ -1807,9 +1808,10 @@ paths:
       tags: [Realms]
       summary: List all userpass credentials across all realms (super admin only)
       description: |
-        The result is filtered: entries in a realm the requester can no
-        longer manage (claimed by another realm's admin) are omitted, even
-        though the endpoint itself is gated to super admins.
+        The result is filtered by the `_` login rule: a login of the admin realm is listed only
+        if the requester manages every admin record using it (so a super admin does not see the
+        logins of the admins of a claimed realm), and entries of other realms only if the
+        requester can still manage that realm. Password hashes are never returned.
       operationId: listAllUserpass
       security:
         - cookieAuth: []
@@ -1842,6 +1844,8 @@ paths:
         only for realms that have no admin of their own yet — once a realm is
         claimed, only that realm's own admin(s) may add more. An admin with an
         empty realms list (unaffiliated) may only be created by a super admin.
+        A `userpass` is accepted only for a login the requester manages (403) and that no other
+        admin is linked to (409). 2FA fields in the body are ignored.
       operationId: createAdmin
       security:
         - cookieAuth: []
@@ -1859,7 +1863,6 @@ paths:
               fido2:
               digital_credentials:
               client_certificate:
-              totp_enabled: false
       responses:
         '201':
           description: Created admin.
@@ -1878,9 +1881,8 @@ paths:
       tags: [Admins]
       summary: List all admins (super admin only)
       description: |
-        The result is filtered: admins scoped to a realm the requester can no
-        longer manage (claimed by that realm's own admin) are omitted, even
-        though the endpoint itself is gated to super admins.
+        A super admin sees every admin, including those of claimed realms, to be able to
+        contact them; it still cannot change them.
       operationId: listAdmins
       security:
         - cookieAuth: []
@@ -1903,11 +1905,8 @@ paths:
       tags: [Admins]
       summary: Get an admin by ID
       description: |
-        Subject to the exclusive-ownership rule: the requester must administer
-        every realm the target belongs to. For a super admin this only holds
-        while none of those realms has been claimed by another admin (an
-        unaffiliated target with an empty realms list is the only case where
-        a super admin can still reach it unconditionally). See
+        Any super admin may read any admin, including those of claimed realms. A realm admin
+        must administer every realm the target belongs to (exclusive-ownership rule). See
         `authorization_and_administration.md`.
       operationId: getAdmin
       parameters:
@@ -1936,7 +1935,8 @@ paths:
         Both the current and the incoming realms lists are subject to the exclusive-ownership
         rule (prevents privilege escalation via a crafted body). This applies to super admins
         too: for a non-empty realms list, a super admin qualifies only while every realm in it
-        is unclaimed — see `authorization_and_administration.md`.
+        is unclaimed — see `authorization_and_administration.md`. A changed `userpass` follows
+        the same rule as on create. 2FA fields in the body are ignored; the stored 2FA is kept.
       operationId: updateAdmin
       parameters:
         - $ref: '#/components/parameters/adminId'
@@ -2199,6 +2199,8 @@ paths:
       description: |
         Returns a secret and otpauth:// URL for QR code display.
         The secret is NOT stored until verify is called successfully.
+        Only for admin logins, in realm `_` (400 in any other realm); the caller must manage
+        the login (403 otherwise).
       operationId: totpGenerate
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -2223,6 +2225,12 @@ paths:
               example:
                 secret_base32: JBSWY3DPEHPK3PXP
                 otpauth_url: otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30
+        '400':
+          description: 2FA is only available for admin logins, in realm `_`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2231,10 +2239,13 @@ paths:
   /realms/{realm_id}/totp/verify:
     post:
       tags: [TOTP]
-      summary: Verify a TOTP code and enable TOTP for the user
+      summary: Verify a TOTP code and enable TOTP for an admin login
       description: |
-        Verifies the code against the provided secret. If valid, stores the secret and enables TOTP.
-        Call this after generate once the user has scanned the QR code.
+        Verifies the code against the provided secret. If valid, stores the secret on the admin
+        record using the login and enables TOTP.
+        Call this after generate once the user has scanned the QR code. Only in realm `_`
+        (400 elsewhere, or when no admin uses the login); the caller must manage the login (403
+        otherwise).
       operationId: totpVerify
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -2255,7 +2266,7 @@ paths:
         '200':
           description: TOTP enabled. Empty body.
         '400':
-          description: Invalid TOTP token.
+          description: Invalid TOTP token, or 2FA is not available here (not realm `_`, or no admin uses the login).
           content:
             application/json:
               schema:
@@ -2268,8 +2279,11 @@ paths:
   /realms/{realm_id}/totp/{username}:
     delete:
       tags: [TOTP]
-      summary: Disable TOTP for a user
-      description: Removes the stored secret and sets totp_enabled = false.
+      summary: Disable TOTP for an admin login
+      description: |
+        Removes the stored secret and sets totp_enabled = false on the admin record using the
+        login. Only in realm `_` (400 elsewhere); the caller must manage the login (403
+        otherwise).
       operationId: totpDisable
       parameters:
         - $ref: '#/components/parameters/realmId'

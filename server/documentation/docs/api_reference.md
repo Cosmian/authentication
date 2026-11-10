@@ -761,6 +761,8 @@ List all username/password credentials across every realm. Super admin only.
 
 Create a new `Admin` record. Super admins may create any admin. Realm admins may create an admin only if every realm in the new admin's `realms` list is one they administer.
 
+A `userpass` may only name a login the caller manages (the [`_` login rule](authorization_and_administration.md#the-_-login-rule): every admin already using it, or a super admin when none does) and that no other admin is linked to (`409`). Anything in `totp_*` is ignored: 2FA is enabled through the TOTP endpoints only.
+
 #### Request body
 
 ```json
@@ -771,10 +773,7 @@ Create a new `Admin` record. Super admins may create any admin. Realm admins may
   "jwt": null,
   "fido2": null,
   "digital_credentials": null,
-  "client_certificate": null,
-  "totp_enabled": false,
-  "totp_secret": null,
-  "totp_auth_url": null
+  "client_certificate": null
 }
 ```
 
@@ -782,14 +781,12 @@ Create a new `Admin` record. Super admins may create any admin. Realm admins may
 | --------------------- | ------------------ | ---------------------------------------------------------- |
 | `id`                  | `String`           | Unique user identifier                                     |
 | `realms`              | `String[]`         | Realms this user administers. Use `["_"]` for super admin. |
-| `userpass`            | `String` \| `null` | Username key referencing the `userpass` credential table   |
+| `userpass`            | `String` \| `null` | Username of the admin's `_` login (see above)              |
 | `jwt`                 | `String` \| `null` | JWT subject identifier                                     |
 | `fido2`               | `String` \| `null` | FIDO2 identifier (future)                                  |
 | `digital_credentials` | `Object` \| `null` | Key-value map of digital credential identifiers (future)   |
 | `client_certificate`  | `String` \| `null` | Client certificate identifier                              |
-| `totp_enabled`        | `bool` \| `null`   | Whether TOTP is active for this user                       |
-| `totp_secret`         | `String` \| `null` | Base32-encoded TOTP secret (read-only via API)             |
-| `totp_auth_url`       | `String` \| `null` | `otpauth://` URL for QR code enrollment (read-only)        |
+| `totp_enabled`        | `bool` \| `null`   | Read-only: whether TOTP is active. Ignored in request bodies. The TOTP secret is never returned. |
 
 **Response — `201 Created`** — created `Admin` object.
 
@@ -932,9 +929,11 @@ Delete a credential.
 
 See [two_factor_authentication.md](two_factor_authentication.md) for the full enrollment flow.
 
+2FA exists only for **admin logins**, in realm `_`, and is stored on the admin record using the login. The caller must manage that login (the [`_` login rule](authorization_and_administration.md#the-_-login-rule)), otherwise `403`. In any other realm the three endpoints answer `400`.
+
 ### `POST /realms/{realm_id}/totp/generate`
 
-Generate a TOTP secret for a user. The secret is **not stored** at this point — it is only persisted after a successful verification call.
+Generate a TOTP secret for an admin login. The secret is **not stored** at this point — it is only persisted after a successful verification call.
 
 **Query parameters:** `realm={realm_id}`
 
@@ -1066,11 +1065,11 @@ described in [SAML 2.0 single sign-on](saml.md#step-2--configure-the-realm).
   "fido2": null,
   "digital_credentials": null,
   "client_certificate": null,
-  "totp_enabled": false,
-  "totp_secret": null,
-  "totp_auth_url": null
+  "totp_enabled": false
 }
 ```
+
+`totp_enabled` is read-only; the TOTP secret and enrolment URL are never returned, and 2FA fields in request bodies are ignored.
 
 ### `UserPass`
 

@@ -39,7 +39,7 @@ shared_secret + current_time_window ──► HMAC-{algorithm} ──► 6-digit
 
 ### Data model
 
-TOTP state is stored on the `Admin` record:
+TOTP state is stored on the `Admin` record using the login. 2FA exists only for **admin logins**, in the admin realm `_`: ordinary realm users have none, and the TOTP endpoints answer `400` for any other realm. The secret and the enrolment URL are server-owned: they are never returned in `Admin` JSON, and `totp_*` fields in request bodies are ignored (an update keeps the stored 2FA).
 
 ```rust
 pub struct Admin {
@@ -77,7 +77,7 @@ The enrollment flow is exposed via two HTTP endpoints under the `/realms` scope:
 | `POST /realms/{realm}/totp/generate?realm={realm}` | Generate a new TOTP secret for a user. Returns `secret_base32` and `otpauth_url`. The secret is **not** stored yet. |
 | `POST /realms/{realm}/totp/verify?realm={realm}` | Validate a one-time code against the generated secret. On success, the secret is stored and TOTP is activated for the user. |
 
-Both endpoints require a valid session cookie from a realm administrator.
+Both endpoints require a valid session cookie from an admin who manages the login (the [`_` login rule](authorization_and_administration.md#the-_-login-rule): every admin record using the login, or a super admin when none does). The record holding the 2FA is the one whose `userpass` is the login, else the one whose id is the login.
 
 ```mermaid
 sequenceDiagram
@@ -147,8 +147,8 @@ sequenceDiagram
 
     U->>EA: POST /login?realm={realm}<br/>{"public_key_pem": null}
     note over EA: EnsureAuth / UsernamePasswordAuth middleware<br/>validates primary credentials
-    EA->>DB: is_totp_enabled(realm, username)
-    DB-->>EA: true
+    EA->>DB: find the admin using the login (admin realm only)
+    DB-->>EA: admin with totp_enabled = true
 
     alt TOTP enabled — no code provided
         EA-->>U: 200 OK<br/>{"next_step":"TotpRequired","session_id":null}
@@ -156,7 +156,7 @@ sequenceDiagram
         App-->>U: "482913"
 
         U->>EA: POST /login?realm={realm}<br/>{"totp_code":"482913"}
-        EA->>DB: get_totp_secret(realm, username)
+        EA->>DB: (secret of the same admin record)
         DB-->>EA: "JBSWY3DPEHPK3PXP"
         EA->>EA: Totps::from_secret(secret, …)<br/>totps.validate_token("482913")
         alt Token valid

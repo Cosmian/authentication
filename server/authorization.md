@@ -68,10 +68,10 @@ A super admin always satisfies `can_administer_realm` for any realm.
 | Method | Path | Who may call it |
 |--------|------|-----------------|
 | `POST` | `/admins` | Super admin **or** realm admin (see below) |
-| `GET` | `/admins/{id}` | Super admin **or** realm admin (see below) |
+| `GET` | `/admins/{id}` | Any super admin (read-only, claimed realms included) **or** realm admin (see below) |
 | `PUT` | `/admins/{id}` | Super admin **or** realm admin (see below) |
 | `DELETE` | `/admins/{id}` | Super admin **or** realm admin (see below) |
-| `GET` | `/admins` | Super admin |
+| `GET` | `/admins` | Super admin (all admins) |
 | `PUT` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 | `DELETE` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 
@@ -116,6 +116,8 @@ These endpoints manage `UserPass` (username/password) credentials stored per rea
 | `GET` | `/realms/{realm}/userpass` | Admin of `realm` **or** super admin |
 | `GET` | `/admins/userpass` | Super admin only |
 
+> **Admin logins (realm `_`):** the credentials of `_` are the admins' logins, and each one is managed per login: the caller must manage every admin record whose `userpass` or id is that login, or be a super admin when none does. A realm admin therefore manages its own and its colleagues' logins and 2FA (`/realms/_/totp/*`); the super admin does not manage those of a claimed realm's admins. `GET /realms/_/userpass` is open to every admin and lists only the logins it manages. 2FA exists only in `_`; the TOTP endpoints answer `400` elsewhere.
+>
 > **Admin sessions come from `_`:** admin endpoints (`/admins/*`, `/realms/*`, `/auth/approle/*`, `/auth/kubernetes/*`) only accept a session opened on realm `_` by an admin; a session of any other realm gets `401`. A `_` session authorises calls on `/realms/{R}/…` for every realm the admin may manage (`can_manage_realm`).
 
 ---
@@ -209,7 +211,7 @@ To configure a `Admin` record as a realm admin (e.g., for `my_realm`):
 - `Admin.realms` contains realm IDs the `Admin` record **administers**, not realms it is a *member of* in the business sense.
 - Adding `"_"` to a `Admin` record's `realms` list promotes the associated client to super admin — handle with care. The `update_admin` endpoint defends against this for realm admins by validating the body's `realms` list (check 2 of the exclusive-ownership rule above).
 - Every `Admin` record in the system represents an administrator of some scope. There are no non-admin or read-only account types: a `Admin` record is either a **super admin** (administers all realms) or a **realm admin** (administers one or more specific realms).
-- `delete_admin` **cascade-deletes credentials**: when a `Admin` record is deleted, the associated `UserPass` credential rows (matched by `Admin.userpass` username) are also deleted automatically. There is no risk of credential orphaning.
+- `delete_admin` deletes the admin's own `_` login (the credential named by `Admin.userpass`) unless another `Admin` record still uses it. Credentials with the same name in other realms are never deleted.
 - Passwords are hashed with **Argon2id** using a per-user salt derived from the username (SHA-256 → base64).
 - Access control is two-tier (super admin vs. realm admin). Future extensions that require finer-grained roles should add explicit role fields rather than overloading `realms`.
 - A cookie decryption failure (wrong realm key) returns **HTTP 401** — it is treated as an authentication failure, not a server error.
