@@ -115,13 +115,12 @@ export interface UserPass {
     extra_claims?: Record<string, string>;
 }
 
-/** Session data */
-export interface SessionData {
+/** Session as returned by `/sessions`; the session cookie value is never included. */
+export interface SessionInfo {
     session_id: string;
     realm_id: string;
     username: string;
     auth_scheme: AuthScheme;
-    cookie_string: string;
     max_age_seconds: number;
     max_stale_age_seconds: number;
     created_at: number;
