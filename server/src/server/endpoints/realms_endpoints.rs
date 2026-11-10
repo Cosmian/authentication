@@ -2,10 +2,13 @@ use crate::{
     AuthError,
     database::{AuthDbError, Database, hash_password_with_argon2, validate_argon2_phc_string},
     models::{
-        ADMIN_REALM, PasswordInput, UserPass, reject_reserved_claim_names,
+        ADMIN_REALM, Admin, PasswordInput, UserPass, reject_reserved_claim_names,
         validate_extra_claims_size,
     },
-    server::endpoints::{admin_from_request, can_manage_realm, realm_manageable_given_claims},
+    server::endpoints::{
+        admin_from_request, admins_using_login, can_manage_credentials, can_manage_realm,
+        login_manageable_given_claims, realm_manageable_given_claims,
+    },
 };
 use actix_web::{
     HttpRequest, HttpResponse, delete, get, post, put,
@@ -15,9 +18,49 @@ use cosmian_logger::info;
 use std::{collections::HashSet, sync::Arc};
 use zeroize::Zeroizing;
 
+fn credentials_forbidden(realm_id: &str, username: &str) -> AuthError {
+    if realm_id == ADMIN_REALM {
+        AuthError::Forbidden(format!(
+            "You may only manage the admin login '{username}' if you manage every admin using it"
+        ))
+    } else {
+        AuthError::Forbidden(format!(
+            "Only administrators of realm '{realm_id}' can manage its credentials"
+        ))
+    }
+}
+
+/// The credentials `requester` may see, without their password hashes. In the admin realm that is
+/// the logins it manages (see [`login_manageable_given_claims`]); elsewhere the realm rule.
+fn visible_credentials(
+    requester: &Admin,
+    entries: Vec<UserPass>,
+    admins: &[Admin],
+) -> Vec<UserPass> {
+    let claimed_realms: HashSet<String> = admins
+        .iter()
+        .flat_map(|a| a.realms.iter().cloned())
+        .collect();
+    entries
+        .into_iter()
+        .filter(|entry| {
+            if entry.realm == ADMIN_REALM {
+                login_manageable_given_claims(requester, &entry.username, admins, &claimed_realms)
+            } else {
+                realm_manageable_given_claims(requester, &entry.realm, &claimed_realms)
+            }
+        })
+        .map(|mut entry| {
+            entry.password_hash.clear();
+            entry
+        })
+        .collect()
+}
+
 /// Create a new user password entry.
 ///
-/// The requester must administer the realm specified in the path.
+/// The requester must administer the realm specified in the path; in the admin realm `_`, it must
+/// manage the admin login being created (see [`can_manage_credentials`]).
 #[post("/{realm_id}/userpass")]
 pub async fn create_userpass(
     req: HttpRequest,
@@ -27,15 +70,12 @@ pub async fn create_userpass(
 ) -> Result<HttpResponse, AuthError> {
     let realm_id = realm.into_inner();
     let requester = admin_from_request(&req)?;
+    let mut userpass = userpass.into_inner();
 
-    if !can_manage_realm(&requester, &realm_id, &database).await? {
-        return Err(AuthError::Forbidden(format!(
-            "Only administrators of realm '{}' can manage its credentials",
-            realm_id
-        )));
+    if !can_manage_credentials(&requester, &realm_id, &userpass.username, &database).await? {
+        return Err(credentials_forbidden(&realm_id, &userpass.username));
     }
 
-    let mut userpass = userpass.into_inner();
     userpass.realm = realm_id.clone();
 
     if let Some(extra_claims) = &userpass.extra_claims {
@@ -75,11 +115,11 @@ pub async fn create_userpass(
         Err(e) => return Err(e.into()),
     }
 
-    // Auto-link: when creating a credential in the admin realm, if an admin
-    // exists with a matching id, set its `userpass` field to enable login.
+    // Auto-link: a credential created in the admin realm links to the admin record of the same
+    // id, unless that record already has a login.
     if realm_id == ADMIN_REALM
         && let Some(mut admin) = database.get_admin(&userpass.username).await?
-        && admin.userpass.as_deref() != Some(&userpass.username)
+        && admin.userpass.is_none()
     {
         admin.userpass = Some(userpass.username.clone());
         database.update_admin(&admin).await?;
@@ -107,11 +147,8 @@ pub async fn get_userpass(
     let (realm, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !can_manage_realm(&requester, &realm, &database).await? {
-        return Err(AuthError::Forbidden(format!(
-            "Only administrators of realm '{}' can manage its credentials",
-            realm
-        )));
+    if !can_manage_credentials(&requester, &realm, &username, &database).await? {
+        return Err(credentials_forbidden(&realm, &username));
     }
 
     match database.get_userpass(&realm, &username).await? {
@@ -140,11 +177,8 @@ pub async fn update_userpass(
     let (realm, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !can_manage_realm(&requester, &realm, &database).await? {
-        return Err(AuthError::Forbidden(format!(
-            "Only administrators of realm '{}' can manage its credentials",
-            realm
-        )));
+    if !can_manage_credentials(&requester, &realm, &username, &database).await? {
+        return Err(credentials_forbidden(&realm, &username));
     }
 
     let mut userpass = userpass.into_inner();
@@ -218,23 +252,21 @@ pub async fn delete_userpass(
     let (realm, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !can_manage_realm(&requester, &realm, &database).await? {
-        return Err(AuthError::Forbidden(format!(
-            "Only administrators of realm '{}' can manage its credentials",
-            realm
-        )));
+    if !can_manage_credentials(&requester, &realm, &username, &database).await? {
+        return Err(credentials_forbidden(&realm, &username));
     }
 
     database.delete_userpass(&realm, &username).await?;
 
-    // Auto-unlink: when deleting a credential in the admin realm, clear the
-    // admin's `userpass` field if it referenced this username.
-    if realm == ADMIN_REALM
-        && let Some(mut admin) = database.get_admin(&username).await?
-        && admin.userpass.as_deref() == Some(&username)
-    {
-        admin.userpass = None;
-        database.update_admin(&admin).await?;
+    // Auto-unlink: deleting a credential of the admin realm clears the login of every admin
+    // record that referenced it.
+    if realm == ADMIN_REALM {
+        for mut admin in admins_using_login(&database, &username).await? {
+            if admin.userpass.as_deref() == Some(&username) {
+                admin.userpass = None;
+                database.update_admin(&admin).await?;
+            }
+        }
     }
 
     info!(
@@ -245,9 +277,10 @@ pub async fn delete_userpass(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// List all user password entries for a specific realm.
+/// List the user password entries of a specific realm.
 ///
-/// The requester must administer the realm specified in the path.
+/// In a regular realm the requester must administer it. In the admin realm `_` any admin may
+/// call it and sees only the logins it manages.
 #[get("/{realm_id}/userpass")]
 pub async fn list_userpass_by_realm(
     req: HttpRequest,
@@ -257,20 +290,14 @@ pub async fn list_userpass_by_realm(
     let realm_id = realm.into_inner();
     let requester = admin_from_request(&req)?;
 
-    if !can_manage_realm(&requester, &realm_id, &database).await? {
-        return Err(AuthError::Forbidden(format!(
-            "Only administrators of realm '{}' can manage its credentials",
-            realm_id
-        )));
+    if realm_id != ADMIN_REALM && !can_manage_realm(&requester, &realm_id, &database).await? {
+        return Err(credentials_forbidden(&realm_id, ""));
     }
 
-    let mut userpass_list = database.list_userpass_by_realm(&realm_id).await?;
-    // Never return the stored password hashes to callers.
-    for entry in &mut userpass_list {
-        entry.password_hash.clear();
-    }
+    let userpass_list = database.list_userpass_by_realm(&realm_id).await?;
+    let admins = database.list_admins().await?;
 
-    Ok(HttpResponse::Ok().json(userpass_list))
+    Ok(HttpResponse::Ok().json(visible_credentials(&requester, userpass_list, &admins)))
 }
 
 /// List all user password entries across all realms. Super admins only.
@@ -288,24 +315,7 @@ pub async fn list_all_userpass(
     }
 
     let userpass_list = database.list_all_userpass().await?;
-
-    // Compute the claimed-realm set once instead of calling
-    // `database.list_admins()` again for every credential in the list.
     let admins = database.list_admins().await?;
-    let claimed_realms: HashSet<String> = admins
-        .iter()
-        .flat_map(|a| a.realms.iter().cloned())
-        .collect();
 
-    let visible: Vec<_> = userpass_list
-        .into_iter()
-        .filter(|entry| realm_manageable_given_claims(&requester, &entry.realm, &claimed_realms))
-        .map(|mut entry| {
-            // Never return the stored password hashes to callers.
-            entry.password_hash.clear();
-            entry
-        })
-        .collect();
-
-    Ok(HttpResponse::Ok().json(visible))
+    Ok(HttpResponse::Ok().json(visible_credentials(&requester, userpass_list, &admins)))
 }
