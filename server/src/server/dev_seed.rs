@@ -93,13 +93,10 @@ pub(super) async fn seed_dev_realm_admin(
         );
     }
 
-    // 4. Optionally create a TOTP-enabled user in the seeded realm.
+    // 4. Optionally create a TOTP-enabled admin login. 2FA only exists for admin logins, which
+    // live in the admin realm `_`, and the admin record holds the 2FA.
     if let (Some(totp_username), Some(totp_password)) = (&seed.totp_username, &seed.totp_password) {
-        if db
-            .get_userpass(&seed.realm_id, totp_username)
-            .await?
-            .is_none()
-        {
+        if db.get_userpass(ADMIN_REALM, totp_username).await?.is_none() {
             let hashed = hash_password_with_argon2(totp_password).map_err(|e| {
                 crate::AuthError::Init(format!(
                     "dev_seed: failed to hash password for TOTP user '{}': {e}",
@@ -107,7 +104,7 @@ pub(super) async fn seed_dev_realm_admin(
                 ))
             })?;
             let userpass = UserPass {
-                realm: seed.realm_id.clone(),
+                realm: ADMIN_REALM.to_string(),
                 username: totp_username.clone(),
                 password_hash: hashed,
                 password_input: None,
@@ -122,8 +119,8 @@ pub(super) async fn seed_dev_realm_admin(
                 ))
             })?;
             info!(
-                "dev_seed: created TOTP user '{}' in realm '{}'",
-                totp_username, seed.realm_id
+                "dev_seed: created TOTP login '{}' in the admin realm",
+                totp_username
             );
         }
 
@@ -155,7 +152,7 @@ pub(super) async fn seed_dev_realm_admin(
 
         // Enable TOTP for the user (idempotent: skip if already enabled).
         let already_enabled = db
-            .is_totp_enabled(&seed.realm_id, totp_username)
+            .is_totp_enabled(ADMIN_REALM, totp_username)
             .await?
             .unwrap_or(false);
         if !already_enabled {
@@ -175,7 +172,7 @@ pub(super) async fn seed_dev_realm_admin(
                 );
                 generated
             };
-            db.enable_totp(&seed.realm_id, totp_username, &secret, &seed.realm_id)
+            db.enable_totp(ADMIN_REALM, totp_username, &secret, ADMIN_REALM)
                 .await
                 .map_err(|e| {
                     crate::AuthError::Init(format!(
@@ -184,11 +181,64 @@ pub(super) async fn seed_dev_realm_admin(
                     ))
                 })?;
             info!(
-                "dev_seed: TOTP enabled for user '{}' in realm '{}'",
-                totp_username, seed.realm_id
+                "dev_seed: TOTP enabled for login '{}' in the admin realm",
+                totp_username
             );
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::seed_dev_realm_admin;
+    use crate::{
+        AuthScheme, DatabaseBackend, DatabaseParams, database::create_database,
+        models::ADMIN_REALM, server::parameters::DevSeedParams,
+    };
+
+    /// 2FA only exists for admin logins, so the seeded TOTP user is a login of the admin realm
+    /// whose admin record holds the 2FA.
+    #[tokio::test]
+    async fn test_seeded_totp_user_is_an_admin_login_with_2fa() {
+        let db = create_database(&DatabaseParams {
+            backend: DatabaseBackend::SQLite,
+            connection_url: "sqlite::memory:".to_string(),
+            max_connections: 5,
+            min_connections: 1,
+            connect_timeout_secs: 30,
+            idle_timeout_secs: 300,
+            auto_init_schema: true,
+        })
+        .await
+        .expect("database");
+        let seed = DevSeedParams {
+            realm_id: "dev-realm".to_string(),
+            admin_username: "realm-admin".to_string(),
+            admin_password: Some("change_me".to_string()),
+            admin_password_env: None,
+            totp_username: Some("totp-user".to_string()),
+            totp_password: Some("change_me".to_string()),
+            totp_secret: Some("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ".to_string()),
+        };
+
+        seed_dev_realm_admin(db.as_ref(), &seed)
+            .await
+            .expect("seed");
+
+        assert!(
+            db.get_userpass(ADMIN_REALM, "totp-user")
+                .await
+                .expect("get_userpass")
+                .is_some(),
+            "the TOTP login must live in the admin realm"
+        );
+        let admins = db
+            .find_admins_by_auth_scheme(AuthScheme::UsernamePassword, "totp-user")
+            .await
+            .expect("find_admins_by_auth_scheme");
+        assert_eq!(admins.len(), 1);
+        assert_eq!(admins[0].totp_enabled, Some(true));
+    }
 }

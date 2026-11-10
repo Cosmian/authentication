@@ -15,6 +15,7 @@
 ## Refactor
 
 - **Breaking:** removed `POST /sessions` (create or update a session) and `UpsertSessionRequest`: nothing called them, and they let any caller write a session.
+- The dev seed's optional TOTP user is now created as an admin login of the admin realm `_` (with an admin record holding the 2FA) instead of a user of the seeded realm, because 2FA only exists for admin logins.
 
 ## Tests
 
