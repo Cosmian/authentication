@@ -6,9 +6,11 @@
 //! uses `u`, only a super admin may.
 
 use crate::{
-    AuthError, AuthResult, AuthScheme, AuthenticationNextStep, DatabaseBackend, DatabaseParams,
+    AuthError, AuthResult, AuthScheme, AuthenticationNextStep,
     client::{AuthClient, AuthClientScheme},
-    database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, create_database},
+    database::{
+        APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME, Database, SqliteDatabase,
+    },
     middleware::find_admin_for_claims,
     models::{ADMIN_REALM, ClientClaims},
     tests::{
@@ -21,6 +23,7 @@ use crate::{
     },
 };
 use serde_json::{Value, json};
+use sqlx::sqlite::SqlitePoolOptions;
 
 const REALM_ADMIN_LOGIN: &str = "acme_radmin";
 const REALM_ADMIN_RECORD: &str = "acme_radmin_user";
@@ -259,38 +262,47 @@ async fn test_admin_login_links_are_validated() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// Two admin records sharing a login make the admin lookup refuse both.
+/// Two admin records sharing a login, possible in a database created before logins were unique,
+/// make the admin lookup refuse both; starting on such a database skips the unique index.
 #[actix_web::test]
 async fn test_admin_lookup_fails_closed_when_a_login_is_shared() -> AuthResult<()> {
-    let database = create_database(&DatabaseParams {
-        backend: DatabaseBackend::SQLite,
-        connection_url: "sqlite::memory:".to_string(),
-        max_connections: 5,
-        min_connections: 1,
-        connect_timeout_secs: 30,
-        idle_timeout_secs: 300,
-        auto_init_schema: true,
-    })
-    .await
-    .map_err(|e| AuthError::Unexpected(e.to_string()))?;
+    let db_error = |e: &dyn std::fmt::Display| AuthError::Unexpected(e.to_string());
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .map_err(|e| db_error(&e))?;
+    let database = SqliteDatabase::new(pool.clone());
+    database.init().await.map_err(|e| db_error(&e))?;
+    // A database from before logins were unique has no such index.
+    sqlx::query("DROP INDEX admin_userpass_unique")
+        .execute(&pool)
+        .await
+        .map_err(|e| db_error(&e))?;
     for id in ["first", "second"] {
         let mut admin = test_admin(id);
         admin.userpass = Some("shared".to_string());
         database
             .create_admin(&admin)
             .await
-            .map_err(|e| AuthError::Unexpected(e.to_string()))?;
+            .map_err(|e| db_error(&e))?;
     }
 
     let mut claims = ClientClaims::default();
     claims.private.realm_id = Some(ADMIN_REALM.to_string());
     claims.private.auth_scheme = Some(AuthScheme::UsernamePassword);
     claims.registered.sub = Some("shared".to_string());
-    assert!(
-        find_admin_for_claims(database.as_ref(), &claims)
-            .await
-            .is_err()
-    );
+    assert!(find_admin_for_claims(&database, &claims).await.is_err());
+
+    // Starting again with the duplicates in place works and leaves the column non-unique.
+    database.init().await.map_err(|e| db_error(&e))?;
+    let indexes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'admin_userpass_unique'",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| db_error(&e))?;
+    assert_eq!(indexes, 0);
     Ok(())
 }
 

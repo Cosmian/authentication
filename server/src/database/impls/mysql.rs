@@ -8,7 +8,26 @@ use crate::{
     models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
+use cosmian_logger::warn;
 use sqlx::{MySqlPool, Row};
+
+/// Unique indexes on the admin login columns: (column, shared-values query, index name, create
+/// index). MySQL has no `CREATE INDEX IF NOT EXISTS`, and `jwt` is a TEXT column, so its index is
+/// limited to a 255-character prefix.
+const ADMIN_LOGIN_INDEXES: [(&str, &str, &str, &str); 2] = [
+    (
+        "userpass",
+        "SELECT COUNT(*) FROM (SELECT 1 FROM admin WHERE userpass IS NOT NULL GROUP BY userpass HAVING COUNT(*) > 1) d",
+        "admin_userpass_unique",
+        "CREATE UNIQUE INDEX admin_userpass_unique ON admin(userpass)",
+    ),
+    (
+        "jwt",
+        "SELECT COUNT(*) FROM (SELECT 1 FROM admin WHERE jwt IS NOT NULL GROUP BY jwt HAVING COUNT(*) > 1) d",
+        "admin_jwt_unique",
+        "CREATE UNIQUE INDEX admin_jwt_unique ON admin(jwt(255))",
+    ),
+];
 
 /// MySQL database implementation
 pub struct MySqlDatabase {
@@ -18,6 +37,33 @@ pub struct MySqlDatabase {
 impl MySqlDatabase {
     pub fn new(pool: MySqlPool) -> Self {
         Self { pool }
+    }
+
+    /// Makes each admin login column unique, so two admins can never share a login. A column
+    /// where admins already share a value is only warned about (the admin lookup refuses those
+    /// logins), so an existing database still starts.
+    async fn ensure_unique_admin_logins(&self) -> AuthDbResult<()> {
+        for (column, shared_sql, index_name, create_index_sql) in ADMIN_LOGIN_INDEXES {
+            let existing: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM information_schema.statistics \
+                 WHERE table_schema = DATABASE() AND table_name = 'admin' AND index_name = ?",
+            )
+            .bind(index_name)
+            .fetch_one(&self.pool)
+            .await?;
+            if existing > 0 {
+                continue;
+            }
+            let shared: i64 = sqlx::query_scalar(shared_sql).fetch_one(&self.pool).await?;
+            if shared > 0 {
+                warn!(
+                    "{shared} admin {column} value(s) are shared by several admins: {column} is not unique in the database until they are fixed"
+                );
+                continue;
+            }
+            sqlx::query(create_index_sql).execute(&self.pool).await?;
+        }
+        Ok(())
     }
 }
 
@@ -145,6 +191,7 @@ impl Database for MySqlDatabase {
         )
         .execute(&self.pool)
         .await?;
+        self.ensure_unique_admin_logins().await?;
         // If the realm table is empty, insert the ADMIN_REALM (application) realm
         // and insert a remove_me:remove_me userpass entry for it in the userpass table
         let realm_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM realm")
@@ -689,7 +736,7 @@ impl Database for MySqlDatabase {
         .map_err(|e| {
             crate::database::AuthDbError::from_insert_error(
                 e,
-                format!("admin '{}' already exists", admin.id),
+                format!("admin '{}' already exists or shares a login with another admin", admin.id),
             )
         })?;
 
@@ -803,7 +850,13 @@ impl Database for MySqlDatabase {
         .bind(&admin.totp_auth_url)
         .bind(&admin.id)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            AuthDbError::from_insert_error(
+                e,
+                format!("admin '{}' shares a login with another admin", admin.id),
+            )
+        })?;
 
         // Delete existing realm associations
         sqlx::query(
