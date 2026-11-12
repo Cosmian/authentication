@@ -156,9 +156,11 @@ const AdminsPage: React.FC = () => {
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
                         Edit
                     </Button>
-                    <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => setTotpTarget(record)}>
-                        TOTP
-                    </Button>
+                    {record.userpass && (
+                        <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => setTotpTarget(record)}>
+                            TOTP
+                        </Button>
+                    )}
                     <Button size="small" icon={<KeyOutlined />} onClick={() => setCredentialTarget(record)}>
                         Credential
                     </Button>
