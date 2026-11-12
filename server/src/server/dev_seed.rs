@@ -78,8 +78,6 @@ pub(super) async fn seed_dev_realm_admin(
             digital_credentials: None,
             client_certificate: None,
             totp_enabled: None,
-            totp_secret: None,
-            totp_auth_url: None,
         };
         db.create_admin(&admin).await.map_err(|e| {
             crate::AuthError::Init(format!(
@@ -124,7 +122,7 @@ pub(super) async fn seed_dev_realm_admin(
             );
         }
 
-        // Create the admin record for the TOTP user if it does not exist (required for TOTP fields in DB).
+        // Create an admin record (of no realm) using the TOTP login, so it can open the admin UI.
         if db.get_admin(totp_username).await?.is_none() {
             let admin = Admin {
                 id: totp_username.clone(),
@@ -135,8 +133,6 @@ pub(super) async fn seed_dev_realm_admin(
                 digital_credentials: None,
                 client_certificate: None,
                 totp_enabled: None,
-                totp_secret: None,
-                totp_auth_url: None,
             };
             db.create_admin(&admin).await.map_err(|e| {
                 crate::AuthError::Init(format!(
@@ -150,11 +146,11 @@ pub(super) async fn seed_dev_realm_admin(
             );
         }
 
-        // Enable TOTP for the user (idempotent: skip if already enabled).
+        // Enable TOTP for the login (idempotent: skip if already enabled).
         let already_enabled = db
-            .is_totp_enabled(ADMIN_REALM, totp_username)
+            .get_totp_secret(ADMIN_REALM, totp_username)
             .await?
-            .unwrap_or(false);
+            .is_some();
         if !already_enabled {
             let secret = if let Some(s) = &seed.totp_secret {
                 s.clone()
@@ -172,7 +168,7 @@ pub(super) async fn seed_dev_realm_admin(
                 );
                 generated
             };
-            db.enable_totp(ADMIN_REALM, totp_username, &secret, ADMIN_REALM)
+            db.enable_totp(ADMIN_REALM, totp_username, &secret)
                 .await
                 .map_err(|e| {
                     crate::AuthError::Init(format!(

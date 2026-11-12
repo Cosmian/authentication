@@ -21,9 +21,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use sqlx::{MySqlPool, PgPool, SqlitePool, sqlite::SqlitePoolOptions};
+
 use crate::database::{
     APP_REALM_ADMIN_USERNAME, AppRole, AppSecretId, AppToken, AuthDbError, Database, K8sRole,
-    create_database, hash_password_with_argon2,
+    MySqlDatabase, PostgresDatabase, SqliteDatabase, create_database, hash_password_with_argon2,
 };
 use crate::models::{ADMIN_REALM, Realm, UserPass};
 use crate::{DatabaseBackend, DatabaseParams, RealmAuthParams};
@@ -97,6 +99,197 @@ async fn get_all_test_databases() -> Vec<(&'static str, Arc<dyn Database>)> {
     }
 
     dbs
+}
+
+/// A connection pool on the same database as a [`Database`], to set up legacy schemas.
+enum RawPool {
+    Sqlite(SqlitePool),
+    Postgres(PgPool),
+    MySql(MySqlPool),
+}
+
+impl RawPool {
+    async fn execute(&self, sql: &str) {
+        match self {
+            Self::Sqlite(pool) => sqlx::query(sql).execute(pool).await.map(|_| ()),
+            Self::Postgres(pool) => sqlx::query(sql).execute(pool).await.map(|_| ()),
+            Self::MySql(pool) => sqlx::query(sql).execute(pool).await.map(|_| ()),
+        }
+        .unwrap_or_else(|e| panic!("{sql}: {e}"));
+    }
+}
+
+/// Every configured backend, initialized, with raw access to its database.
+async fn databases_with_raw_access() -> Vec<(&'static str, Arc<dyn Database>, RawPool)> {
+    let sqlite = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("SQLite pool");
+    let mut dbs: Vec<(&'static str, Arc<dyn Database>, RawPool)> = vec![(
+        "SQLite",
+        Arc::new(SqliteDatabase::new(sqlite.clone())),
+        RawPool::Sqlite(sqlite),
+    )];
+    if let Ok(url) = std::env::var("TEST_POSTGRES_URL") {
+        let pool = PgPool::connect(&url).await.expect("PostgreSQL pool");
+        dbs.push((
+            "PostgreSQL",
+            Arc::new(PostgresDatabase::new(pool.clone())),
+            RawPool::Postgres(pool),
+        ));
+    }
+    if let Ok(url) = std::env::var("TEST_MYSQL_URL") {
+        let pool = MySqlPool::connect(&url).await.expect("MySQL pool");
+        dbs.push((
+            "MySQL",
+            Arc::new(MySqlDatabase::new(pool.clone())),
+            RawPool::MySql(pool),
+        ));
+    }
+    for (name, db, _) in &dbs {
+        db.init()
+            .await
+            .unwrap_or_else(|e| panic!("{name} init: {e}"));
+    }
+    dbs
+}
+
+/// A `_` login with an unusable password hash, for tests that never log in.
+fn admin_realm_login(username: &str) -> UserPass {
+    UserPass {
+        realm: ADMIN_REALM.to_string(),
+        username: username.to_string(),
+        password_hash: "unused".to_string(),
+        password_input: None,
+        change_password: false,
+        roles: Vec::new(),
+        extra_claims: None,
+    }
+}
+
+/// 2FA is stored on the login: it needs the login, and goes away with it.
+#[tokio::test]
+async fn test_totp_lives_on_the_login() {
+    const SECRET: &str = "JBSWY3DPEHPK3PXP";
+    for (name, db) in get_all_test_databases().await {
+        let login = "totp_on_login";
+        db.delete_userpass(ADMIN_REALM, login)
+            .await
+            .expect("cleanup");
+        assert!(
+            !db.enable_totp(ADMIN_REALM, login, SECRET)
+                .await
+                .expect("enable"),
+            "{name}: no login, no 2FA"
+        );
+
+        db.create_userpass(&admin_realm_login(login))
+            .await
+            .expect("login");
+        assert!(
+            db.enable_totp(ADMIN_REALM, login, SECRET)
+                .await
+                .expect("enable"),
+            "{name}"
+        );
+        assert_eq!(
+            db.get_totp_secret(ADMIN_REALM, login)
+                .await
+                .expect("get")
+                .as_deref(),
+            Some(SECRET),
+            "{name}"
+        );
+        db.disable_totp(ADMIN_REALM, login).await.expect("disable");
+        assert_eq!(
+            db.get_totp_secret(ADMIN_REALM, login).await.expect("get"),
+            None,
+            "{name}"
+        );
+
+        db.enable_totp(ADMIN_REALM, login, SECRET)
+            .await
+            .expect("enable");
+        db.delete_userpass(ADMIN_REALM, login)
+            .await
+            .expect("delete");
+        db.create_userpass(&admin_realm_login(login))
+            .await
+            .expect("login");
+        assert_eq!(
+            db.get_totp_secret(ADMIN_REALM, login).await.expect("get"),
+            None,
+            "{name}: a recreated login starts without 2FA"
+        );
+        db.delete_userpass(ADMIN_REALM, login)
+            .await
+            .expect("cleanup");
+    }
+}
+
+/// Before 0.6.0 the 2FA of an admin lived on its admin record: startup moves it to the admin's
+/// `_` login, drops it for an admin without one (a JWT admin), and removes the old columns.
+#[tokio::test]
+async fn test_admin_2fa_moves_to_the_admin_login() {
+    use crate::tests::helpers::test_admin;
+
+    for (name, db, raw) in databases_with_raw_access().await {
+        for id in ["mig_linked", "mig_jwt"] {
+            db.delete_admin(id).await.expect("cleanup");
+        }
+        db.delete_userpass(ADMIN_REALM, "mig_login")
+            .await
+            .expect("cleanup");
+        db.create_userpass(&admin_realm_login("mig_login"))
+            .await
+            .expect("login");
+        let mut linked = test_admin("mig_linked");
+        linked.userpass = Some("mig_login".to_string());
+        db.create_admin(&linked).await.expect("linked admin");
+        let mut jwt = test_admin("mig_jwt");
+        jwt.jwt = Some("mig-subject".to_string());
+        db.create_admin(&jwt).await.expect("JWT admin");
+        for sql in [
+            "ALTER TABLE admin ADD COLUMN totp_enabled BOOLEAN",
+            "ALTER TABLE admin ADD COLUMN totp_secret TEXT",
+            "ALTER TABLE admin ADD COLUMN totp_auth_url TEXT",
+            "UPDATE admin SET totp_enabled = TRUE, totp_secret = 'JBSWY3DPEHPK3PXP' \
+             WHERE id IN ('mig_linked', 'mig_jwt')",
+        ] {
+            raw.execute(sql).await;
+        }
+
+        db.init().await.expect("migrating init");
+        db.init().await.expect("init after the migration");
+
+        assert_eq!(
+            db.get_totp_secret(ADMIN_REALM, "mig_login")
+                .await
+                .expect("get")
+                .as_deref(),
+            Some("JBSWY3DPEHPK3PXP"),
+            "{name}"
+        );
+        let totp_enabled = |admin: Option<crate::models::Admin>| admin.and_then(|a| a.totp_enabled);
+        assert_eq!(
+            totp_enabled(db.get_admin("mig_linked").await.expect("get")),
+            Some(true),
+            "{name}"
+        );
+        assert_eq!(
+            totp_enabled(db.get_admin("mig_jwt").await.expect("get")),
+            Some(false),
+            "{name}"
+        );
+
+        for id in ["mig_linked", "mig_jwt"] {
+            db.delete_admin(id).await.expect("cleanup");
+        }
+        db.delete_userpass(ADMIN_REALM, "mig_login")
+            .await
+            .expect("cleanup");
+    }
 }
 
 fn create_user(realm: &str, username: &str, password: &str, change_password: bool) -> UserPass {

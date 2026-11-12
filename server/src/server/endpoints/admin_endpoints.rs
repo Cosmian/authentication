@@ -32,14 +32,6 @@ use actix_web::{
 use cosmian_logger::info;
 use std::sync::Arc;
 
-/// 2FA is managed through the TOTP endpoints only: a request body never sets it, and an update
-/// keeps what is stored (`None` for a new admin).
-fn set_totp_from(admin: &mut Admin, stored: Option<&Admin>) {
-    admin.totp_enabled = stored.and_then(|s| s.totp_enabled);
-    admin.totp_secret = stored.and_then(|s| s.totp_secret.clone());
-    admin.totp_auth_url = stored.and_then(|s| s.totp_auth_url.clone());
-}
-
 /// Checks that `requester` may point the admin `admin_id` at the `_` login `userpass`: it must
 /// manage every other record using that login (a super admin when none does), and no other record
 /// may be linked to it already.
@@ -90,8 +82,7 @@ pub async fn create_admin(
     created_admin: Json<Admin>,
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
-    let mut admin = created_admin.into_inner();
-    set_totp_from(&mut admin, None);
+    let admin = created_admin.into_inner();
     let requester = admin_from_request(&req)?;
 
     if !can_manage_admin_realms(&requester, &admin.realms, &database).await? {
@@ -111,7 +102,8 @@ pub async fn create_admin(
         requester.id, admin.id
     );
 
-    Ok(HttpResponse::Created().json(admin))
+    let created = database.get_admin(&admin.id).await?.unwrap_or(admin);
+    Ok(HttpResponse::Created().json(created))
 }
 
 /// Retrieve an admin by ID.
@@ -202,10 +194,10 @@ pub async fn update_admin(
     }
 
     admin.id = admin_id;
-    set_totp_from(&mut admin, Some(&target));
     database.update_admin(&admin).await?;
 
-    Ok(HttpResponse::Ok().json(admin))
+    let updated = database.get_admin(&admin.id).await?.unwrap_or(admin);
+    Ok(HttpResponse::Ok().json(updated))
 }
 
 /// Delete an admin by ID.

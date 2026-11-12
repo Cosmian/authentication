@@ -5,7 +5,7 @@ use crate::{
         AuthDbError, AuthDbResult,
         r#trait::{AppRole, AppSecretId, AppToken, Database, K8sRole},
     },
-    models::{Admin, AuthScheme, Realm, UserPass},
+    models::{ADMIN_REALM, Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
 use cosmian_logger::warn;
@@ -15,15 +15,28 @@ use sqlx::{PgPool, Row};
 const ADMIN_LOGIN_INDEXES: [(&str, &str, &str); 2] = [
     (
         "userpass",
-        "SELECT COUNT(*) FROM (SELECT 1 FROM admin WHERE userpass IS NOT NULL GROUP BY userpass HAVING COUNT(*) > 1) d",
+        "SELECT userpass FROM admin WHERE userpass IS NOT NULL GROUP BY userpass HAVING COUNT(*) > 1",
         "CREATE UNIQUE INDEX IF NOT EXISTS admin_userpass_unique ON admin(userpass)",
     ),
     (
         "jwt",
-        "SELECT COUNT(*) FROM (SELECT 1 FROM admin WHERE jwt IS NOT NULL GROUP BY jwt HAVING COUNT(*) > 1) d",
+        "SELECT jwt FROM admin WHERE jwt IS NOT NULL GROUP BY jwt HAVING COUNT(*) > 1",
         "CREATE UNIQUE INDEX IF NOT EXISTS admin_jwt_unique ON admin(jwt)",
     ),
 ];
+
+/// Admin columns, with `totp_enabled` computed from the 2FA of the admin's `_` login (`$1` is
+/// [`ADMIN_REALM`]).
+macro_rules! select_admins {
+    ($rest:literal) => {
+        concat!(
+            "SELECT id, userpass, jwt, fido2, digital_credentials, certificate, ",
+            "EXISTS (SELECT 1 FROM userpass u WHERE u.realm = $1 AND u.username = admin.userpass ",
+            "AND u.totp_secret IS NOT NULL) AS totp_enabled FROM admin ",
+            $rest
+        )
+    };
+}
 
 /// PostgreSQL database implementation
 pub struct PostgresDatabase {
@@ -35,21 +48,100 @@ impl PostgresDatabase {
         Self { pool }
     }
 
-    /// Makes each admin login column unique, so two admins can never share a login. A column
-    /// where admins already share a value is only warned about (the admin lookup refuses those
-    /// logins), so an existing database still starts.
+    /// Makes each admin login column unique, so two admins can never share a login. Refuses to
+    /// start when admins already share one: each admin must get its own login first.
     async fn ensure_unique_admin_logins(&self) -> AuthDbResult<()> {
         for (column, shared_sql, create_index_sql) in ADMIN_LOGIN_INDEXES {
-            let shared: i64 = sqlx::query_scalar(shared_sql).fetch_one(&self.pool).await?;
-            if shared > 0 {
-                warn!(
-                    "{shared} admin {column} value(s) are shared by several admins: {column} is not unique in the database until they are fixed"
-                );
-                continue;
+            let shared: Vec<String> = sqlx::query_scalar(shared_sql).fetch_all(&self.pool).await?;
+            if !shared.is_empty() {
+                return Err(AuthDbError::Init(format!(
+                    "several admins share the {column} login(s) {shared:?}: give each admin its own login"
+                )));
             }
             sqlx::query(create_index_sql).execute(&self.pool).await?;
         }
         Ok(())
+    }
+
+    /// Moves the 2FA stored on admin records (before 0.6.0) to their `_` login, then drops the
+    /// admin 2FA columns. An admin without a `_` login (a JWT admin) loses its 2FA, with a warning.
+    async fn migrate_admin_totp(&self) -> AuthDbResult<()> {
+        let has_admin_totp: bool = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'admin' AND column_name = 'totp_secret'",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map(|c: i64| c > 0)?;
+        if !has_admin_totp {
+            return Ok(());
+        }
+        let mut tx = self.pool.begin().await?;
+        let rows = sqlx::query(
+            "SELECT id, userpass, totp_secret FROM admin WHERE totp_secret IS NOT NULL",
+        )
+        .fetch_all(&mut *tx)
+        .await?;
+        for row in rows {
+            let id: String = row.try_get("id")?;
+            let userpass: Option<String> = row.try_get("userpass")?;
+            let secret: String = row.try_get("totp_secret")?;
+            let moved =
+                match userpass {
+                    Some(login) => sqlx::query(
+                        "UPDATE userpass SET totp_secret = $1 WHERE realm = $2 AND username = $3",
+                    )
+                    .bind(&secret)
+                    .bind(ADMIN_REALM)
+                    .bind(&login)
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected()
+                        > 0,
+                    None => false,
+                };
+            if !moved {
+                warn!(
+                    "admin '{id}' loses its 2FA: 2FA now protects '{ADMIN_REALM}' username/password logins only, and this admin has none"
+                );
+            }
+        }
+        sqlx::query(
+            "ALTER TABLE admin DROP COLUMN totp_enabled, DROP COLUMN totp_secret, DROP COLUMN totp_auth_url",
+        )
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Builds an [`Admin`] from a row selected with [`select_admins`].
+    async fn row_to_admin(&self, row: &sqlx::postgres::PgRow) -> AuthDbResult<Admin> {
+        let id: String = row.try_get("id")?;
+        let realms: Vec<String> =
+            sqlx::query_scalar("SELECT realm_id FROM admin_realms WHERE admin_id = $1")
+                .bind(&id)
+                .fetch_all(&self.pool)
+                .await?;
+        let digital_credentials: Option<HashMap<String, String>> = row
+            .try_get::<Option<serde_json::Value>, _>("digital_credentials")?
+            .map(|v| {
+                serde_json::from_value(v).map_err(|e| {
+                    AuthDbError::Unexpected(format!(
+                        "Failed to deserialize digital_credentials: {e}"
+                    ))
+                })
+            })
+            .transpose()?;
+        Ok(Admin {
+            id,
+            realms,
+            userpass: row.try_get("userpass")?,
+            jwt: row.try_get("jwt")?,
+            fido2: row.try_get("fido2")?,
+            digital_credentials,
+            client_certificate: row.try_get("certificate")?,
+            totp_enabled: Some(row.try_get("totp_enabled")?),
+        })
     }
 }
 
@@ -105,6 +197,10 @@ impl Database for PostgresDatabase {
         sqlx::query("ALTER TABLE userpass ADD COLUMN IF NOT EXISTS extra_claims TEXT")
             .execute(&self.pool)
             .await?;
+        // 2FA secret of the login (Base32), added in 0.6.0
+        sqlx::query("ALTER TABLE userpass ADD COLUMN IF NOT EXISTS totp_secret TEXT")
+            .execute(&self.pool)
+            .await?;
 
         // Create admin table
         sqlx::query(
@@ -115,12 +211,7 @@ impl Database for PostgresDatabase {
                 jwt TEXT,
                 fido2 TEXT,
                 digital_credentials JSONB,
-                certificate TEXT,
-
-                -- TOTP/2FA fields
-                totp_enabled BOOLEAN DEFAULT FALSE,
-                totp_secret TEXT,
-                totp_auth_url TEXT
+                certificate TEXT
             )
             "#,
         )
@@ -142,6 +233,7 @@ impl Database for PostgresDatabase {
         .execute(&self.pool)
         .await?;
         self.ensure_unique_admin_logins().await?;
+        self.migrate_admin_totp().await?;
 
         // If the realm table is empty, insert the ADMIN_REALM (application) realm
         // and insert a remove_me:remove_me userpass entry for it in the userpass table
@@ -668,8 +760,8 @@ impl Database for PostgresDatabase {
         // Insert into admin table
         sqlx::query(
             r#"
-            INSERT INTO admin (id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO admin (id, userpass, jwt, fido2, digital_credentials, certificate)
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(&admin.id)
@@ -678,15 +770,15 @@ impl Database for PostgresDatabase {
         .bind(&admin.fido2)
         .bind(digital_credentials_json)
         .bind(&admin.client_certificate)
-        .bind(admin.totp_enabled)
-        .bind(&admin.totp_secret)
-        .bind(&admin.totp_auth_url)
         .execute(&self.pool)
         .await
         .map_err(|e| {
             crate::database::AuthDbError::from_insert_error(
                 e,
-                format!("admin '{}' already exists or shares a login with another admin", admin.id),
+                format!(
+                    "admin '{}' already exists or shares a login with another admin",
+                    admin.id
+                ),
             )
         })?;
 
@@ -708,61 +800,13 @@ impl Database for PostgresDatabase {
     }
 
     async fn get_admin(&self, id: &str) -> AuthDbResult<Option<Admin>> {
-        let row = sqlx::query(
-            r#"
-            SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
-            FROM admin
-            WHERE id = $1
-            "#,
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?;
-
+        let row = sqlx::query(select_admins!("WHERE id = $2"))
+            .bind(ADMIN_REALM)
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await?;
         match row {
-            Some(row) => {
-                // Fetch realms from join table
-                let realm_rows = sqlx::query(
-                    r#"
-                    SELECT realm_id
-                    FROM admin_realms
-                    WHERE admin_id = $1
-                    "#,
-                )
-                .bind(id)
-                .fetch_all(&self.pool)
-                .await?;
-
-                let realms: Vec<String> = realm_rows
-                    .iter()
-                    .map(|r| r.try_get("realm_id"))
-                    .collect::<Result<Vec<String>, _>>()?;
-
-                let digital_credentials: Option<HashMap<String, String>> = row
-                    .try_get::<Option<serde_json::Value>, _>("digital_credentials")?
-                    .map(|v| {
-                        serde_json::from_value(v).map_err(|e| {
-                            crate::database::AuthDbError::Unexpected(format!(
-                                "Failed to deserialize digital_credentials: {e}"
-                            ))
-                        })
-                    })
-                    .transpose()?;
-
-                let admin = Admin {
-                    id: row.try_get("id")?,
-                    realms,
-                    userpass: row.try_get("userpass")?,
-                    jwt: row.try_get("jwt")?,
-                    fido2: row.try_get("fido2")?,
-                    digital_credentials,
-                    client_certificate: row.try_get("certificate")?,
-                    totp_enabled: row.try_get("totp_enabled")?,
-                    totp_secret: row.try_get("totp_secret")?,
-                    totp_auth_url: row.try_get("totp_auth_url")?,
-                };
-                Ok(Some(admin))
-            }
+            Some(row) => Ok(Some(self.row_to_admin(&row).await?)),
             None => Ok(None),
         }
     }
@@ -784,8 +828,7 @@ impl Database for PostgresDatabase {
         sqlx::query(
             r#"
             UPDATE admin
-            SET userpass= $2, jwt = $3, fido2 = $4, digital_credentials = $5, certificate = $6,
-                totp_enabled = $7, totp_secret = $8, totp_auth_url = $9
+            SET userpass= $2, jwt = $3, fido2 = $4, digital_credentials = $5, certificate = $6
             WHERE id = $1
             "#,
         )
@@ -795,9 +838,6 @@ impl Database for PostgresDatabase {
         .bind(&admin.fido2)
         .bind(digital_credentials_json)
         .bind(&admin.client_certificate)
-        .bind(admin.totp_enabled)
-        .bind(&admin.totp_secret)
-        .bind(&admin.totp_auth_url)
         .execute(&self.pool)
         .await
         .map_err(|e| {
@@ -848,62 +888,14 @@ impl Database for PostgresDatabase {
     }
 
     async fn list_admins(&self) -> AuthDbResult<Vec<Admin>> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
-            FROM admin
-            ORDER BY id
-            "#,
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        let mut admins = Vec::new();
-        for row in rows {
-            let admin_id: String = row.try_get("id")?;
-
-            // Fetch realms from join table
-            let realm_rows = sqlx::query(
-                r#"
-                SELECT realm_id
-                FROM admin_realms
-                WHERE admin_id = $1
-                "#,
-            )
-            .bind(&admin_id)
+        let rows = sqlx::query(select_admins!("ORDER BY id"))
+            .bind(ADMIN_REALM)
             .fetch_all(&self.pool)
             .await?;
-
-            let realms: Vec<String> = realm_rows
-                .iter()
-                .map(|r| r.try_get("realm_id"))
-                .collect::<Result<Vec<String>, _>>()?;
-
-            let digital_credentials: Option<HashMap<String, String>> = row
-                .try_get::<Option<serde_json::Value>, _>("digital_credentials")?
-                .map(|v| {
-                    serde_json::from_value(v).map_err(|e| {
-                        crate::database::AuthDbError::Unexpected(format!(
-                            "Failed to deserialize digital_credentials: {e}"
-                        ))
-                    })
-                })
-                .transpose()?;
-
-            admins.push(Admin {
-                id: admin_id,
-                realms,
-                userpass: row.try_get("userpass")?,
-                jwt: row.try_get("jwt")?,
-                fido2: row.try_get("fido2")?,
-                digital_credentials,
-                client_certificate: row.try_get("certificate")?,
-                totp_enabled: row.try_get("totp_enabled")?,
-                totp_secret: row.try_get("totp_secret")?,
-                totp_auth_url: row.try_get("totp_auth_url")?,
-            });
+        let mut admins = Vec::with_capacity(rows.len());
+        for row in &rows {
+            admins.push(self.row_to_admin(row).await?);
         }
-
         Ok(admins)
     }
 
@@ -954,111 +946,41 @@ impl Database for PostgresDatabase {
 
     // ===== TOTP/2FA operations =====
 
-    async fn generate_totp_secret(&self, realm: &str, username: &str) -> AuthDbResult<String> {
-        let totps = crate::totp::Totps::new()
-            .map_err(|e| crate::database::AuthDbError::Unexpected(format!("TOTP error: {e}")))?;
-        let secret = totps.generate_secret();
-        cosmian_logger::debug!(
-            "Generated TOTP secret for user '{}' in realm '{}'",
-            username,
-            realm
-        );
-        Ok(secret)
-    }
-
     async fn enable_totp(
         &self,
         realm: &str,
         username: &str,
         totp_secret: &str,
-        issuer: &str,
-    ) -> AuthDbResult<()> {
-        let otpauth_url = crate::totp::Totps::from_secret(
-            totp_secret,
-            Some(issuer.to_string()),
-            username.to_string(),
-            None, // use realm-default TOTP params; the canonical URL was already returned at generate time
-        )
-        .map_err(|e| crate::database::AuthDbError::Unexpected(format!("TOTP error: {e}")))?
-        .get_otpauth_url();
-
-        cosmian_logger::debug!("Enabling TOTP for user '{}' in realm '{}'", username, realm);
-
-        sqlx::query(
-            r#"
-            UPDATE admin
-            SET totp_enabled = true,
-                totp_secret = $1,
-                totp_auth_url = $2
-            WHERE id = $3 AND (userpass IS NOT NULL OR jwt IS NOT NULL)
-            "#,
-        )
-        .bind(totp_secret)
-        .bind(&otpauth_url)
-        .bind(username)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
+    ) -> AuthDbResult<bool> {
+        let updated =
+            sqlx::query("UPDATE userpass SET totp_secret = $1 WHERE realm = $2 AND username = $3")
+                .bind(totp_secret)
+                .bind(realm)
+                .bind(username)
+                .execute(&self.pool)
+                .await?
+                .rows_affected();
+        Ok(updated > 0)
     }
 
     async fn disable_totp(&self, realm: &str, username: &str) -> AuthDbResult<()> {
-        cosmian_logger::debug!(
-            "Disabling TOTP for user '{}' in realm '{}'",
-            username,
-            realm
-        );
-
-        sqlx::query(
-            r#"
-            UPDATE admin
-            SET totp_enabled = false,
-                totp_secret = NULL,
-                totp_auth_url = NULL
-            WHERE id = $1 AND (userpass IS NOT NULL OR jwt IS NOT NULL)
-            "#,
-        )
-        .bind(username)
-        .execute(&self.pool)
-        .await?;
-
+        sqlx::query("UPDATE userpass SET totp_secret = NULL WHERE realm = $1 AND username = $2")
+            .bind(realm)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    async fn get_totp_secret(&self, _realm: &str, username: &str) -> AuthDbResult<Option<String>> {
-        let row = sqlx::query(
-            r#"
-            SELECT totp_secret
-            FROM admin
-            WHERE id = $1 AND (userpass IS NOT NULL OR jwt IS NOT NULL)
-            "#,
+    async fn get_totp_secret(&self, realm: &str, username: &str) -> AuthDbResult<Option<String>> {
+        let secret: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT totp_secret FROM userpass WHERE realm = $1 AND username = $2",
         )
+        .bind(realm)
         .bind(username)
         .fetch_optional(&self.pool)
         .await?;
-
-        match row {
-            Some(row) => Ok(row.try_get("totp_secret")?),
-            None => Ok(None),
-        }
-    }
-
-    async fn is_totp_enabled(&self, _realm: &str, username: &str) -> AuthDbResult<Option<bool>> {
-        let row = sqlx::query(
-            r#"
-            SELECT totp_enabled
-            FROM admin
-            WHERE id = $1 AND (userpass IS NOT NULL OR jwt IS NOT NULL)
-            "#,
-        )
-        .bind(username)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        match row {
-            Some(row) => Ok(row.try_get("totp_enabled")?),
-            None => Ok(None),
-        }
+        Ok(secret.flatten())
     }
 
     // ── app token operations ────────────────────────────────────────────────

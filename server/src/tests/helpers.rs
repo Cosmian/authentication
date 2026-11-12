@@ -116,8 +116,6 @@ pub fn test_admin(id: &str) -> Admin {
         digital_credentials: None,
         client_certificate: None,
         totp_enabled: None,
-        totp_secret: None,
-        totp_auth_url: None,
     }
 }
 

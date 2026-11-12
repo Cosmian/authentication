@@ -263,7 +263,7 @@ async fn test_admin_login_links_are_validated() -> AuthResult<()> {
 }
 
 /// Two admin records sharing a login, possible in a database created before logins were unique,
-/// make the admin lookup refuse both; starting on such a database skips the unique index.
+/// make the admin lookup refuse both, and the server refuses to start on such a database.
 #[actix_web::test]
 async fn test_admin_lookup_fails_closed_when_a_login_is_shared() -> AuthResult<()> {
     let db_error = |e: &dyn std::fmt::Display| AuthError::Unexpected(e.to_string());
@@ -294,15 +294,14 @@ async fn test_admin_lookup_fails_closed_when_a_login_is_shared() -> AuthResult<(
     claims.registered.sub = Some("shared".to_string());
     assert!(find_admin_for_claims(&database, &claims).await.is_err());
 
-    // Starting again with the duplicates in place works and leaves the column non-unique.
-    database.init().await.map_err(|e| db_error(&e))?;
-    let indexes: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'admin_userpass_unique'",
-    )
-    .fetch_one(&pool)
-    .await
-    .map_err(|e| db_error(&e))?;
-    assert_eq!(indexes, 0);
+    // The server refuses to start on such a database, naming the shared login.
+    let refused = database.init().await;
+    assert!(
+        refused
+            .as_ref()
+            .is_err_and(|e| e.to_string().contains("shared")),
+        "{refused:?}"
+    );
     Ok(())
 }
 

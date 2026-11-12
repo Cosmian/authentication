@@ -131,8 +131,6 @@ pub trait Database: Send + Sync {
                 digital_credentials: None,
                 client_certificate: None,
                 totp_enabled: None,
-                totp_secret: None,
-                totp_auth_url: None,
             };
             self.create_admin(&admin).await?;
         }
@@ -222,28 +220,22 @@ pub trait Database: Send + Sync {
         value: &str,
     ) -> AuthDbResult<Vec<Admin>>;
 
-    // ===== TOTP/2FA operations =====
+    // ===== TOTP/2FA operations (on the username/password login) =====
 
-    /// Generate a new TOTP secret for a user
-    async fn generate_totp_secret(&self, realm: &str, username: &str) -> AuthDbResult<String>;
-
-    /// Update a user's TOTP information (enable 2FA)
+    /// Stores the 2FA secret (Base32) of the login `username` of `realm`; `false` if there is no
+    /// such login.
     async fn enable_totp(
         &self,
         realm: &str,
         username: &str,
         totp_secret: &str,
-        issuer: &str,
-    ) -> AuthDbResult<()>;
+    ) -> AuthDbResult<bool>;
 
-    /// Disable TOTP for a user (reset 2FA)
+    /// Removes the 2FA of the login `username` of `realm`, if any.
     async fn disable_totp(&self, realm: &str, username: &str) -> AuthDbResult<()>;
 
-    /// Get the current TOTP secret for a user (for re-enrollment)
+    /// The 2FA secret of the login `username` of `realm`, if it has 2FA.
     async fn get_totp_secret(&self, realm: &str, username: &str) -> AuthDbResult<Option<String>>;
-
-    /// Check if 2FA is enabled for a user
-    async fn is_totp_enabled(&self, realm: &str, username: &str) -> AuthDbResult<Option<bool>>;
 
     // ── App token operations ────────────────────────────────────────────────
 

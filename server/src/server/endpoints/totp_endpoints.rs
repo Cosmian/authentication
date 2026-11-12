@@ -1,13 +1,12 @@
 //! 2FA (TOTP) management for admin logins.
 //!
-//! 2FA exists only for the logins of admins, in the admin realm `_`, and is stored on the admin
-//! record that uses the login. Managing it follows the rule for `_` logins (see
-//! `can_manage_admin_login`): the requester must manage every admin using the login. In any other
-//! realm the endpoints answer `400`: ordinary realm users have no 2FA, and pretending to enrol
-//! them silently left them unprotected.
+//! 2FA exists only for the username/password logins of the admin realm `_`, and is stored on the
+//! login. Managing it follows the rule for `_` logins (see `can_manage_admin_login`): the
+//! requester must manage every admin using the login. In any other realm the endpoints answer
+//! `400`: ordinary realm users have no 2FA.
 
 use crate::{
-    AuthError, AuthScheme,
+    AuthError,
     database::Database,
     models::{ADMIN_REALM, Admin},
     server::endpoints::{admin_from_request, can_manage_credentials},
@@ -40,34 +39,6 @@ async fn authorize_totp(
         )));
     }
     Ok(())
-}
-
-/// The admin record holding the 2FA of the `_` login `username`: the one linked to it through
-/// `userpass`, else the one named like it.
-async fn totp_admin(
-    database: &Data<Arc<dyn Database>>,
-    username: &str,
-) -> Result<Admin, AuthError> {
-    let mut linked = database
-        .find_admins_by_auth_scheme(AuthScheme::UsernamePassword, username)
-        .await?;
-    if linked.len() > 1 {
-        return Err(AuthError::Conflict(format!(
-            "Several admins use the login '{username}'"
-        )));
-    }
-    let admin = match linked.pop() {
-        Some(admin) => Some(admin),
-        None => database.get_admin(username).await?,
-    }
-    .ok_or_else(|| AuthError::BadRequest(format!("No admin uses the login '{username}'")))?;
-    if admin.userpass.is_none() && admin.jwt.is_none() {
-        return Err(AuthError::BadRequest(format!(
-            "Admin '{}' has no login to protect with 2FA",
-            admin.id
-        )));
-    }
-    Ok(admin)
 }
 
 /// Generate a new TOTP secret for an admin login.
@@ -121,7 +92,7 @@ pub async fn totp_generate(
 /// This combines verification and enrollment in one step: the client generates a new
 /// secret via the generate endpoint, displays the QR code to the user, the user enters
 /// the code from their authenticator app, and then calls this endpoint. If the code is
-/// valid the secret is stored and TOTP is activated for the admin using the login.
+/// valid the secret is stored on the login and TOTP is activated.
 #[post("/{realm_id}/totp/verify")]
 pub async fn totp_verify(
     req: HttpRequest,
@@ -132,7 +103,6 @@ pub async fn totp_verify(
     let realm_id = realm.into_inner();
     let requester = admin_from_request(&req)?;
     authorize_totp(&requester, &realm_id, &body.username, &database).await?;
-    let admin = totp_admin(&database, &body.username).await?;
 
     let body = body.into_inner();
     let issuer = body.issuer.unwrap_or_else(|| realm_id.clone());
@@ -163,14 +133,20 @@ pub async fn totp_verify(
         ));
     }
 
-    // Token is valid — persist the secret and enable TOTP for the admin
-    database
-        .enable_totp(&realm_id, &admin.id, &body.secret, &realm_id)
-        .await?;
+    // Token is valid — persist the secret on the login
+    if !database
+        .enable_totp(&realm_id, &body.username, &body.secret)
+        .await?
+    {
+        return Err(AuthError::BadRequest(format!(
+            "No login '{}' in realm '{realm_id}'",
+            body.username
+        )));
+    }
 
     info!(
-        "totp_verify: '{}' enabled TOTP for '{}' (admin '{}')",
-        requester.id, body.username, admin.id
+        "totp_verify: '{}' enabled TOTP for '{}'",
+        requester.id, body.username
     );
 
     Ok(HttpResponse::Ok().json(serde_json::json!({"status": "ok"})))
@@ -186,13 +162,12 @@ pub async fn totp_disable(
     let (realm_id, username) = params.into_inner();
     let requester = admin_from_request(&req)?;
     authorize_totp(&requester, &realm_id, &username, &database).await?;
-    let admin = totp_admin(&database, &username).await?;
 
-    database.disable_totp(&realm_id, &admin.id).await?;
+    database.disable_totp(&realm_id, &username).await?;
 
     info!(
-        "totp_disable: '{}' disabled TOTP for '{}' (admin '{}')",
-        requester.id, username, admin.id
+        "totp_disable: '{}' disabled TOTP for '{}'",
+        requester.id, username
     );
 
     Ok(HttpResponse::NoContent().finish())

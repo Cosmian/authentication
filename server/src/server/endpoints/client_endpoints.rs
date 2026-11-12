@@ -1,10 +1,9 @@
-use crate::middleware::find_admin_by_login;
 use crate::models::{
     ADMIN_REALM, CertificateClaims, ClientClaims, LoginRequest, reject_reserved_claim_names,
 };
 use crate::server::parameters::ServerParams;
 use crate::session::{self, JwksData, JwtTokenConfig, issue_token, session_id_from_cookie_value};
-use crate::{AuthError, AuthenticatedClientScheme, server::Version};
+use crate::{AuthError, AuthScheme, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
 use actix_web::HttpMessage;
 use actix_web::web::{Data, Json};
@@ -15,23 +14,23 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Enforces the 2FA of the admin logging in, if it has one. Returns the response to send instead
-/// of a session when the code is missing or wrong.
+/// Enforces the 2FA of the login, if it has one. Returns the response to send instead of a
+/// session when the code is missing or wrong.
 ///
-/// 2FA belongs to admin logins: it is read from the admin using the login, in the admin realm
-/// only (ordinary realm users have none).
+/// 2FA belongs to the username/password logins of the admin realm: other realms and login
+/// schemes have none.
 async fn check_admin_totp(
     database: &dyn crate::database::Database,
     realm: &Realm,
     client: &AuthenticatedClientScheme,
     totp_code: Option<&str>,
 ) -> Result<Option<HttpResponse>, AuthError> {
-    if realm.id != ADMIN_REALM {
+    if realm.id != ADMIN_REALM || client.auth_scheme != AuthScheme::UsernamePassword {
         return Ok(None);
     }
-    let Some(admin) = find_admin_by_login(database, client.auth_scheme, &client.username)
+    let Some(secret) = database
+        .get_totp_secret(ADMIN_REALM, &client.username)
         .await?
-        .filter(|admin| admin.totp_enabled.unwrap_or(false))
     else {
         return Ok(None);
     };
@@ -42,9 +41,6 @@ async fn check_admin_totp(
             next_step: AuthenticationNextStep::TotpRequired,
         })));
     };
-    let secret = admin
-        .totp_secret
-        .ok_or_else(|| AuthError::Session("TOTP is enabled but no secret is stored".to_string()))?;
     let totp_params = realm
         .auth_params
         .totp_params
