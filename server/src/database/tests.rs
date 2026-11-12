@@ -18,6 +18,7 @@
 // The tests will automatically skip PostgreSQL and MySQL if their environment variables aren't set,
 // so SQLite tests will always run without any setup required.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::database::{
@@ -184,6 +185,41 @@ async fn test_admin_logins_are_unique() {
         for id in ids {
             db.delete_admin(id).await.expect("cleanup");
         }
+    }
+}
+
+/// An admin with every optional field set reads back unchanged, through `get` and `list`.
+#[tokio::test]
+async fn test_admin_round_trip() {
+    use crate::tests::helpers::test_admin;
+
+    for (name, db) in get_all_test_databases().await {
+        let mut admin = test_admin("round_trip_admin");
+        db.delete_admin(&admin.id).await.expect("cleanup");
+        admin.realms = vec![ADMIN_REALM.to_string()];
+        admin.userpass = Some("round_trip_user".to_string());
+        admin.jwt = Some("round_trip_jwt".to_string());
+        admin.digital_credentials = Some(HashMap::from([(
+            "issuer".to_string(),
+            "https://issuer.example".to_string(),
+        )]));
+        db.create_admin(&admin).await.expect("create");
+
+        let listed = db.list_admins().await.expect("list");
+        for read in [
+            db.get_admin(&admin.id).await.expect("get"),
+            listed.into_iter().find(|a| a.id == admin.id),
+        ] {
+            let read = read.unwrap_or_else(|| panic!("{name}: admin not found"));
+            assert_eq!(read.realms, admin.realms, "{name}");
+            assert_eq!(read.userpass, admin.userpass, "{name}");
+            assert_eq!(read.jwt, admin.jwt, "{name}");
+            assert_eq!(
+                read.digital_credentials, admin.digital_credentials,
+                "{name}"
+            );
+        }
+        db.delete_admin(&admin.id).await.expect("cleanup");
     }
 }
 

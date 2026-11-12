@@ -258,22 +258,12 @@ impl Database for MySqlDatabase {
                 bound_sa_namespaces     TEXT         NOT NULL,
                 token_ttl_secs          BIGINT       NOT NULL DEFAULT 3600,
                 expected_issuer         TEXT,
-                bound_audiences         TEXT         NOT NULL DEFAULT '[]'
+                bound_audiences         TEXT         NOT NULL
             )
             "#,
         )
         .execute(&self.pool)
         .await?;
-
-        // Add columns to pre-existing tables (IF NOT EXISTS requires MySQL 8.0.3+).
-        let _ = sqlx::query("ALTER TABLE k8s_roles ADD COLUMN IF NOT EXISTS expected_issuer TEXT")
-            .execute(&self.pool)
-            .await;
-        let _ = sqlx::query(
-            "ALTER TABLE k8s_roles ADD COLUMN IF NOT EXISTS bound_audiences TEXT NOT NULL DEFAULT '[]'",
-        )
-        .execute(&self.pool)
-        .await;
 
         Ok(())
     }
@@ -313,7 +303,10 @@ impl Database for MySqlDatabase {
     async fn get_realm(&self, id: &str) -> AuthDbResult<Option<Realm>> {
         let row = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
+            SELECT id, CAST(auth_params AS CHAR) AS auth_params,
+                CAST(cookie_max_age_seconds AS SIGNED) AS cookie_max_age_seconds,
+                CAST(max_stale_age_seconds AS SIGNED) AS max_stale_age_seconds,
+                CAST(certificate_max_age_seconds AS SIGNED) AS certificate_max_age_seconds
             FROM realm
             WHERE id = ?
             "#,
@@ -386,7 +379,10 @@ impl Database for MySqlDatabase {
     async fn list_realms(&self) -> AuthDbResult<Vec<Realm>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, auth_params, cookie_max_age_seconds, max_stale_age_seconds, certificate_max_age_seconds
+            SELECT id, CAST(auth_params AS CHAR) AS auth_params,
+                CAST(cookie_max_age_seconds AS SIGNED) AS cookie_max_age_seconds,
+                CAST(max_stale_age_seconds AS SIGNED) AS max_stale_age_seconds,
+                CAST(certificate_max_age_seconds AS SIGNED) AS certificate_max_age_seconds
             FROM realm
             ORDER BY id
             "#,
@@ -760,7 +756,8 @@ impl Database for MySqlDatabase {
     async fn get_admin(&self, id: &str) -> AuthDbResult<Option<Admin>> {
         let row = sqlx::query(
             r#"
-            SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
+            SELECT id, userpass, jwt, fido2, CAST(digital_credentials AS CHAR) AS digital_credentials,
+                certificate, totp_enabled, totp_secret, totp_auth_url
             FROM admin
             WHERE id = ?
             "#,
@@ -901,7 +898,8 @@ impl Database for MySqlDatabase {
     async fn list_admins(&self) -> AuthDbResult<Vec<Admin>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, userpass, jwt, fido2, digital_credentials, certificate, totp_enabled, totp_secret, totp_auth_url
+            SELECT id, userpass, jwt, fido2, CAST(digital_credentials AS CHAR) AS digital_credentials,
+                certificate, totp_enabled, totp_secret, totp_auth_url
             FROM admin
             ORDER BY id
             "#,

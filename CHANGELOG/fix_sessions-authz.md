@@ -12,6 +12,7 @@
 - **Shared admin logins are refused.** Two admin records sharing a login make the admin lookup (and the login-time 2FA check) fail with `401` instead of picking one; the server logs a warning at startup naming them.
 - **Admin logins are unique in the database.** `admin.userpass` and `admin.jwt` get unique indexes at startup (SQLite, PostgreSQL, MySQL), so two concurrent requests cannot link one login to two admins (`409`); a column that already holds shared values only logs a warning and stays non-unique, and the MySQL `jwt` index covers a 255-character prefix.
 - **Super admins can read every admin.** `GET /admins` lists all admins and `GET /admins/{id}` is readable for any admin, including those of claimed realms, so the super admin can contact them; changes still follow the exclusive-ownership rule.
+- **The MySQL backend could not start or read realms.** Since 0.3.0 the schema gave a `TEXT` column a literal default, which MySQL rejects, and realm and admin reads decoded `JSON` and `BIGINT UNSIGNED` columns into types sqlx refuses; the default is gone (every insert sets the column), the dead `ADD COLUMN IF NOT EXISTS` statements (not MySQL syntax) are removed, and those columns are cast in the `SELECT`s.
 
 ## Refactor
 
