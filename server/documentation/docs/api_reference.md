@@ -929,7 +929,7 @@ Delete a credential.
 
 See [two_factor_authentication.md](two_factor_authentication.md) for the full enrollment flow.
 
-2FA exists only for **admin logins**, in realm `_`, and is stored on the admin record using the login. The caller must manage that login (the [`_` login rule](authorization_and_administration.md#the-_-login-rule)), otherwise `403`. In any other realm the three endpoints answer `400`.
+2FA exists only for the **username/password logins of realm `_`**, and is stored on the login. The caller must manage that login (the [`_` login rule](authorization_and_administration.md#the-_-login-rule)), otherwise `403`. In any other realm the three endpoints answer `400`.
 
 ### `POST /realms/{realm_id}/totp/generate`
 

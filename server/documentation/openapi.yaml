@@ -337,9 +337,8 @@ components:
           nullable: true
           readOnly: true
           description: |
-            Whether 2FA is active. Ignored in request bodies: 2FA is managed through the TOTP
-            endpoints, and an update keeps the stored 2FA. The TOTP secret and enrolment URL are
-            never returned.
+            Whether the admin's `_` username/password login has 2FA. Computed by the server and
+            ignored in request bodies: 2FA is managed through the TOTP endpoints.
           example: false
       example:
         id: alice
@@ -2241,10 +2240,10 @@ paths:
       tags: [TOTP]
       summary: Verify a TOTP code and enable TOTP for an admin login
       description: |
-        Verifies the code against the provided secret. If valid, stores the secret on the admin
-        record using the login and enables TOTP.
+        Verifies the code against the provided secret. If valid, stores the secret on the `_`
+        login and enables TOTP for it.
         Call this after generate once the user has scanned the QR code. Only in realm `_`
-        (400 elsewhere, or when no admin uses the login); the caller must manage the login (403
+        (400 elsewhere, or when the login does not exist); the caller must manage the login (403
         otherwise).
       operationId: totpVerify
       parameters:
@@ -2266,7 +2265,7 @@ paths:
         '200':
           description: TOTP enabled. Empty body.
         '400':
-          description: Invalid TOTP token, or 2FA is not available here (not realm `_`, or no admin uses the login).
+          description: Invalid TOTP token, or 2FA is not available here (not realm `_`, or no such login).
           content:
             application/json:
               schema:
@@ -2281,9 +2280,8 @@ paths:
       tags: [TOTP]
       summary: Disable TOTP for an admin login
       description: |
-        Removes the stored secret and sets totp_enabled = false on the admin record using the
-        login. Only in realm `_` (400 elsewhere); the caller must manage the login (403
-        otherwise).
+        Removes the stored secret of the `_` login. Only in realm `_` (400 elsewhere); the caller
+        must manage the login (403 otherwise).
       operationId: totpDisable
       parameters:
         - $ref: '#/components/parameters/realmId'

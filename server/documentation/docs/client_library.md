@@ -320,9 +320,7 @@ let user = Admin {
     fido2: None,
     digital_credentials: None,
     client_certificate: None,
-    totp_enabled: Some(false),
-    totp_secret: None,
-    totp_auth_url: None,
+    totp_enabled: None,
 };
 let created: Admin = admin.create_admin_as_super_admin(&user).await?;
 

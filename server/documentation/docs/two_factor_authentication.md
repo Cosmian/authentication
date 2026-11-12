@@ -2,7 +2,7 @@
 
 This document explains how Time-based One-Time Passwords (TOTP) are used as a second authentication factor, how to enroll a client account for 2FA, how the login flow changes when 2FA is active, and how to disable 2FA.
 
-> **Terminology:** A **client** is the entity that authenticates against `/login` (a human, a service, the CLI). An **Admin** record is the administrator account stored in the database — TOTP state (`totp_enabled`, `totp_secret`) is stored on the `Admin` record, but it is the **client** that presents TOTP codes at login time. See [index.md](index.md#terminology) for the full glossary.
+> **Terminology:** A **client** is the entity that authenticates against `/login` (a human, a service, the CLI). 2FA is stored on the client's username/password login (a `userpass` row of the admin realm `_`), and `Admin.totp_enabled` reports whether the admin's login has it. See [index.md](index.md#terminology) for the full glossary.
 
 ---
 
@@ -31,38 +31,24 @@ shared_secret + current_time_window ──► HMAC-{algorithm} ──► 6-digit
 
 | Module | Source path | Responsibility |
 |--------|-------------|----------------|
-| `totp` | `src/totp/mod.rs` | Core TOTP primitives: secret generation, token validation, `otpauth://` URL construction |
-| `middleware::totp` | `src/middleware/totp.rs` | `TotpMiddleware` — orchestrates enrollment (with realm-config lookup), verify-and-enable, disable, status check |
+| `totp` | `src/totp.rs` | Core TOTP primitives: secret generation, token validation, `otpauth://` URL construction |
 | `database::trait` | `src/database/trait.rs` | `Database` trait with TOTP persistence method signatures |
-| `database::impls` | `src/database/impls/{sqlite,postgres,mysql}.rs` | TOTP persistence: secret storage, enabled flag, `otpauth://` URL |
-| `models::base` | `src/models/base.rs` | `Admin` struct carrying the TOTP fields |
+| `database::impls` | `src/database/impls/{sqlite,postgres,mysql}.rs` | TOTP persistence on the login row (`userpass.totp_secret`) |
+| `server::endpoints::totp_endpoints` | `src/server/endpoints/totp_endpoints.rs` | Enrolment and removal endpoints |
 
 ### Data model
 
-TOTP state is stored on the `Admin` record using the login. 2FA exists only for **admin logins**, in the admin realm `_`: ordinary realm users have none, and the TOTP endpoints answer `400` for any other realm. The secret and the enrolment URL are server-owned: they are never returned in `Admin` JSON, and `totp_*` fields in request bodies are ignored (an update keeps the stored 2FA).
+The 2FA secret is stored on the login: the `totp_secret` column of the `userpass` row. 2FA exists only for the **username/password logins of the admin realm `_`**: ordinary realm users have none, the TOTP endpoints answer `400` for any other realm, and JWT admins rely on their identity provider's MFA. Deleting a login deletes its 2FA, so a recreated login starts without it. The secret is never returned: `Admin` JSON only carries `totp_enabled`, computed from the admin's login and ignored in request bodies.
 
-```rust
-pub struct Admin {
-    pub totp_enabled:   Option<bool>,    // Is 2FA currently active?
-    pub totp_secret:    Option<String>,  // Base32-encoded shared secret
-    pub totp_auth_url:  Option<String>,  // otpauth:// URL stored at enable time
-    // …
-}
-```
+Before 0.6.0 the 2FA lived on the `Admin` record. On startup, the server moves it to the admin's `_` login and drops the old `admin.totp_*` columns; an admin without a `_` login (a JWT admin) loses its 2FA, with a warning in the logs.
 
-### `TotpMiddleware` and `Database` persistence methods
-
-`TotpMiddleware` is a programmatic service component. Its methods are called by other server code (e.g., by the TOTP HTTP endpoints). The HTTP endpoints are registered under the `/realms` scope.
-
-The `Database` trait provides the following TOTP persistence methods:
+### `Database` persistence methods
 
 | Method | Description |
 |--------|-------------|
-| `generate_totp_secret(realm, username)` | Generates a random TOTP secret using **default params** (`Totps::new()`); returns only the Base32 string. Does not use realm TOTP config; does not persist anything. Lower-level helper — prefer `TotpMiddleware::handle_totp_generate` for enrollment. |
-| `enable_totp(realm, username, secret, issuer)` | Stores the verified secret, sets `totp_enabled = 1`, regenerates and stores `totp_auth_url` (using default SHA1/30 s params — see per-realm note). Targets `WHERE id = username AND (userpass IS NOT NULL OR jwt IS NOT NULL)`. |
-| `disable_totp(realm, username)` | Clears secret and auth URL, sets `totp_enabled = 0`. Same `WHERE` condition as `enable_totp`. |
-| `get_totp_secret(realm, username)` | Returns the stored Base32 secret, or `None` if not set. |
-| `is_totp_enabled(realm, username)` | Returns `Some(true/false)` for the user's TOTP state, or `None` if the user is not found. |
+| `enable_totp(realm, username, secret)` | Stores the verified Base32 secret on the login; returns `false` when there is no such login. |
+| `disable_totp(realm, username)` | Clears the secret of the login. |
+| `get_totp_secret(realm, username)` | Returns the stored Base32 secret, or `None` if the login has no 2FA (or does not exist). |
 
 ---
 
@@ -77,7 +63,7 @@ The enrollment flow is exposed via two HTTP endpoints under the `/realms` scope:
 | `POST /realms/{realm}/totp/generate?realm={realm}` | Generate a new TOTP secret for a user. Returns `secret_base32` and `otpauth_url`. The secret is **not** stored yet. |
 | `POST /realms/{realm}/totp/verify?realm={realm}` | Validate a one-time code against the generated secret. On success, the secret is stored and TOTP is activated for the user. |
 
-Both endpoints require a valid session cookie from an admin who manages the login (the [`_` login rule](authorization_and_administration.md#the-_-login-rule): every admin record using the login, or a super admin when none does). The record holding the 2FA is the one whose `userpass` is the login, else the one whose id is the login.
+Both endpoints require a valid session cookie from an admin who manages the login (the [`_` login rule](authorization_and_administration.md#the-_-login-rule): every admin record using the login, or a super admin when none does). The secret is stored on the login itself.
 
 ```mermaid
 sequenceDiagram
@@ -100,7 +86,7 @@ sequenceDiagram
     U->>EA: POST /realms/{realm}/totp/verify?realm={realm}<br/>{"username":"alice","token":"482913","secret":"JBSWY3DPEHPK3PXP"}
     note over EA: totp_verify handler<br/>get_realm(realm) → auth_params.totp_params<br/>Totps::from_secret(secret, issuer, alice, realm_params)<br/>totps.validate_token("482913")
     alt Token valid
-        EA->>DB: enable_totp(realm, alice, secret, issuer)
+        EA->>DB: enable_totp(realm, alice, secret)
         DB-->>EA: OK
         EA-->>U: 200 OK — 2FA enabled
     else Token invalid (wrong code or expired)
@@ -147,8 +133,8 @@ sequenceDiagram
 
     U->>EA: POST /login?realm={realm}<br/>{"public_key_pem": null}
     note over EA: EnsureAuth / UsernamePasswordAuth middleware<br/>validates primary credentials
-    EA->>DB: find the admin using the login (admin realm only)
-    DB-->>EA: admin with totp_enabled = true
+    EA->>DB: get_totp_secret("_", login) (username/password logins of realm _ only)
+    DB-->>EA: secret (2FA enabled)
 
     alt TOTP enabled — no code provided
         EA-->>U: 200 OK<br/>{"next_step":"TotpRequired","session_id":null}
@@ -156,7 +142,7 @@ sequenceDiagram
         App-->>U: "482913"
 
         U->>EA: POST /login?realm={realm}<br/>{"totp_code":"482913"}
-        EA->>DB: (secret of the same admin record)
+        EA->>DB: get_totp_secret("_", login)
         DB-->>EA: "JBSWY3DPEHPK3PXP"
         EA->>EA: Totps::from_secret(secret, …)<br/>totps.validate_token("482913")
         alt Token valid
@@ -194,7 +180,7 @@ An administrator can disable TOTP on a client's account via:
 DELETE /realms/{realm}/totp/{username}?realm={realm}
 ```
 
-This clears the stored secret and `totp_enabled` flag on the `Admin` record. Requires a valid session cookie from a realm administrator.
+This clears the stored secret of the login. Requires a valid session cookie from an admin who manages the login.
 
 ```mermaid
 sequenceDiagram
@@ -206,7 +192,7 @@ sequenceDiagram
     Admin->>EA: DELETE /realms/{realm}/totp/{username}?realm={realm}
     note over EA: totp_disable handler
     EA->>DB: disable_totp(realm, username)
-    note over DB: UPDATE admin<br/>SET totp_enabled = 0,<br/>    totp_secret = NULL,<br/>    totp_auth_url = NULL<br/>WHERE id = username<br/>AND (userpass IS NOT NULL OR jwt IS NOT NULL)
+    note over DB: UPDATE userpass<br/>SET totp_secret = NULL<br/>WHERE realm = ? AND username = ?
     DB-->>EA: OK
     EA-->>Admin: 204 No Content
 ```
@@ -235,18 +221,16 @@ POST /realms/{realm}/totp/verify?realm={realm}
       └── Totps::from_secret(secret_base32, issuer, username, totp_params)
       └── totps.validate_token(token)
           └── TOTP::check_current(token)      // ±1 step tolerance
-      └── (on success) database.enable_totp(realm, username, secret_base32, issuer)
-          └── UPDATE admin SET totp_enabled=1, totp_secret=?, totp_auth_url=?
-              WHERE id=? AND (userpass IS NOT NULL OR jwt IS NOT NULL)
-      └── 200 OK: {"status":"ok"}
+      └── (on success) database.enable_totp(realm, username, secret_base32)
+          └── UPDATE userpass SET totp_secret=? WHERE realm=? AND username=?
+      └── 200 OK: {"status":"ok"}  (400 when the login does not exist)
 
 ── TOTP disable ──
 
 DELETE /realms/{realm}/totp/{username}?realm={realm}
   → totp_disable handler
       └── database.disable_totp(realm, username)
-          └── UPDATE admin SET totp_enabled=0, totp_secret=NULL, totp_auth_url=NULL
-              WHERE id=? AND (userpass IS NOT NULL OR jwt IS NOT NULL)
+          └── UPDATE userpass SET totp_secret=NULL WHERE realm=? AND username=?
       └── 204 No Content
 
 ── Login flow with TOTP ──
@@ -255,14 +239,14 @@ POST /login?realm={realm}
   → EnsureAuth / UsernamePasswordAuth middleware
       └── Validates credentials → sets AuthenticatedClient in request extensions
   → login() handler (src/server/endpoints/client_endpoints.rs)
-      └── database.is_totp_enabled(realm, username)
-          if not enabled:
+      └── realm `_` and username/password login only:
+          database.get_totp_secret("_", username)
+          if no secret:
               └── issue_token + build_cookie + upsert_session
               └── 200 OK + Set-Cookie: { "next_step": "Authenticated", "session_id": "…" }
-          if enabled and no totp_code in request:
+          if secret and no totp_code in request:
               └── 200 OK: { "next_step": "TotpRequired", "session_id": null }
-          if enabled and totp_code present:
-              └── database.get_totp_secret(realm, username) → stored secret
+          if secret and totp_code present:
               └── Totps::from_secret(secret, None, username, realm_totp_params)
               └── totps.validate_token(totp_code)
                   if valid:
@@ -300,7 +284,7 @@ When a realm sets custom TOTP params:
 
 - `POST /realms/{realm}/totp/generate` uses those params to build the `otpauth://` URL — the authenticator app will therefore use the correct algorithm and period.
 - `POST /realms/{realm}/totp/verify` looks up the same params to reconstruct the `Totps` verifier, so the token is checked with the same algorithm and time window.
-- The stored `totp_auth_url` in the `Admin` record is regenerated by `enable_totp` using **default params** (SHA1, 30 s) regardless of the realm's TOTP config — this is a known limitation of the current `enable_totp` implementation. The canonical, authoritative URL (reflecting the realm's actual algorithm and step) is the one returned by `TotpMiddleware::handle_totp_generate` at enrollment time. Callers should use that returned URL for QR-code generation, not `Admin.totp_auth_url`.
+- Only the secret is stored. The `otpauth://` URL returned by `generate` is the one to render as a QR code; it is not kept.
 
 > **Important:** If you change a realm's TOTP params after users have already enrolled, their authenticator apps will continue using the old algorithm/period. All affected users must re-enroll.
 
@@ -318,7 +302,7 @@ The `otpauth://` URL and the raw Base32 secret must:
 
 ### Secret storage
 
-TOTP secrets are stored as plain Base32 strings in the database. In high-security deployments, consider encrypting the `totp_secret` column at rest using a KMS-managed key.
+TOTP secrets are stored as plain Base32 strings in the database. In high-security deployments, consider encrypting the `userpass.totp_secret` column at rest using a KMS-managed key.
 
 ### Brute-force protection
 

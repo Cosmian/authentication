@@ -383,7 +383,7 @@ There is no built-in concept of a client whose presence in the database does not
 
 ### Concurrent realm admin creation
 
-Linking two admin records to the same login is refused with `409`. The check is not transactional, but the database backs it: `admin.userpass` and `admin.jwt` have unique indexes, so of two simultaneous requests one fails with `409`. At startup the server creates each index only if no two admins already share a value (a MySQL `jwt` index covers its first 255 characters). Otherwise it logs a warning and the column stays non-unique until the duplicates are fixed; a login shared by several admin records is refused at login and by the admin lookup (the admins using it cannot log in).
+Linking two admin records to the same login is refused with `409`. The check is not transactional, but the database backs it: `admin.userpass` and `admin.jwt` have unique indexes, so of two simultaneous requests one fails with `409` (a MySQL `jwt` index covers its first 255 characters). The server refuses to start on a database where two admins already share a login, naming the shared logins: give each admin its own login, then restart.
 
 ### Realm-claim check is not transactional
 
