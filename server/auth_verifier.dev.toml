@@ -76,6 +76,8 @@ admin_password = "change_me"
 admin_username = "realm-admin"
 realm_id = "dev-realm"
 
+# 2FA only exists for admin logins: the TOTP user is created as a login of the admin
+# realm `_` (an admin record without realms), not in `realm_id`.
 totp_password = "change_me"
 totp_secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
 totp_username = "totp-user"

@@ -482,14 +482,16 @@ struct layout and a wire-format example.
 
 ### Session management endpoints
 
-| Method   | Path                               | Description                                                    | Auth required |
-| -------- | ---------------------------------- | -------------------------------------------------------------- | ------------- |
-| `GET`    | `/sessions/{id}`                   | Retrieve `SessionData` by session ID (`null` when not found)   | —             |
-| `POST`   | `/sessions/{id}`                   | Retrieve `SessionData` and optionally apply a `SessionsAction` | —             |
-| `POST`   | `/sessions/realms/{realm}/clients` | Get session IDs for a set of clients                           | —             |
-| `DELETE` | `/sessions`                        | Delete sessions by ID list (logout)                            | —             |
-| `DELETE` | `/sessions/expired`                | Purge all expired sessions                                     | —             |
-| `DELETE` | `/sessions/realms/{realm}`         | Revoke all sessions for a realm                                | —             |
+All of them need a valid `_ea_` cookie. A caller reaches its own sessions; admins also reach those of the realms they may manage (see [Authorization and Administration](authorization_and_administration.md#session-management)). Responses use `SessionInfo`, which omits the cookie value. A session the caller may not reach is reported as not found.
+
+| Method   | Path                               | Description                                                                   | Who                                            |
+| -------- | ---------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------- |
+| `GET`    | `/sessions/{id}`                   | Retrieve `SessionInfo` by session ID (`null` when not found)                  | Owner, admins managing the realm               |
+| `POST`   | `/sessions/{id}`                   | Retrieve `SessionInfo` and optionally apply a `SessionsAction` (404 when not found) | Owner, admins managing the realm         |
+| `POST`   | `/sessions/realms/{realm}/clients` | Get session IDs for a set of clients                                          | Owner (own username only), admins managing the realm |
+| `DELETE` | `/sessions`                        | Delete sessions by ID list (logout); IDs the caller may not reach are ignored like unknown ones | Owner, admins managing the realm |
+| `DELETE` | `/sessions/expired`                | Purge all expired sessions                                                    | Super admins                                   |
+| `DELETE` | `/sessions/realms/{realm}`         | Revoke all sessions for a realm                                               | Admins managing the realm                      |
 
 ---
 
@@ -514,6 +516,8 @@ When fetching a session you can pass an optional `sessions_action` in the reques
 | `authenticated_clients` | `Vec<AuthenticatedClientScheme>` | Users whose sessions should be affected by the action |
 | `sessions_action`       | `SessionsAction` (optional)      | Action to perform; omit for a plain session lookup    |
 
+With an action, `authenticated_clients` may only name the caller itself (any login scheme) unless the caller is an admin managing the session's realm; otherwise the call is refused with `403`.
+
 ### `SessionsAction` variants
 
 | Variant               | Behaviour                                                                                                                                                                       |
@@ -537,7 +541,7 @@ sequenceDiagram
     SS-->>EA: [session_a, session_b, session_c]
     EA->>SS: delete_sessions([session_b, session_c])
     SS-->>EA: OK
-    EA-->>U: 200 OK  SessionData for session_a
+    EA-->>U: 200 OK  SessionInfo for session_a
     note over U: session_a still valid<br/>session_b, session_c invalidated
 ```
 
@@ -557,7 +561,7 @@ sequenceDiagram
     SS-->>EA: [session_a, session_b, session_c]
     EA->>SS: delete_sessions([session_a, session_b, session_c])
     SS-->>EA: OK
-    EA-->>U: 200 OK  SessionData for session_a (returned before deletion)
+    EA-->>U: 200 OK  SessionInfo for session_a (returned before deletion)
     note over U: all sessions invalidated
 ```
 

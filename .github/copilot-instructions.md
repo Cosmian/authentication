@@ -23,12 +23,12 @@ The HTTP layer is organized as Actix scopes with layered middleware, assembled i
 | `/public` | Unauthenticated (version, JWKS) | None |
 | `/login` | Credential authentication | `ExtractRealm` → `UsernamePasswordAuth` → `JwtAuth` → `EnsureAuth` |
 | `/whoami` | Session introspection | `ExtractRealm` → `CookieAuthSameServer` |
-| `/sessions` | Session validation/revocation API | `ExtractRealm` |
+| `/sessions` | Session lookup/revocation API | `ExtractRealm` → `CookieAuthSameServer`; authorized per caller in the handlers (own sessions, or realms the admin manages) |
 | `/realms` | Realm-scoped credentials and TOTP | `ExtractRealm` → `CookieAuthSameServer` → `AdminAuth` |
 | `/admins` | Admin CRUD | `InjectAdminRealm` → `CookieAuthSameServer` → `AdminAuth` |
 | `/admins/realms` | Realm management (super admin) | `InjectAdminRealm` → `CookieAuthSameServer` → `AdminAuth` |
 
-Middleware runs bottom-to-top in each scope (last `.wrap()` runs first).
+Middleware runs bottom-to-top in each scope (last `.wrap()` runs first). `AdminAuth` only maps sessions opened on realm `_` to an `Admin`; `/auth/approle` and `/auth/kubernetes` add the `require_super_admin` guard.
 
 ## Key Domain Concepts
 
@@ -57,6 +57,7 @@ Two-tier: super admin vs realm admin. Authorization is enforced in endpoint hand
 - `Admin::can_administer_realm(r)` — is super admin OR `realms` contains `r`
 - **Exclusive-ownership rule** — realm admin can only CRUD an `Admin` if *every* realm in that admin's `realms` list is one they administer
 - PUT endpoints run the ownership check twice: once on current state, once on incoming body (prevents privilege escalation)
+- **`_` login rule** — an admin's login is a credential of realm `_`, linked by `Admin.userpass`. Creating, reading, changing or deleting the `_` login `u`, or its 2FA, needs managing every `Admin` whose `userpass` or id is `u` (a super admin when none uses it). 2FA exists only for these logins; TOTP endpoints answer 400 in other realms.
 
 See `server/documentation/docs/authorization_and_administration.md`.
 

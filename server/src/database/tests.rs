@@ -18,11 +18,12 @@
 // The tests will automatically skip PostgreSQL and MySQL if their environment variables aren't set,
 // so SQLite tests will always run without any setup required.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::database::{
-    APP_REALM_ADMIN_USERNAME, AppRole, AppSecretId, AppToken, Database, K8sRole, create_database,
-    hash_password_with_argon2,
+    APP_REALM_ADMIN_USERNAME, AppRole, AppSecretId, AppToken, AuthDbError, Database, K8sRole,
+    create_database, hash_password_with_argon2,
 };
 use crate::models::{ADMIN_REALM, Realm, UserPass};
 use crate::{DatabaseBackend, DatabaseParams, RealmAuthParams};
@@ -131,6 +132,95 @@ fn test_userpass_creation() {
     assert_eq!(userpass.username, "alice");
     assert_ne!(userpass.password_hash, "alice password"); // Password should be hashed
     assert!(!userpass.change_password);
+}
+
+/// Two admins can never share a `userpass` or a `jwt` login; admins without a login are free.
+#[tokio::test]
+async fn test_admin_logins_are_unique() {
+    use crate::tests::helpers::test_admin;
+
+    for (name, db) in get_all_test_databases().await {
+        println!("Testing unique admin logins on {name}");
+        let ids = ["unique_login_a", "unique_login_b", "unique_login_c"];
+        for id in ids {
+            db.delete_admin(id).await.expect("cleanup");
+        }
+
+        let mut first = test_admin(ids[0]);
+        first.userpass = Some("unique_login_user".to_string());
+        first.jwt = Some("unique_login_jwt".to_string());
+        db.create_admin(&first).await.expect("create first");
+
+        let mut same_userpass = test_admin(ids[1]);
+        same_userpass.userpass = first.userpass.clone();
+        let result = db.create_admin(&same_userpass).await;
+        assert!(
+            matches!(result, Err(AuthDbError::Conflict(_))),
+            "{name}: {result:?}"
+        );
+
+        let mut same_jwt = test_admin(ids[1]);
+        same_jwt.jwt = first.jwt.clone();
+        let result = db.create_admin(&same_jwt).await;
+        assert!(
+            matches!(result, Err(AuthDbError::Conflict(_))),
+            "{name}: {result:?}"
+        );
+
+        db.create_admin(&test_admin(ids[1]))
+            .await
+            .expect("no login");
+        db.create_admin(&test_admin(ids[2]))
+            .await
+            .expect("no login");
+
+        let mut stolen = test_admin(ids[1]);
+        stolen.userpass = first.userpass.clone();
+        let result = db.update_admin(&stolen).await;
+        assert!(
+            matches!(result, Err(AuthDbError::Conflict(_))),
+            "{name}: {result:?}"
+        );
+
+        for id in ids {
+            db.delete_admin(id).await.expect("cleanup");
+        }
+    }
+}
+
+/// An admin with every optional field set reads back unchanged, through `get` and `list`.
+#[tokio::test]
+async fn test_admin_round_trip() {
+    use crate::tests::helpers::test_admin;
+
+    for (name, db) in get_all_test_databases().await {
+        let mut admin = test_admin("round_trip_admin");
+        db.delete_admin(&admin.id).await.expect("cleanup");
+        admin.realms = vec![ADMIN_REALM.to_string()];
+        admin.userpass = Some("round_trip_user".to_string());
+        admin.jwt = Some("round_trip_jwt".to_string());
+        admin.digital_credentials = Some(HashMap::from([(
+            "issuer".to_string(),
+            "https://issuer.example".to_string(),
+        )]));
+        db.create_admin(&admin).await.expect("create");
+
+        let listed = db.list_admins().await.expect("list");
+        for read in [
+            db.get_admin(&admin.id).await.expect("get"),
+            listed.into_iter().find(|a| a.id == admin.id),
+        ] {
+            let read = read.unwrap_or_else(|| panic!("{name}: admin not found"));
+            assert_eq!(read.realms, admin.realms, "{name}");
+            assert_eq!(read.userpass, admin.userpass, "{name}");
+            assert_eq!(read.jwt, admin.jwt, "{name}");
+            assert_eq!(
+                read.digital_credentials, admin.digital_credentials,
+                "{name}"
+            );
+        }
+        db.delete_admin(&admin.id).await.expect("cleanup");
+    }
 }
 
 #[tokio::test]

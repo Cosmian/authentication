@@ -101,8 +101,11 @@ AuthClientScheme::ClientCertificate {
 
 The most common operation: your API server receives a request with an `_ea_` cookie and needs to check whether the session is valid.
 
+The session endpoints answer a caller about its **own** sessions, so the call must carry the *user's* cookie, and the `session_id` is the SHA-256 (hex) of that cookie's value:
+
 ```rust
-use auth_client::{AuthClient, AuthClientScheme, SessionData};
+use auth_client::{AuthClient, AuthClientScheme, SessionInfo};
+use sha2::{Digest, Sha256};
 
 // Build a shared client at application startup
 let auth = AuthClient::new(
@@ -111,10 +114,19 @@ let auth = AuthClient::new(
     AuthClientScheme::None,
 )?;
 
-// Later, in a request handler — extract session_id from the _ea_ cookie
-let session_id = extract_session_id_from_cookie(&request);
+// Later, in a request handler — forward the user's _ea_ cookie
+let cookie_value = extract_ea_cookie_value(&request);
+let session_id = hex::encode(Sha256::digest(cookie_value.as_bytes()));
 
-let session: Option<SessionData> = auth.get_session(&session_id).await?;
+let response = auth
+    .get_raw_with_header(
+        &format!("/sessions/{session_id}"),
+        "Cookie",
+        &format!("_ea_={cookie_value}"),
+    )
+    .await?;
+// 401 when the cookie is not a valid session any more
+let session: Option<SessionInfo> = response.json().await?;
 
 match session {
     None => {
@@ -128,26 +140,27 @@ match session {
 }
 ```
 
-`get_session` maps to `GET /sessions/{session_id}`. It returns `None` — not an error — when the session is not found.
+If the client is logged in itself (an admin tool, for instance), `auth.get_session(&session_id)` maps to the same `GET /sessions/{session_id}` using the client's own cookie: it returns `None` — not an error — when the session is not found or not one the caller may see.
 
-### `SessionData` fields
+### `SessionInfo` fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `session_id` | `String` | Unique session identifier (UUID) |
+| `session_id` | `String` | SHA-256 (hex) of the `_ea_` cookie value |
 | `realm_id` | `String` | Realm the session belongs to |
 | `username` | `String` | Authenticated client identity |
 | `auth_scheme` | `String` | `"up"` / `"jwt"` / `"cc"` / `"f2"` / `"dc"` / `"sa"` |
-| `cookie_string` | `String` | Opaque value from the `_ea_` cookie |
 | `max_age_seconds` | `i64` | Maximum absolute session lifetime |
 | `max_stale_age_seconds` | `i64` | Idle timeout; any access resets this timer |
 | `created_at` | `i64` | Unix timestamp of session creation |
+
+The cookie value is the session credential and is never part of the response.
 
 ---
 
 ## Session Actions — Log Out Everywhere
 
-You can validate a session and perform a bulk logout in a single round-trip. This implements "keep this session, revoke all others" and "log out from every device" patterns.
+You can validate a session and perform a bulk logout in a single round-trip. This implements "keep this session, revoke all others" and "log out from every device" patterns. A non-admin caller can only name clients with its own username; admins of the session's realm can name any.
 
 ```rust
 use auth_client::{
@@ -195,13 +208,13 @@ auth.delete_sessions(&session_ids).await?;
 ### Explicit logout
 
 ```rust
-// Delete specific sessions
+// Delete specific sessions (your own, or those of a realm you administer)
 auth.delete_sessions(&[session_id.to_string()]).await?;
 
-// Delete all sessions in a realm
+// Delete all sessions in a realm (admins of that realm)
 auth.delete_sessions_for_realm("my-service").await?;
 
-// Purge all globally expired sessions (maintenance)
+// Purge all globally expired sessions (maintenance, super admins only)
 auth.delete_expired_sessions().await?;
 ```
 
@@ -739,25 +752,38 @@ A complete pattern for an Actix-web API server that validates sessions via the A
 ```rust
 use std::sync::Arc;
 use actix_web::{web, HttpRequest, HttpResponse, middleware};
-use auth_client::{AuthClient, AuthClientScheme, AuthError, SessionData};
+use auth_client::{AuthClient, AuthClientScheme, SessionInfo};
+use sha2::{Digest, Sha256};
 
 /// Shared application state containing the auth client.
 pub struct AppState {
     pub auth: Arc<AuthClient>,
 }
 
-/// Extract and validate the _ea_ session cookie.
+/// Extract the _ea_ session cookie and validate it with the user's own cookie.
 async fn validate_session(
     state: &AppState,
     req: &HttpRequest,
-) -> Result<SessionData, HttpResponse> {
+) -> Result<SessionInfo, HttpResponse> {
     let cookie = req
         .cookie("_ea_")
         .ok_or_else(|| HttpResponse::Unauthorized().body("Missing _ea_ cookie"))?;
+    let session_id = hex::encode(Sha256::digest(cookie.value().as_bytes()));
 
-    state
+    let response = state
         .auth
-        .get_session(cookie.value())
+        .get_raw_with_header(
+            &format!("/sessions/{session_id}"),
+            "Cookie",
+            &format!("_ea_={}", cookie.value()),
+        )
+        .await
+        .map_err(|e| HttpResponse::InternalServerError().body(e.to_string()))?;
+    if !response.status().is_success() {
+        return Err(HttpResponse::Unauthorized().body("Session not found or expired"));
+    }
+    response
+        .json::<Option<SessionInfo>>()
         .await
         .map_err(|e| HttpResponse::InternalServerError().body(e.to_string()))?
         .ok_or_else(|| HttpResponse::Unauthorized().body("Session not found or expired"))

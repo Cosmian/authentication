@@ -65,7 +65,7 @@ sequenceDiagram
 
 Once a session has been validated on the Authentication Verifier, the API can use that session to query all active sessions belonging to the same client identity — regardless of which authentication scheme was used to create them. This enables scenarios such as enforcing a single active session, detecting concurrent logins from unexpected locations, or explicitly logging a client out from all other devices and methods.
 
-The `POST /sessions/realms/{realm}/clients` endpoint accepts a list of `AuthenticatedClientScheme` entries — each combining a `username` with one of the supported authentication schemes (`up`, `jwt`, `cc`, `f2`, `dc`). It returns the matching session IDs across all those schemes. The API can then call `DELETE /sessions` with any subset of those IDs to selectively revoke them.
+The `POST /sessions/realms/{realm}/clients` endpoint accepts a list of `AuthenticatedClientScheme` entries — each combining a `username` with one of the supported authentication schemes (`up`, `jwt`, `cc`, `f2`, `dc`). It returns the matching session IDs across all those schemes. The API can then call `DELETE /sessions` with any subset of those IDs to selectively revoke them. These calls carry the *user's* `_ea_` cookie: a caller only reaches its own sessions, so acting on another user's sessions needs an admin session on `_` for that user's realm.
 
 ```mermaid
 sequenceDiagram

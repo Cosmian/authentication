@@ -180,10 +180,6 @@ pub trait Database: Send + Sync {
     /// Delete a user password entry by realm and username
     async fn delete_userpass(&self, realm: &str, username: &str) -> AuthDbResult<()>;
 
-    /// Delete all user password entries for a username across all realms.
-    /// Used to cascade-delete credentials when an Admin record is deleted.
-    async fn delete_userpass_by_username(&self, username: &str) -> AuthDbResult<()>;
-
     /// List all user password entries for a specific realm
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>>;
 
