@@ -86,12 +86,27 @@ async fn test_realm_user_cannot_use_sessions_of_others() -> AuthResult<()> {
     );
 
     let deleted = joe.delete_sessions(std::slice::from_ref(&admin_sid)).await;
-    assert!(is_http(&deleted, 403), "{deleted:?}");
+    assert!(deleted.is_ok(), "looks like a missing session: {deleted:?}");
     let realm_wide = joe.delete_sessions_for_realm(ADMIN_REALM).await;
     assert!(realm_wide.is_err(), "realm-wide revoke must be refused");
     let expired = joe.delete_expired_sessions().await;
     assert!(expired.is_err(), "purging expired sessions must be refused");
 
+    super_admin.whoami(ADMIN_REALM).await?;
+    ctx.stop_server().await
+}
+
+/// A batch mixing the caller's own sessions with someone else's deletes only the caller's.
+#[actix_web::test]
+async fn test_mixed_session_batch_deletes_only_own_sessions() -> AuthResult<()> {
+    let ctx = start_default_test_server().await?;
+    let (super_admin, admin_sid) = login_super_admin(&ctx).await?;
+    let (joe, joe_sid) = login_realm_user(&ctx, "acme", "joe").await?;
+
+    joe.delete_sessions(&[admin_sid, joe_sid, "missing".to_string()])
+        .await?;
+
+    assert!(joe.whoami("acme").await.is_err(), "own session deleted");
     super_admin.whoami(ADMIN_REALM).await?;
     ctx.stop_server().await
 }
@@ -215,7 +230,7 @@ async fn test_sessions_of_claimed_realm_belong_to_its_admins() -> AuthResult<()>
     let deleted = super_admin
         .delete_sessions(std::slice::from_ref(&joe_sid))
         .await;
-    assert!(is_http(&deleted, 403), "{deleted:?}");
+    assert!(deleted.is_ok(), "{deleted:?}");
     assert!(super_admin.delete_sessions_for_realm("acme").await.is_err());
     joe.whoami("acme").await?;
 
@@ -244,7 +259,7 @@ async fn test_realm_admin_sessions_are_limited_to_its_realms() -> AuthResult<()>
         .await;
     assert!(is_http(&listed, 403), "{listed:?}");
     assert!(realm_admin.delete_sessions_for_realm("beta").await.is_err());
-    assert!(realm_admin.delete_sessions(&[bob_sid]).await.is_err());
+    realm_admin.delete_sessions(&[bob_sid]).await?;
     assert!(realm_admin.delete_expired_sessions().await.is_err());
     bob.whoami("beta").await?;
     ctx.stop_server().await

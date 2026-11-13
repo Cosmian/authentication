@@ -11,7 +11,10 @@
 //! A session the caller may not access looks like a missing one. The stored cookie value is a live
 //! credential and is never returned.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::{
     AuthError, AuthResult, AuthenticatedClientScheme,
@@ -229,7 +232,8 @@ pub async fn get_sessions_for_clients(
     }))
 }
 
-/// Delete sessions by session IDs. Nothing is deleted if one of them is not the caller's to manage.
+/// Delete sessions by session IDs. Sessions the caller may not access are skipped, like missing
+/// ones.
 #[delete("")]
 pub async fn delete_sessions(
     req: HttpRequest,
@@ -239,19 +243,27 @@ pub async fn delete_sessions(
 ) -> Result<HttpResponse, AuthError> {
     let payload = payload.into_inner();
     let caller = Caller::from_request(&req, &database).await?;
+    let mut managed_realms: HashMap<String, bool> = HashMap::new();
+    let mut deletable: Vec<&str> = Vec::new();
     for session_id in &payload.session_ids {
-        if let Some(session) = session_store.get_session(session_id).await?
-            && !caller.may_access(&session, &database).await?
-        {
-            return Err(AuthError::Forbidden(
-                "You may only delete your own sessions, or those of a realm you administer"
-                    .to_string(),
-            ));
+        let Some(session) = session_store.get_session(session_id).await? else {
+            continue;
+        };
+        let allowed = if caller.owns(&session) {
+            true
+        } else if let Some(&managed) = managed_realms.get(&session.realm_id) {
+            managed
+        } else {
+            let managed = caller.manages_realm(&session.realm_id, &database).await?;
+            managed_realms.insert(session.realm_id.clone(), managed);
+            managed
+        };
+        if allowed {
+            deletable.push(session_id);
         }
     }
-    let session_id_refs: Vec<&str> = payload.session_ids.iter().map(String::as_str).collect();
 
-    session_store.delete_sessions(&session_id_refs).await?;
+    session_store.delete_sessions(&deletable).await?;
 
     Ok(HttpResponse::NoContent().finish())
 }
