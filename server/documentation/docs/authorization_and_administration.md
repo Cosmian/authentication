@@ -204,7 +204,7 @@ All `/sessions` calls need a valid session cookie, but not an admin one: a calle
 | `DELETE /sessions/realms/{realm}`           | ❌                | ✅ its realms                   | ✅ realms without an admin of their own, and `_` |
 | `DELETE /sessions/expired`                  | ❌                | ❌                              | ✅                                              |
 
-The realm-claim rule applies as everywhere else: once a realm has its own admin, the super admin no longer reaches its sessions. A session the caller may not access is reported as not found, and a `DELETE` naming one is refused as a whole. Session responses never include the cookie value, which is the session credential. Sessions cannot be created through the API.
+The realm-claim rule applies as everywhere else: once a realm has its own admin, the super admin no longer reaches its sessions. A session the caller may not access is reported as not found, and a `DELETE` naming one skips it like a missing session. Session responses never include the cookie value, which is the session credential. Sessions cannot be created through the API.
 
 ### Machine Authentication
 
@@ -362,7 +362,7 @@ The same rule decides what `GET /realms/_/userpass` and `GET /admins/userpass` l
 ### Linking an admin to a login
 
 - Creating a `_` credential links it to the admin record of the same id, unless that record already has a login. A link is never overwritten.
-- `POST`/`PUT /admins` may set a `userpass` only if the caller manages every other record using that login (a super admin when none does: it adopts the existing credential), and only if no other record is linked to it (`409`). A `jwt` subject already used by another admin is refused the same way (`403` if the caller does not manage that admin, else `409`): a shared login would lock its admins out.
+- `POST`/`PUT /admins` may set a `userpass` only if the caller manages every other record using that login (a super admin when none does: it adopts the existing credential), and only if no other record is linked to it (`409`). A `jwt`, `fido2` or `client_certificate` already used by another admin is refused the same way (`403` if the caller does not manage that admin, else `409`): a shared login would lock its admins out.
 - Deleting a `_` credential clears the link of the records that used it.
 
 ### Deleting an admin

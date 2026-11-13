@@ -319,7 +319,8 @@ components:
           nullable: true
           description: |
             JWT subject the admin logs in with. Another admin already using it makes the request
-            fail: 403 if the caller does not manage that admin, else 409.
+            fail: 403 if the caller does not manage that admin, else 409. The same applies to
+            `fido2` and `client_certificate`.
           example:
         fido2:
           type: string
@@ -1471,8 +1472,8 @@ paths:
       tags: [Sessions]
       summary: Delete sessions by ID (explicit logout)
       description: |
-        Each session must be the caller's own, or belong to a realm the caller administers;
-        otherwise the whole request is refused and nothing is deleted. Unknown IDs are ignored.
+        Deletes the listed sessions that are the caller's own or belong to a realm the caller
+        administers. Other IDs, unknown or not the caller's to delete, are ignored alike.
       operationId: deleteSessions
       security:
         - cookieAuth: []
@@ -1487,8 +1488,6 @@ paths:
           $ref: '#/components/responses/NoContent'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
 
   /sessions/expired:
     delete:
@@ -1848,8 +1847,8 @@ paths:
         claimed, only that realm's own admin(s) may add more. An admin with an
         empty realms list (unaffiliated) may only be created by a super admin.
         A `userpass` is accepted only for a login the requester manages (403) and that no other
-        admin is linked to (409); a `jwt` subject already used by another admin is refused the
-        same way. 2FA fields in the body are ignored.
+        admin is linked to (409); a `jwt`, `fido2` or `client_certificate` already used by another
+        admin is refused the same way. 2FA fields in the body are ignored.
       operationId: createAdmin
       security:
         - cookieAuth: []
@@ -1939,8 +1938,9 @@ paths:
         Both the current and the incoming realms lists are subject to the exclusive-ownership
         rule (prevents privilege escalation via a crafted body). This applies to super admins
         too: for a non-empty realms list, a super admin qualifies only while every realm in it
-        is unclaimed — see `authorization_and_administration.md`. A changed `userpass` or `jwt`
-        follows the same rule as on create. 2FA fields in the body are ignored; the stored 2FA is kept.
+        is unclaimed — see `authorization_and_administration.md`. A changed `userpass`, `jwt`,
+        `fido2` or `client_certificate` follows the same rule as on create. 2FA fields in the body
+        are ignored; the stored 2FA is kept.
       operationId: updateAdmin
       parameters:
         - $ref: '#/components/parameters/adminId'

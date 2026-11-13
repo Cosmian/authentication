@@ -489,7 +489,7 @@ All of them need a valid `_ea_` cookie. A caller reaches its own sessions; admin
 | `GET`    | `/sessions/{id}`                   | Retrieve `SessionInfo` by session ID (`null` when not found)                  | Owner, admins managing the realm               |
 | `POST`   | `/sessions/{id}`                   | Retrieve `SessionInfo` and optionally apply a `SessionsAction` (404 when not found) | Owner, admins managing the realm         |
 | `POST`   | `/sessions/realms/{realm}/clients` | Get session IDs for a set of clients                                          | Owner (own username only), admins managing the realm |
-| `DELETE` | `/sessions`                        | Delete sessions by ID list (logout); refused as a whole (403) if one is not the caller's | Owner, admins managing the realm    |
+| `DELETE` | `/sessions`                        | Delete sessions by ID list (logout); IDs the caller may not reach are ignored like unknown ones | Owner, admins managing the realm |
 | `DELETE` | `/sessions/expired`                | Purge all expired sessions                                                    | Super admins                                   |
 | `DELETE` | `/sessions/realms/{realm}`         | Revoke all sessions for a realm                                               | Admins managing the realm                      |
 
