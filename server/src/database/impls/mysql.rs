@@ -61,7 +61,16 @@ impl MySqlDatabase {
                 );
                 continue;
             }
-            sqlx::query(create_index_sql).execute(&self.pool).await?;
+            if let Err(e) = sqlx::query(create_index_sql).execute(&self.pool).await {
+                // ER_DUP_KEYNAME: another instance created the index since the check above.
+                let duplicate_index = e
+                    .as_database_error()
+                    .and_then(|d| d.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
+                    .is_some_and(|d| d.number() == 1061);
+                if !duplicate_index {
+                    return Err(e.into());
+                }
+            }
         }
         Ok(())
     }
