@@ -3,7 +3,7 @@
 The Authentication Verifier exposes an HTTP authentication API compatible with SPIRE's `UpstreamAuthority` and `KeyManager` plugins, under the `/auth/` prefix. This lets SPIRE — and any other tool that speaks the same protocol — authenticate against the Authentication Verifier without requiring a separate secrets cluster.
 
 !!! note "Scope of this document"
-    This page covers the **Authentication Verifier side only**: AppRole login, Kubernetes service-account login, and token self-service. For the KMS-side crypto engines (`/v1/transit/*`, `/v1/{pki_mount}/*`) and the full end-to-end SPIRE flow, see the [KMS SPIRE/SPIFFE integration guide](../../documentation/docs/integrations/spire_spiffe.md).
+    This page covers the **Authentication Verifier side only**: AppRole login, Kubernetes service-account login, and token self-service. For the KMS-side crypto engines (`/v1/transit/*`, `/v1/{pki_mount}/*`) and the full end-to-end SPIRE flow, see the [KMS SPIRE/SPIFFE integration guide](../key_management_system/integrations/spire_spiffe.md).
 
 ## Contents
 
@@ -444,7 +444,7 @@ Raw token values and raw secret IDs are never written to the database — only t
 
 The Authentication Verifier's `/auth/token/lookup-self` endpoint is the only point of contact between the Authentication Verifier and the KMS. The KMS calls it to validate every `X-Vault-Token` presented to its `/v1/transit/*` and `/v1/<pki_mount>/*` scopes.
 
-Configure the KMS to point at the Authentication Verifier with these parameters (see [KMS SPIRE/SPIFFE integration guide](../../documentation/docs/integrations/spire_spiffe.md#configuration-reference)):
+Configure the KMS to point at the Authentication Verifier with these parameters (see [KMS SPIRE/SPIFFE integration guide](../key_management_system/integrations/spire_spiffe.md#configuration-reference)):
 
 ```toml
 [vault]
@@ -473,6 +473,6 @@ vault_token_cache_ttl_secs    = 30
 
 ## See also
 
-- [KMS SPIRE/SPIFFE integration guide](../../documentation/docs/integrations/spire_spiffe.md) — full end-to-end flow, KMS configuration, CLI reference, and troubleshooting.
+- [KMS SPIRE/SPIFFE integration guide](../key_management_system/integrations/spire_spiffe.md) — full end-to-end flow, KMS configuration, CLI reference, and troubleshooting.
 - [Authorization and Administration](authorization_and_administration.md) — the `AdminAuth` middleware reused for AppRole/Kubernetes role administration.
 - `ckms` AppRole provisioning commands — CLI wrapper for AppRole provisioning against this API.
