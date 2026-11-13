@@ -100,6 +100,22 @@ describe("AdminFormDrawer — submit button state", () => {
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
 
+    it("create mode: a password is required even with TOTP, which protects the password login", async () => {
+        const fetchSpy = vi.spyOn(globalThis, "fetch");
+        await act(async () => {
+            render(<AdminFormDrawer open={true} admin={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
+        });
+        await fillRequiredFields();
+        await act(async () => {
+            fireEvent.click(screen.getByLabelText(/Enable TOTP/));
+        });
+        await act(async () => {
+            fireEvent.click(getSubmitButton("Create"));
+        });
+        expect(await screen.findByText("Password is required")).toBeInTheDocument();
+        expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
     // ── Edit mode ─────────────────────────────────────────────────────────────
 
     it("edit mode: button is disabled initially (form matches original)", async () => {

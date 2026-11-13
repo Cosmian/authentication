@@ -152,7 +152,7 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             }
             onSuccess();
 
-            // Open TOTP setup modal after drawer closes
+            // Open TOTP setup for the login just created, named like the admin
             if (!isEdit && values.enable_totp) {
                 if (onTotpSetup) {
                     onTotpSetup(adminId);
@@ -200,15 +200,10 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                         name="password"
                         label={isEdit ? "New Password" : "Password"}
                         rules={[
-                            ({ getFieldValue }) => ({
-                                validator(_, value) {
-                                    // Required in create mode (unless TOTP is enabled)
-                                    if (!isEdit && !value && !getFieldValue("enable_totp")) {
-                                        return Promise.reject(new Error("Password is required (or enable TOTP)"));
-                                    }
-                                    return Promise.resolve();
-                                },
-                            }),
+                            {
+                                required: !isEdit,
+                                message: "Password is required",
+                            },
                         ]}
                     >
                         <Input.Password placeholder={isEdit ? "Leave empty to keep current" : "Admin login password"} />

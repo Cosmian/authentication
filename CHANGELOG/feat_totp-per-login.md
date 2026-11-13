@@ -3,7 +3,7 @@
 - **Breaking: 2FA is stored on the login.** The TOTP secret moves from the admin record to the username/password login of the admin realm `_` (`userpass.totp_secret`), so it follows the login: login checks it directly, and deleting a login deletes its 2FA. At startup the server moves existing admin 2FA to the admin's `_` login and drops the `admin.totp_*` columns; JWT admins lose their 2FA (with a warning) and rely on their identity provider's MFA.
 - **Breaking: `Admin` no longer has `totp_secret` and `totp_auth_url`.** `totp_enabled` stays, read-only: the server computes it from the admin's `_` login and ignores it in request bodies.
 - **Breaking: the server refuses to start when admins share a login.** Startup now fails, naming the shared `userpass` or `jwt` values, instead of warning; the unique indexes on those columns therefore always exist.
-- The admin UI shows the TOTP action only for admins with a `_` username/password login, the only ones that can have 2FA.
+- The admin UI shows the TOTP action only for admins with a `_` username/password login, the only ones that can have 2FA, and the create form always asks for a password (enabling TOTP no longer replaces it).
 
 ## Refactor
 
