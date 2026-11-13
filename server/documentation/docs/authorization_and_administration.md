@@ -362,7 +362,7 @@ The same rule decides what `GET /realms/_/userpass` and `GET /admins/userpass` l
 ### Linking an admin to a login
 
 - Creating a `_` credential links it to the admin record of the same id, unless that record already has a login. A link is never overwritten.
-- `POST`/`PUT /admins` may set a `userpass` only if the caller manages every other record using that login (a super admin when none does: it adopts the existing credential), and only if no other record is linked to it (`409`).
+- `POST`/`PUT /admins` may set a `userpass` only if the caller manages every other record using that login (a super admin when none does: it adopts the existing credential), and only if no other record is linked to it (`409`). A `jwt` subject already used by another admin is refused the same way (`403` if the caller does not manage that admin, else `409`): a shared login would lock its admins out.
 - Deleting a `_` credential clears the link of the records that used it.
 
 ### Deleting an admin

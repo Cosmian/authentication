@@ -317,6 +317,9 @@ components:
         jwt:
           type: string
           nullable: true
+          description: |
+            JWT subject the admin logs in with. Another admin already using it makes the request
+            fail: 403 if the caller does not manage that admin, else 409.
           example:
         fido2:
           type: string
@@ -1845,7 +1848,8 @@ paths:
         claimed, only that realm's own admin(s) may add more. An admin with an
         empty realms list (unaffiliated) may only be created by a super admin.
         A `userpass` is accepted only for a login the requester manages (403) and that no other
-        admin is linked to (409). 2FA fields in the body are ignored.
+        admin is linked to (409); a `jwt` subject already used by another admin is refused the
+        same way. 2FA fields in the body are ignored.
       operationId: createAdmin
       security:
         - cookieAuth: []
@@ -1935,8 +1939,8 @@ paths:
         Both the current and the incoming realms lists are subject to the exclusive-ownership
         rule (prevents privilege escalation via a crafted body). This applies to super admins
         too: for a non-empty realms list, a super admin qualifies only while every realm in it
-        is unclaimed — see `authorization_and_administration.md`. A changed `userpass` follows
-        the same rule as on create. 2FA fields in the body are ignored; the stored 2FA is kept.
+        is unclaimed — see `authorization_and_administration.md`. A changed `userpass` or `jwt`
+        follows the same rule as on create. 2FA fields in the body are ignored; the stored 2FA is kept.
       operationId: updateAdmin
       parameters:
         - $ref: '#/components/parameters/adminId'

@@ -761,7 +761,7 @@ List all username/password credentials across every realm. Super admin only.
 
 Create a new `Admin` record. Super admins may create any admin. Realm admins may create an admin only if every realm in the new admin's `realms` list is one they administer.
 
-A `userpass` may only name a login the caller manages (the [`_` login rule](authorization_and_administration.md#the-_-login-rule): every admin already using it, or a super admin when none does) and that no other admin is linked to (`409`). Anything in `totp_*` is ignored: 2FA is enabled through the TOTP endpoints only.
+A `userpass` may only name a login the caller manages (the [`_` login rule](authorization_and_administration.md#the-_-login-rule): every admin already using it, or a super admin when none does) and that no other admin is linked to (`409`). A `jwt` subject already used by another admin is refused: `403` if the caller does not manage that admin, else `409`. Anything in `totp_*` is ignored: 2FA is enabled through the TOTP endpoints only.
 
 #### Request body
 

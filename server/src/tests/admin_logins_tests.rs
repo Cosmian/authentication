@@ -262,6 +262,43 @@ async fn test_admin_login_links_are_validated() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
+/// A JWT subject can be used by one admin only: copying another admin's subject would lock that
+/// admin out (its login would match two admins).
+#[actix_web::test]
+async fn test_admin_jwt_subjects_are_validated() -> AuthResult<()> {
+    let ctx = start_default_test_server().await?;
+    let alice = create_and_authenticate_realm_admin(&ctx, "acme").await?;
+    let super_admin = authenticate_as_admin(&ctx).await?;
+    let mut victim = test_admin("jwt_victim");
+    victim.jwt = Some("victim-subject".to_string());
+    super_admin.create_admin_as_super_admin(&victim).await?;
+
+    let mut copy = test_admin("jwt_copy");
+    copy.realms = vec!["acme".to_string()];
+    copy.jwt = victim.jwt.clone();
+    let created = alice.create_admin_as_super_admin(&copy).await;
+    assert!(is_http(&created, 403), "{created:?}");
+    let mut mine = alice.get_admin_as_super_admin(REALM_ADMIN_RECORD).await?;
+    mine.jwt = victim.jwt.clone();
+    let updated = alice
+        .update_admin_as_super_admin(REALM_ADMIN_RECORD, &mine)
+        .await;
+    assert!(is_http(&updated, 403), "{updated:?}");
+
+    copy.realms = Vec::new();
+    let duplicate = super_admin.create_admin_as_super_admin(&copy).await;
+    assert!(is_http(&duplicate, 409), "{duplicate:?}");
+
+    let users_of_subject = super_admin
+        .list_admins_as_super_admin()
+        .await?
+        .into_iter()
+        .filter(|a| a.jwt == victim.jwt)
+        .count();
+    assert_eq!(users_of_subject, 1);
+    ctx.stop_server().await
+}
+
 /// Two admin records sharing a login, possible in a database created before logins were unique,
 /// make the admin lookup refuse both; starting on such a database skips the unique index.
 #[actix_web::test]
