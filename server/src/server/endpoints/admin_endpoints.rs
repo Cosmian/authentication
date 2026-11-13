@@ -74,33 +74,52 @@ async fn validate_login_link(
     Ok(())
 }
 
-/// Checks that no other admin already logs in with the JWT subject `jwt`: `403` if the requester
-/// does not manage all of them, else `409`. A shared subject would lock its admins out.
-async fn validate_jwt_link(
+/// Checks the logins of `admin` other than `userpass` (JWT subject, FIDO2, client certificate) that
+/// are new compared to `previous`: no other admin may use them already, `403` if the requester
+/// does not manage all those admins, else `409`. A shared login would lock its admins out.
+async fn validate_other_logins(
     requester: &Admin,
-    admin_id: &str,
-    jwt: &str,
+    admin: &Admin,
+    previous: Option<&Admin>,
     database: &Data<Arc<dyn Database>>,
 ) -> Result<(), AuthError> {
-    let others: Vec<Admin> = database
-        .find_admins_by_auth_scheme(AuthScheme::Jwt, jwt)
-        .await?
-        .into_iter()
-        .filter(|a| a.id != admin_id)
-        .collect();
-    if others.is_empty() {
-        return Ok(());
-    }
-    for other in &others {
-        if !can_manage_admin_realms(requester, &other.realms, database).await? {
-            return Err(AuthError::Forbidden(format!(
-                "You may only use the JWT subject '{jwt}' if you manage every admin using it"
-            )));
+    let logins = [
+        (AuthScheme::Jwt, &admin.jwt, previous.map(|p| &p.jwt)),
+        (AuthScheme::Fido2, &admin.fido2, previous.map(|p| &p.fido2)),
+        (
+            AuthScheme::ClientCertificate,
+            &admin.client_certificate,
+            previous.map(|p| &p.client_certificate),
+        ),
+    ];
+    for (scheme, login, previous_login) in logins {
+        let Some(login) = login.as_deref() else {
+            continue;
+        };
+        if previous_login.and_then(Option::as_deref) == Some(login) {
+            continue;
         }
+        let others: Vec<Admin> = database
+            .find_admins_by_auth_scheme(scheme, login)
+            .await?
+            .into_iter()
+            .filter(|a| a.id != admin.id)
+            .collect();
+        if others.is_empty() {
+            continue;
+        }
+        for other in &others {
+            if !can_manage_admin_realms(requester, &other.realms, database).await? {
+                return Err(AuthError::Forbidden(format!(
+                    "You may only use this {scheme:?} login if you manage every admin using it"
+                )));
+            }
+        }
+        return Err(AuthError::Conflict(format!(
+            "This {scheme:?} login is already used by another admin"
+        )));
     }
-    Err(AuthError::Conflict(format!(
-        "The JWT subject '{jwt}' is already used by another admin"
-    )))
+    Ok(())
 }
 
 /// Create a new admin.
@@ -112,8 +131,8 @@ async fn validate_jwt_link(
 /// add more). An admin with an empty `realms` list may only be created by a
 /// super admin.
 ///
-/// `userpass`, the `_` login of the admin, is checked by [`validate_login_link`], and `jwt` by
-/// [`validate_jwt_link`].
+/// `userpass`, the `_` login of the admin, is checked by [`validate_login_link`], and its other
+/// logins by [`validate_other_logins`].
 #[post("")]
 pub async fn create_admin(
     req: HttpRequest,
@@ -134,9 +153,7 @@ pub async fn create_admin(
     if let Some(userpass) = admin.userpass.as_deref() {
         validate_login_link(&requester, &admin.id, userpass, &database).await?;
     }
-    if let Some(jwt) = admin.jwt.as_deref() {
-        validate_jwt_link(&requester, &admin.id, jwt, &database).await?;
-    }
+    validate_other_logins(&requester, &admin, None, &database).await?;
 
     database.create_admin(&admin).await?;
     info!(
@@ -188,8 +205,8 @@ pub async fn get_admin(
 /// The `id` path parameter is authoritative — the `id` field in the JSON body
 /// is overwritten to keep them consistent.
 ///
-/// A changed `userpass` is checked by [`validate_login_link`], and a changed `jwt` by
-/// [`validate_jwt_link`].
+/// A changed `userpass` is checked by [`validate_login_link`], and changed other logins by
+/// [`validate_other_logins`].
 #[put("/{admin_id}")]
 pub async fn update_admin(
     req: HttpRequest,
@@ -234,13 +251,9 @@ pub async fn update_admin(
     {
         validate_login_link(&requester, &admin_id, userpass, &database).await?;
     }
-    if admin.jwt != target.jwt
-        && let Some(jwt) = admin.jwt.as_deref()
-    {
-        validate_jwt_link(&requester, &admin_id, jwt, &database).await?;
-    }
 
     admin.id = admin_id;
+    validate_other_logins(&requester, &admin, Some(&target), &database).await?;
     set_totp_from(&mut admin, Some(&target));
     database.update_admin(&admin).await?;
 

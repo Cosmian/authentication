@@ -271,7 +271,14 @@ async fn test_admin_jwt_subjects_are_validated() -> AuthResult<()> {
     let super_admin = authenticate_as_admin(&ctx).await?;
     let mut victim = test_admin("jwt_victim");
     victim.jwt = Some("victim-subject".to_string());
+    victim.client_certificate = Some("victim-certificate".to_string());
     super_admin.create_admin_as_super_admin(&victim).await?;
+
+    let mut copied_certificate = test_admin("certificate_copy");
+    copied_certificate.realms = vec!["acme".to_string()];
+    copied_certificate.client_certificate = victim.client_certificate.clone();
+    let created = alice.create_admin_as_super_admin(&copied_certificate).await;
+    assert!(is_http(&created, 403), "{created:?}");
 
     let mut copy = test_admin("jwt_copy");
     copy.realms = vec!["acme".to_string()];
