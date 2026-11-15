@@ -2,7 +2,7 @@
 //!
 //! | Method | Path | Description |
 //! |--------|------|-------------|
-//! | POST | `/auth/kubernetes/login` | Login with K8s service-account JWT → returns token |
+//! | POST | `/v1/auth/kubernetes/login` | Login with K8s service-account JWT → returns token |
 //!
 //! ## Admin CRUD (requires CookieAuthSameServer + AdminAuth)
 //!
@@ -49,7 +49,7 @@ const K8S_LOGIN_GENERIC_ERR: &str = "invalid Kubernetes login credentials";
 
 /// Login with a Kubernetes service-account JWT and receive an app token.
 ///
-/// `POST /auth/kubernetes/login`
+/// `POST /v1/auth/kubernetes/login`
 #[post("")]
 pub async fn k8s_login(
     body: Bytes,

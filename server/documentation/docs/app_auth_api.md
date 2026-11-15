@@ -59,19 +59,20 @@ Token self-service follows a simple HTTP self-service protocol for token introsp
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| `POST`/`PUT` | `/auth/approle/login` | none | Exchange `role_id` + `secret_id` for an app token |
+| `POST`/`PUT` | `/v1/auth/approle/login` | none | Exchange `role_id` + `secret_id` for an app token |
 | `POST` | `/auth/approle/role/{name}` | admin session | Create or update an AppRole role |
 | `GET` | `/auth/approle/role/{name}/role-id` | admin session | Read the stable `role_id` |
 | `POST` | `/auth/approle/role/{name}/secret-id` | admin session | Generate a new `secret_id` |
 | `POST` | `/auth/approle/role/{name}/secret-id/destroy` | admin session | Invalidate a `secret_id` by accessor |
 | `DELETE` | `/auth/approle/role/{name}` | admin session | Delete a role |
 | `GET` | `/auth/approle/role?list=true` | admin session | List all roles |
-| `POST` | `/auth/kubernetes/login` | none | Exchange a Kubernetes service-account JWT for an app token |
+| `POST`/`PUT` | `/v1/auth/userpass/login/{username}` | none | Exchange a userpass password (realm `vault_userpass_realm`) for an app token |
+| `POST` | `/v1/auth/kubernetes/login` | none | Exchange a Kubernetes service-account JWT for an app token |
 | `POST` | `/auth/kubernetes/role/{name}` | admin session | Create or update a Kubernetes role |
 | `DELETE` | `/auth/kubernetes/role/{name}` | admin session | Delete a Kubernetes role |
-| `GET` | `/auth/token/lookup-self` | `X-Vault-Token` | Validate a token and return its metadata |
-| `POST` | `/auth/token/renew-self` | `X-Vault-Token` | Extend a renewable token's TTL |
-| `POST` | `/auth/token/revoke-self` | `X-Vault-Token` | Immediately invalidate a token |
+| `GET` | `/v1/auth/token/lookup-self` | `X-Vault-Token` | Validate a token and return its metadata |
+| `POST` | `/v1/auth/token/renew-self` | `X-Vault-Token` | Extend a renewable token's TTL |
+| `POST` | `/v1/auth/token/revoke-self` | `X-Vault-Token` | Immediately invalidate a token |
 
 **Admin session** means an active `_ea_` cookie issued by `POST /login?realm=_` (the `_` admin realm). See [Authorization and Administration](authorization_and_administration.md) for details.
 
@@ -168,7 +169,7 @@ Save the `secret_id` securely — it cannot be retrieved again. The `secret_id_a
 The service exchanges its `role_id` + `secret_id` for an app token. Both `POST` and `PUT` are accepted (SPIRE's Go SDK may issue either).
 
 ```http
-POST /auth/approle/login
+POST /v1/auth/approle/login
 Content-Type: application/json
 
 {
@@ -273,7 +274,7 @@ Cookie: _ea_=<admin session cookie>
 ### Step 2 — Login (client)
 
 ```http
-POST /auth/kubernetes/login
+POST /v1/auth/kubernetes/login
 Content-Type: application/json
 
 {
@@ -318,16 +319,48 @@ Cookie: _ea_=<admin session cookie>
 
 ---
 
+## Userpass login (Vault-compatible)
+
+`bao login -method=userpass username=<u>` against the Auth Verifier (directly, or through the KMS, which forwards `/v1/auth/*`). It authenticates the accounts of one realm, set by [`vault_userpass_realm`](server_configuration.md#vault-userpass-login); when unset every login is refused (`403`).
+
+```http
+POST /v1/auth/userpass/login/alice
+Content-Type: application/json
+
+{ "password": "alice-password" }
+```
+
+**Response** (same shape as the AppRole login):
+
+```json
+{
+  "auth": {
+    "client_token": "hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob",
+    "renewable": true,
+    "lease_duration": 3600,
+    "policies": ["User"],
+    "metadata": { "username": "alice", "realm": "kv-users" }
+  }
+}
+```
+
+- `policies` are the account's roles; `lease_duration` is the realm's `session_max_age_seconds`.
+- The token's `entity_id` is `userpass:<realm>:<username>`, disjoint from AppRole entities (bare role names).
+- Unknown user and wrong password return the same `403`. Accounts with a pending password change or TOTP enabled are refused.
+- Rate limited per IP like `/login`.
+
+---
+
 ## Token self-service
 
 All app tokens — regardless of which auth method produced them — support the same self-service endpoints. These require a valid `X-Vault-Token` header.
 
-### `GET /auth/token/lookup-self`
+### `GET /v1/auth/token/lookup-self`
 
 Validate a token and return its current metadata. This endpoint is called by the KMS middleware on every request to the `/v1/transit/*` and `/v1/<pki_mount>/*` scopes (with a 30-second cache).
 
 ```http
-GET /auth/token/lookup-self
+GET /v1/auth/token/lookup-self
 X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
 ```
 
@@ -350,12 +383,12 @@ X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
 
 **Returns `403 Forbidden`** if the token is missing, invalid, expired, or has been revoked.
 
-### `POST /auth/token/renew-self`
+### `POST /v1/auth/token/renew-self`
 
 Extend a renewable token's TTL back to its configured `lease_duration`.
 
 ```http
-POST /auth/token/renew-self
+POST /v1/auth/token/renew-self
 X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
 ```
 
@@ -375,12 +408,12 @@ X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
 
 `client_token` is the token echoed from the `X-Vault-Token` request header. SPIRE uses this to refresh its in-memory token state.
 
-### `POST /auth/token/revoke-self`
+### `POST /v1/auth/token/revoke-self`
 
 Immediately invalidate the current token.
 
 ```http
-POST /auth/token/revoke-self
+POST /v1/auth/token/revoke-self
 X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
 ```
 
@@ -442,7 +475,7 @@ Raw token values and raw secret IDs are never written to the database — only t
 
 ## Integration with the Cosmian KMS
 
-The Authentication Verifier's `/auth/token/lookup-self` endpoint is the only point of contact between the Authentication Verifier and the KMS. The KMS calls it to validate every `X-Vault-Token` presented to its `/v1/transit/*` and `/v1/<pki_mount>/*` scopes.
+The Authentication Verifier's `/v1/auth/token/lookup-self` endpoint is the only point of contact between the Authentication Verifier and the KMS. The KMS calls it to validate every `X-Vault-Token` presented to its `/v1/transit/*` and `/v1/<pki_mount>/*` scopes.
 
 Configure the KMS to point at the Authentication Verifier with these parameters (see [KMS SPIRE/SPIFFE integration guide](../key_management_system/integrations/spire_spiffe.md#configuration-reference)):
 
@@ -464,7 +497,7 @@ vault_token_cache_ttl_secs    = 30
 
 ## Security notes
 
-- **Login endpoints are unauthenticated** — `POST /auth/approle/login` and `POST /auth/kubernetes/login` are intentionally open; the credential is the request body. Apply rate limiting at the reverse-proxy level in production.
+- **Login endpoints are unauthenticated** — `POST /v1/auth/approle/login` and `POST /v1/auth/kubernetes/login` are intentionally open; the credential is the request body. Apply rate limiting at the reverse-proxy level in production.
 - **No admin token-revocation endpoint** — a leaked, not-yet-expired token can only be revoked via `revoke-self` (self-service) or direct database deletion. There is no admin endpoint to revoke all tokens for a given role yet.
 - **Secret ID consumption** — `consume_secret_id` atomically decrements `num_uses_remaining` in a single database transaction, preventing replay. A secret ID with `num_uses = 1` is permanently invalidated after the first login.
 - **Raw values never stored** — token values and secret IDs follow the same hashing convention as passwords: only SHA-256 hashes are persisted. A database compromise does not expose any usable credential.

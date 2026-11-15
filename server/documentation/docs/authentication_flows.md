@@ -232,13 +232,13 @@ sequenceDiagram
 
     O->>S: Provision role_id + secret_id (out-of-band)
 
-    S->>EA: POST /auth/approle/login<br/>{ role_id: "a5d7…", secret_id: "b7c4…" }
+    S->>EA: POST /v1/auth/approle/login<br/>{ role_id: "a5d7…", secret_id: "b7c4…" }
     note over EA: 1. Resolve role by role_id<br/>2. Verify SHA-256(secret_id) hash<br/>3. Decrement num_uses_remaining<br/>4. Issue token (SHA-256 hash stored)
     EA->>DB: Insert app_tokens row (hash only)
     DB-->>EA: OK
     EA-->>S: { auth: { client_token: "hvs.…", renewable: true, lease_duration: 3600 } }
 
-    S->>EA: GET /auth/token/lookup-self<br/>X-Vault-Token: hvs.…
+    S->>EA: GET /v1/auth/token/lookup-self<br/>X-Vault-Token: hvs.…
     EA-->>S: { data: { id: "hvs.…", ttl: 3541, renewable: true, … } }
 ```
 
@@ -269,7 +269,7 @@ sequenceDiagram
     P->>K8s: Read projected token<br/>/var/run/secrets/kubernetes.io/serviceaccount/token
     K8s-->>P: Service-account JWT (signed by Kubernetes)
 
-    P->>EA: POST /auth/kubernetes/login<br/>{ role: "my-k8s-role", jwt: "<SA JWT>" }
+    P->>EA: POST /v1/auth/kubernetes/login<br/>{ role: "my-k8s-role", jwt: "<SA JWT>" }
     note over EA: 1. Fetch JWKS from role's jwks_url<br/>2. Select key by kid from JWT header<br/>3. Validate signature, exp, nbf<br/>4. Parse sub: system:serviceaccount:<ns>:<name><br/>5. Check sa_name against bound_sa_names<br/>6. Check namespace against bound_sa_namespaces
     EA-->>P: { auth: { client_token: "hvs.…", lease_duration: 3600 } }
 ```
@@ -295,15 +295,15 @@ sequenceDiagram
 
     note over S: Service holds a token from AppRole or Kubernetes login
 
-    S->>EA: GET /auth/token/lookup-self<br/>X-Vault-Token: hvs.…
+    S->>EA: GET /v1/auth/token/lookup-self<br/>X-Vault-Token: hvs.…
     EA-->>S: { data: { id: "hvs.…", entity_id: "spire-server",<br/>           renewable: true, ttl: 3541, … } }
 
     note over S: Token nearing expiry — renew it
-    S->>EA: POST /auth/token/renew-self<br/>X-Vault-Token: hvs.…
+    S->>EA: POST /v1/auth/token/renew-self<br/>X-Vault-Token: hvs.…
     EA-->>S: { auth: { client_token: "hvs.…",<br/>           lease_duration: 3600, renewable: true } }
 
     note over S: Service is shutting down — revoke token
-    S->>EA: POST /auth/token/revoke-self<br/>X-Vault-Token: hvs.…
+    S->>EA: POST /v1/auth/token/revoke-self<br/>X-Vault-Token: hvs.…
     EA-->>S: 204 No Content
 ```
 
@@ -311,10 +311,10 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Active : POST /auth/approle/login or<br/>POST /auth/kubernetes/login
-    Active --> Active : POST /auth/token/renew-self<br/>(resets TTL to lease_duration)
+    [*] --> Active : POST /v1/auth/approle/login or<br/>POST /v1/auth/kubernetes/login
+    Active --> Active : POST /v1/auth/token/renew-self<br/>(resets TTL to lease_duration)
     Active --> Expired : token_ttl elapsed
-    Active --> Revoked : POST /auth/token/revoke-self
+    Active --> Revoked : POST /v1/auth/token/revoke-self
     Expired --> [*] : Rejected with 403 on next lookup-self
     Revoked --> [*] : Rejected with 403 immediately
 ```
@@ -420,7 +420,7 @@ These endpoints produce or manage **app tokens** (`X-Vault-Token`). See [app_aut
 
 | Method       | Path                  | Description                            | Auth required     |
 | ------------ | --------------------- | -------------------------------------- | ----------------- |
-| `POST`/`PUT` | `/auth/approle/login` | Exchange `role_id` + `secret_id` for an app token | No (credential is body) |
+| `POST`/`PUT` | `/v1/auth/approle/login` | Exchange `role_id` + `secret_id` for an app token | No (credential is body) |
 
 #### AppRole — role management (requires admin session cookie)
 
@@ -437,7 +437,7 @@ These endpoints produce or manage **app tokens** (`X-Vault-Token`). See [app_aut
 
 | Method | Path                      | Description                                      | Auth required     |
 | ------ | ------------------------- | ------------------------------------------------ | ----------------- |
-| `POST` | `/auth/kubernetes/login`  | Exchange a K8s service-account JWT for an app token | No (credential is body) |
+| `POST` | `/v1/auth/kubernetes/login`  | Exchange a K8s service-account JWT for an app token | No (credential is body) |
 
 #### Kubernetes — role management (requires admin session cookie)
 
@@ -450,9 +450,9 @@ These endpoints produce or manage **app tokens** (`X-Vault-Token`). See [app_aut
 
 | Method | Path                          | Description                                  |
 | ------ | ----------------------------- | -------------------------------------------- |
-| `GET`  | `/auth/token/lookup-self`     | Validate token and return its metadata       |
-| `POST` | `/auth/token/renew-self`      | Extend a renewable token's TTL               |
-| `POST` | `/auth/token/revoke-self`     | Immediately invalidate the current token     |
+| `GET`  | `/v1/auth/token/lookup-self`     | Validate token and return its metadata       |
+| `POST` | `/v1/auth/token/renew-self`      | Extend a renewable token's TTL               |
+| `POST` | `/v1/auth/token/revoke-self`     | Immediately invalidate the current token     |
 
 ### Session JWT — `/whoami` response
 
@@ -607,6 +607,6 @@ in DB, not expired?}
 → self-service handler]
 ```
 
-> **Note:** AppRole login (`POST /auth/approle/login`) and Kubernetes login (`POST /auth/kubernetes/login`) are unauthenticated — the credential is the request body. They are not represented above.
+> **Note:** AppRole login (`POST /v1/auth/approle/login`) and Kubernetes login (`POST /v1/auth/kubernetes/login`) are unauthenticated — the credential is the request body. They are not represented above.
 
 ---

@@ -254,7 +254,7 @@ export interface K8sRoleRequest {
     bound_audiences: string[];
 }
 
-/** Token metadata returned by GET /auth/token/lookup-self. */
+/** Token metadata returned by GET /v1/auth/token/lookup-self. */
 export interface TokenInfo {
     id: string;
     entity_id: string;

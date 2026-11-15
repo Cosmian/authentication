@@ -4,7 +4,7 @@
 //! 1. Starts a fresh in-memory test server.
 //! 2. Authenticates as the seeded `admin` user.
 //! 3. Uses the `AuthClient` wrappers to exercise the `/auth/approle/*`,
-//!    `/auth/kubernetes/*`, and `/auth/token/*` endpoints.
+//!    `/auth/kubernetes/*`, and `/v1/auth/token/*` endpoints.
 //!
 //! ## Standards under test
 //!
@@ -17,7 +17,9 @@ use crate::{
     client::AuthClientScheme,
     dto::{AppRoleRoleRequest, AppRoleSecretIdRequest, K8sRoleRequest},
     tests::{
-        IdP, RsaIdp, helpers::authenticate_as_admin, init_test_logging, start_default_test_server,
+        IdP, RsaIdp, get_default_server_params,
+        helpers::{authenticate_as_admin, create_userpass, test_realm},
+        init_test_logging, start_default_test_server, start_test_server,
     },
 };
 use cosmian_logger::info;
@@ -575,7 +577,7 @@ async fn test_k8s_issuer_mismatch() -> AuthResult<()> {
 
 // ── Token self-service tests ──────────────────────────────────────────────────
 
-/// `GET /auth/token/lookup-self` returns correct metadata for a valid token.
+/// `GET /v1/auth/token/lookup-self` returns correct metadata for a valid token.
 #[actix_web::test]
 async fn test_token_lookup_self() -> AuthResult<()> {
     init_test_logging(None);
@@ -617,7 +619,7 @@ async fn test_token_lookup_self() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// `POST /auth/token/renew-self` extends a renewable token's TTL.
+/// `POST /v1/auth/token/renew-self` extends a renewable token's TTL.
 #[actix_web::test]
 async fn test_token_renew_self() -> AuthResult<()> {
     init_test_logging(None);
@@ -655,7 +657,7 @@ async fn test_token_renew_self() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// `POST /auth/token/revoke-self` invalidates the token; subsequent lookup must 403.
+/// `POST /v1/auth/token/revoke-self` invalidates the token; subsequent lookup must 403.
 #[actix_web::test]
 async fn test_token_revoke_self() -> AuthResult<()> {
     init_test_logging(None);
@@ -832,5 +834,104 @@ async fn test_k8s_get_role_not_found() -> AuthResult<()> {
         resp.status()
     );
 
+    ctx.stop_server().await
+}
+
+// ── Vault `/v1` path parity and userpass login ────────────────────────────────
+
+/// The pre-`/v1` Vault client routes are gone: a structured 404, never a cookie/admin error.
+#[actix_web::test]
+async fn test_legacy_vault_routes_return_404() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let noauth = ctx.get_test_client(AuthClientScheme::None);
+
+    for path in ["/auth/approle/login", "/auth/kubernetes/login"] {
+        let resp = noauth
+            .post_raw(
+                path,
+                &serde_json::json!({"role_id": "x", "role": "x", "jwt": "x"}),
+            )
+            .await?;
+        assert_eq!(resp.status().as_u16(), 404, "{path}");
+    }
+    assert_eq!(
+        noauth
+            .get_raw_with_header("/auth/token/lookup-self", "X-Vault-Token", "hvs.x")
+            .await?
+            .status()
+            .as_u16(),
+        404
+    );
+
+    ctx.stop_server().await
+}
+
+/// `POST /v1/auth/userpass/login/{user}` issues a token for a `vault_userpass_realm` account.
+#[actix_web::test]
+async fn test_vault_userpass_login() -> AuthResult<()> {
+    init_test_logging(None);
+    let mut params = get_default_server_params()?;
+    params.vault_userpass_realm = Some("vault-users".to_owned());
+    let ctx = start_test_server(params).await?;
+    let admin = authenticate_as_admin(&ctx).await?;
+    admin
+        .create_realm_as_super_admin(&test_realm("vault-users"))
+        .await?;
+    let mut alice = create_userpass("vault-users", "alice", "alice-pw", false)?;
+    alice.roles = vec!["User".to_owned()];
+    admin
+        .create_admin_credentials_in_realm("vault-users", &alice)
+        .await?;
+
+    let noauth = ctx.get_test_client(AuthClientScheme::None);
+    let login = |user: &'static str, pw: &'static str| {
+        let noauth = &noauth;
+        async move {
+            noauth
+                .post_raw(
+                    &format!("/v1/auth/userpass/login/{user}"),
+                    &serde_json::json!({ "password": pw }),
+                )
+                .await
+        }
+    };
+
+    let ok = login("alice", "alice-pw").await?;
+    assert_eq!(ok.status().as_u16(), 200);
+    let body: crate::dto::AppAuthResponse = ok
+        .json()
+        .await
+        .map_err(|e| crate::AuthError::Generic(format!("bad login response: {e}")))?;
+    assert_eq!(body.auth.policies, vec!["User"]);
+    let lookup = noauth.token_lookup_self(&body.auth.client_token).await?;
+    assert_eq!(lookup.data.entity_id, "userpass:vault-users:alice");
+
+    let wrong = login("alice", "nope").await?;
+    let unknown = login("mallory", "nope").await?;
+    assert_eq!(wrong.status().as_u16(), 403);
+    assert_eq!(unknown.status().as_u16(), 403);
+    assert_eq!(
+        wrong.text().await.unwrap_or_default(),
+        unknown.text().await.unwrap_or_default(),
+        "unknown user and wrong password must be indistinguishable"
+    );
+
+    ctx.stop_server().await
+}
+
+/// Without `vault_userpass_realm`, the userpass login refuses everyone.
+#[actix_web::test]
+async fn test_vault_userpass_login_disabled_by_default() -> AuthResult<()> {
+    init_test_logging(None);
+    let ctx = start_default_test_server().await?;
+    let resp = ctx
+        .get_test_client(AuthClientScheme::None)
+        .post_raw(
+            "/v1/auth/userpass/login/alice",
+            &serde_json::json!({ "password": "x" }),
+        )
+        .await?;
+    assert_eq!(resp.status().as_u16(), 403);
     ctx.stop_server().await
 }

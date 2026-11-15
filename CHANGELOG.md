@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### ⚠️ Breaking changes
+
+- Vault client routes (`approle/login`, `kubernetes/login`, `token/*`) are now served only under `/v1/auth/*`; the unprefixed paths return `404`. Requires Eviden KMS ≥ the release that calls `/v1/auth/token/lookup-self`. Admin CRUD routes (`/auth/approle/role/...`, `/auth/kubernetes/role/...`) are unchanged.
+
+### Vault userpass login
+
+- Add `POST/PUT /v1/auth/userpass/login/{username}` (`bao login -method=userpass`), backed by the userpass accounts of the realm named by the new `vault_userpass_realm` setting; disabled when unset.
+
 ## [0.5.0] - 2026-10-26
 
 Replaces the 0.5.0 tag of 2026-10-20, withdrawn because it was cut before the version bump: its packages and images reported version 0.4.0.

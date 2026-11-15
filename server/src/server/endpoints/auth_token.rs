@@ -2,9 +2,9 @@
 //!
 //! | Method | Path | Description |
 //! |--------|------|-------------|
-//! | GET | `/auth/token/lookup-self` | Return metadata for the bearer token |
-//! | POST | `/auth/token/renew-self` | Renew a renewable token |
-//! | POST | `/auth/token/revoke-self` | Revoke the current token |
+//! | GET | `/v1/auth/token/lookup-self` | Return metadata for the bearer token |
+//! | POST | `/v1/auth/token/renew-self` | Renew a renewable token |
+//! | POST | `/v1/auth/token/revoke-self` | Revoke the current token |
 
 use crate::{AuthError, database::Database, middleware::AppTokenClaims};
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, get, post, web::Data};
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 /// Return metadata for the current `X-Vault-Token`.
 ///
-/// Equivalent to `GET /auth/token/lookup-self` in the AppRole auth API.
+/// Equivalent to `GET /v1/auth/token/lookup-self` in the AppRole auth API.
 #[get("/lookup-self")]
 pub async fn auth_token_lookup_self(
     req: HttpRequest,
@@ -66,7 +66,7 @@ pub async fn auth_token_lookup_self(
 
 /// Renew a renewable token.
 ///
-/// Equivalent to `POST /auth/token/renew-self` in the AppRole Auth API.
+/// Equivalent to `POST /v1/auth/token/renew-self` in the AppRole Auth API.
 #[post("/renew-self")]
 pub async fn auth_token_renew_self(
     req: HttpRequest,
@@ -120,7 +120,7 @@ pub async fn auth_token_renew_self(
 
 /// Revoke (invalidate) the current token.
 ///
-/// Equivalent to `POST /auth/token/revoke-self` in the AppRole Auth API.
+/// Equivalent to `POST /v1/auth/token/revoke-self` in the AppRole Auth API.
 #[post("/revoke-self")]
 pub async fn auth_token_revoke_self(
     req: HttpRequest,

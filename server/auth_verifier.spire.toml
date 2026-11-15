@@ -22,7 +22,7 @@
 # you use to create AppRoles for your SPIRE servers (see "AppRole" note below).
 #
 # ── AppRole ──────────────────────────────────────────────────────────────────
-# There is NOTHING to enable here for AppRole: the `/auth/approle/login` and the
+# There is NOTHING to enable here for AppRole: the `/v1/auth/approle/login` and the
 # AppRole admin endpoints are always available. AppRoles (role_id + secret_id)
 # are created at RUNTIME by the super-admin via the admin API, e.g.:
 #

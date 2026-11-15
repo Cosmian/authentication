@@ -60,7 +60,7 @@ tags:
       login, as for its credential.
   - name: App Token
     description: |
-      App token self-service endpoints (`/auth/token/...`).
+      App token self-service endpoints (`/v1/auth/token/...`).
       Require a valid `X-Vault-Token` header.
   - name: AppRole
     description: |
@@ -100,7 +100,7 @@ components:
       name: X-Vault-Token
       description: |
         AppRole-compatible bearer token issued by this server's AppRole or
-        Kubernetes login endpoints.  Required on `/auth/token/*` endpoints.
+        Kubernetes login endpoints.  Required on `/v1/auth/token/*` endpoints.
 
   schemas:
 
@@ -2306,7 +2306,7 @@ paths:
 
   # ── App Token ────────────────────────────────────────────────────────────
 
-  /auth/token/lookup-self:
+  /v1/auth/token/lookup-self:
     get:
       tags: [App Token]
       summary: Look up current token
@@ -2335,7 +2335,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /auth/token/renew-self:
+  /v1/auth/token/renew-self:
     post:
       tags: [App Token]
       summary: Renew current token
@@ -2356,7 +2356,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /auth/token/revoke-self:
+  /v1/auth/token/revoke-self:
     post:
       tags: [App Token]
       summary: Revoke current token
@@ -2372,7 +2372,7 @@ paths:
 
   # ── AppRole ──────────────────────────────────────────────────────────
 
-  /auth/approle/login:
+  /v1/auth/approle/login:
     post:
       tags: [AppRole]
       summary: Login with AppRole credentials
@@ -2617,7 +2617,7 @@ paths:
 
   # ── Kubernetes Auth ───────────────────────────────────────────────────────
 
-  /auth/kubernetes/login:
+  /v1/auth/kubernetes/login:
     post:
       tags: [Kubernetes Auth]
       summary: Login with a Kubernetes service-account JWT

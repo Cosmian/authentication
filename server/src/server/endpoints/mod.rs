@@ -35,6 +35,9 @@ pub use sessions_endpoints::{
 mod auth_token;
 pub use auth_token::{auth_token_lookup_self, auth_token_renew_self, auth_token_revoke_self};
 
+mod userpass_login;
+pub use userpass_login::vault_userpass_login;
+
 mod approle;
 pub use approle::{
     approle_create_role, approle_delete_role, approle_destroy_secret_id,
