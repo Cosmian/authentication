@@ -16,10 +16,10 @@ use crate::{
         AppRoleSecretIdRequest, AppRoleSecretIdResponse, AppTokenLookupResponse,
         DeleteSessionsRequest, GetSessionRequest, GetSessionsForClientsRequest,
         GetSessionsForClientsResponse, K8sListRolesResponse, K8sLoginRequest,
-        K8sRoleConfigResponse, K8sRoleRequest, SessionsAction, TotpGenerateRequest,
+        K8sRoleConfigResponse, K8sRoleRequest, SessionInfo, SessionsAction, TotpGenerateRequest,
         TotpGenerateResponse, TotpVerifyRequest, Version,
     },
-    models::{Admin, ClientClaims, LoginRequest, Realm, SessionData, UserPass},
+    models::{Admin, ClientClaims, LoginRequest, Realm, UserPass},
 };
 use base64::Engine;
 use cookie_store::{Cookie, CookieDomain};
@@ -429,10 +429,11 @@ impl AuthClient {
 // Sessions Management API
 impl AuthClient {
     /// Get session information by session ID.
-    /// Returns `None` if the session does not exist or has expired.
-    pub async fn get_session(&self, session_id: &str) -> AuthResult<Option<SessionData>> {
+    /// Returns `None` if the session does not exist, has expired, or is not one the caller may
+    /// manage: its own, or one of a realm it administers.
+    pub async fn get_session(&self, session_id: &str) -> AuthResult<Option<SessionInfo>> {
         let path = format!("/sessions/{}", session_id);
-        self.get::<Option<SessionData>>(&path).await
+        self.get::<Option<SessionInfo>>(&path).await
     }
 
     /// Get session information by session ID, and optionally apply a session action.
@@ -441,14 +442,14 @@ impl AuthClient {
         session_id: &str,
         authenticated_clients: Vec<AuthenticatedClientScheme>,
         sessions_action: SessionsAction,
-    ) -> AuthResult<Option<SessionData>> {
+    ) -> AuthResult<Option<SessionInfo>> {
         let path = format!("/sessions/{}", session_id);
         let payload = GetSessionRequest {
             authenticated_clients,
             sessions_action: Some(sessions_action),
         };
         match self
-            .post::<GetSessionRequest, Option<SessionData>>(&path, &payload)
+            .post::<GetSessionRequest, Option<SessionInfo>>(&path, &payload)
             .await
         {
             Ok(data) => Ok(data),

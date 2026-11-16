@@ -4,7 +4,7 @@ use crate::{
     database::{APP_REALM_ADMIN_INITIAL_PASSWORD, APP_REALM_ADMIN_USERNAME},
     models::ADMIN_REALM,
     tests::{
-        helpers::{authenticate_as_admin, create_and_authenticate_realm_admin},
+        helpers::{authenticate_as_admin, create_and_authenticate_realm_admin, is_http},
         start_default_test_server,
     },
 };
@@ -337,12 +337,12 @@ async fn test_totp_endpoints_forbidden_for_super_admin_once_realm_claimed() -> A
 
     info!("Super admin correctly denied generate/verify/disable TOTP once the realm was claimed");
 
-    // The realm's own admin still can.
+    // The realm's own admin is authorised, but 2FA only exists for admin logins in `_`.
     let generated = realm_admin
         .generate_totp("totp_claimed_realm", "someone", None)
-        .await?;
-    assert!(!generated.secret_base32.is_empty());
-    info!("Realm admin still able to generate TOTP for their own realm");
+        .await;
+    assert!(is_http(&generated, 400), "{generated:?}");
+    info!("Realm admin refused with 400: no 2FA outside the admin realm");
 
     ctx.stop_server().await
 }

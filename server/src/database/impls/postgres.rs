@@ -8,7 +8,22 @@ use crate::{
     models::{Admin, AuthScheme, Realm, UserPass},
 };
 use async_trait::async_trait;
+use cosmian_logger::warn;
 use sqlx::{PgPool, Row};
+
+/// Unique indexes on the admin login columns: (column, shared-values query, create index).
+const ADMIN_LOGIN_INDEXES: [(&str, &str, &str); 2] = [
+    (
+        "userpass",
+        "SELECT COUNT(*) FROM (SELECT 1 FROM admin WHERE userpass IS NOT NULL GROUP BY userpass HAVING COUNT(*) > 1) d",
+        "CREATE UNIQUE INDEX IF NOT EXISTS admin_userpass_unique ON admin(userpass)",
+    ),
+    (
+        "jwt",
+        "SELECT COUNT(*) FROM (SELECT 1 FROM admin WHERE jwt IS NOT NULL GROUP BY jwt HAVING COUNT(*) > 1) d",
+        "CREATE UNIQUE INDEX IF NOT EXISTS admin_jwt_unique ON admin(jwt)",
+    ),
+];
 
 /// PostgreSQL database implementation
 pub struct PostgresDatabase {
@@ -18,6 +33,23 @@ pub struct PostgresDatabase {
 impl PostgresDatabase {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
+    }
+
+    /// Makes each admin login column unique, so two admins can never share a login. A column
+    /// where admins already share a value is only warned about (the admin lookup refuses those
+    /// logins), so an existing database still starts.
+    async fn ensure_unique_admin_logins(&self) -> AuthDbResult<()> {
+        for (column, shared_sql, create_index_sql) in ADMIN_LOGIN_INDEXES {
+            let shared: i64 = sqlx::query_scalar(shared_sql).fetch_one(&self.pool).await?;
+            if shared > 0 {
+                warn!(
+                    "{shared} admin {column} value(s) are shared by several admins: {column} is not unique in the database until they are fixed"
+                );
+                continue;
+            }
+            sqlx::query(create_index_sql).execute(&self.pool).await?;
+        }
+        Ok(())
     }
 }
 
@@ -109,6 +141,7 @@ impl Database for PostgresDatabase {
         )
         .execute(&self.pool)
         .await?;
+        self.ensure_unique_admin_logins().await?;
 
         // If the realm table is empty, insert the ADMIN_REALM (application) realm
         // and insert a remove_me:remove_me userpass entry for it in the userpass table
@@ -489,20 +522,6 @@ impl Database for PostgresDatabase {
         Ok(())
     }
 
-    async fn delete_userpass_by_username(&self, username: &str) -> AuthDbResult<()> {
-        sqlx::query(
-            r#"
-            DELETE FROM userpass
-            WHERE username = $1
-            "#,
-        )
-        .bind(username)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
     async fn list_userpass_by_realm(&self, realm: &str) -> AuthDbResult<Vec<UserPass>> {
         let rows = sqlx::query(
             r#"
@@ -667,7 +686,7 @@ impl Database for PostgresDatabase {
         .map_err(|e| {
             crate::database::AuthDbError::from_insert_error(
                 e,
-                format!("admin '{}' already exists", admin.id),
+                format!("admin '{}' already exists or shares a login with another admin", admin.id),
             )
         })?;
 
@@ -780,7 +799,13 @@ impl Database for PostgresDatabase {
         .bind(&admin.totp_secret)
         .bind(&admin.totp_auth_url)
         .execute(&self.pool)
-        .await?;
+        .await
+        .map_err(|e| {
+            AuthDbError::from_insert_error(
+                e,
+                format!("admin '{}' shares a login with another admin", admin.id),
+            )
+        })?;
 
         // Delete existing realm associations
         sqlx::query(

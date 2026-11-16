@@ -209,8 +209,6 @@ const AdminsPage: React.FC = () => {
                         digital_credentials: null,
                         client_certificate: null,
                         totp_enabled: false,
-                        totp_secret: null,
-                        totp_auth_url: null,
                     })
                 }
             />
@@ -218,7 +216,7 @@ const AdminsPage: React.FC = () => {
             {totpTarget && (
                 <TotpManagementModal
                     open={totpTarget !== null}
-                    adminId={totpTarget.id}
+                    adminId={totpTarget.userpass ?? totpTarget.id}
                     realmId={SUPER_ADMIN_REALM_ID}
                     totpEnabled={totpTarget.totp_enabled ?? false}
                     onClose={() => setTotpTarget(null)}
@@ -229,7 +227,7 @@ const AdminsPage: React.FC = () => {
             {credentialTarget && (
                 <AdminCredentialModal
                     open={credentialTarget !== null}
-                    adminId={credentialTarget.id}
+                    adminId={credentialTarget.userpass ?? credentialTarget.id}
                     hasCredential={credentialTarget.userpass !== null}
                     onClose={() => setCredentialTarget(null)}
                     onSuccess={handleCredentialSuccess}
@@ -264,9 +262,6 @@ const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRea
                 fido2: null,
                 digital_credentials: null,
                 client_certificate: null,
-                totp_enabled: null,
-                totp_secret: null,
-                totp_auth_url: null,
             };
             await api.create(admin);
             message.success(`Admin "${values.id}" created for realm "${selectedRealm}"`);

@@ -42,8 +42,6 @@ const existingAdmin: Admin = {
     digital_credentials: null,
     client_certificate: null,
     totp_enabled: false,
-    totp_secret: null,
-    totp_auth_url: null,
 };
 
 /** Find the primary footer submit button (last in the DOM). */

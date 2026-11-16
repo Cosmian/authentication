@@ -14,8 +14,8 @@ use crate::{
     tests::{
         helpers::{
             authenticate_as_admin, create_and_authenticate_realm_admin,
-            create_multi_realm_target_and_foreign_realm_admin, create_userpass, test_admin,
-            test_realm,
+            create_multi_realm_target_and_foreign_realm_admin, create_userpass, is_http,
+            test_admin, test_realm,
         },
         init_test_logging, start_default_test_server,
     },
@@ -381,13 +381,10 @@ async fn test_list_admins_requires_super_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// Once a realm has its own admin, `list_admins` (called by the super
-/// admin) omits admins exclusively scoped to that realm, but still
-/// includes an unaffiliated admin (empty `realms`) — the filtering mirrors
-/// `get_admin`'s claimed-realm boundary (review finding: only the gate on
-/// the endpoint was tested, not what the returned list actually contains).
+/// The super admin lists every admin, including those exclusively scoped to a claimed realm,
+/// to be able to contact them.
 #[actix_web::test]
-async fn test_list_admins_omits_claimed_realm_admins() -> AuthResult<()> {
+async fn test_list_admins_includes_claimed_realm_admins() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -408,14 +405,14 @@ async fn test_list_admins_omits_claimed_realm_admins() -> AuthResult<()> {
     let admins = super_admin.list_admins_as_super_admin().await?;
 
     assert!(
-        !admins.iter().any(|a| a.id == "list_claimed_target"),
-        "Expected the claimed-realm admin to be omitted from the super admin's list"
+        admins.iter().any(|a| a.id == "list_claimed_target"),
+        "Expected the claimed-realm admin to be listed for the super admin"
     );
     assert!(
         admins.iter().any(|a| a.id == "list_unaffiliated_target"),
-        "Expected the unaffiliated admin to remain visible"
+        "Expected the unaffiliated admin to be listed"
     );
-    info!("list_admins correctly filtered out the claimed-realm admin");
+    info!("list_admins returned the claimed-realm admin to the super admin");
 
     ctx.stop_server().await
 }
@@ -574,12 +571,10 @@ async fn test_get_admin_by_realm_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// Once a realm has its own admin, the super admin is denied `GET
-/// /admins/{id}` for an admin exclusively scoped to that realm — even in
-/// the simple, single-realm case (review finding: only the multi-realm
-/// denial was covered, not this more basic claimed-realm boundary).
+/// Once a realm has its own admin, the super admin can still read an admin exclusively scoped to
+/// that realm (to contact it) but cannot change or delete it.
 #[actix_web::test]
-async fn test_get_admin_forbidden_for_super_admin_once_realm_claimed() -> AuthResult<()> {
+async fn test_super_admin_reads_but_cannot_change_a_claimed_realm_admin() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
@@ -590,17 +585,20 @@ async fn test_get_admin_forbidden_for_super_admin_once_realm_claimed() -> AuthRe
     realm_admin.create_admin_as_super_admin(&target).await?;
 
     let super_admin = authenticate_as_admin(&ctx).await?;
-    let result = super_admin
+    let read = super_admin
         .get_admin_as_super_admin("get_claimed_target")
-        .await;
+        .await?;
+    assert_eq!(read.id, "get_claimed_target");
 
-    assert!(
-        result.is_err(),
-        "Expected an error when the super admin gets an admin in an already-claimed realm"
-    );
-    let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("403"), "Expected HTTP 403, got: {msg}");
-    info!("Super admin correctly denied GET /admins/{{id}} once the realm was claimed");
+    let updated = super_admin
+        .update_admin_as_super_admin("get_claimed_target", &read)
+        .await;
+    assert!(is_http(&updated, 403), "{updated:?}");
+    let deleted = super_admin
+        .delete_admin_as_super_admin("get_claimed_target")
+        .await;
+    assert!(is_http(&deleted, 403), "{deleted:?}");
+    info!("Super admin may read a claimed-realm admin but not change it");
 
     ctx.stop_server().await
 }
@@ -1168,10 +1166,8 @@ async fn test_session_invalidated_after_admin_deletion() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// After a user is deleted, the associated `userpass` credentials must also be
-/// deleted (cascade delete).  The `delete_user` endpoint calls
-/// `delete_userpass_by_username` on the retrieved credential username so no
-/// orphaned entries remain in the `userpass` table.
+/// After an admin is deleted, its own `_` login is deleted with it (unless another admin record
+/// uses it), so no orphaned credential remains in the `userpass` table.
 #[actix_web::test]
 async fn test_delete_admin_cascades_credentials() -> AuthResult<()> {
     init_test_logging(None);

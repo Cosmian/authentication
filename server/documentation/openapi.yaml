@@ -15,7 +15,8 @@ info:
     Authorization: Basic <base64(username:password)>
     ```
     The server responds with `Set-Cookie: _ea_=<value>; HttpOnly; Secure; SameSite=Strict`.
-    Pass this cookie on every subsequent admin request.
+    Pass this cookie on every subsequent admin request. A session opened on any other realm is
+    rejected with `401` on admin endpoints, even if its username matches an admin's login.
 
 servers:
   - url: https://localhost:8443
@@ -27,7 +28,10 @@ tags:
   - name: Auth
     description: Login and session claims
   - name: Sessions
-    description: Session store management
+    description: |
+      Session store management. Any valid session cookie may be used, but a caller only reaches
+      its own sessions (same realm and username) plus, for admins, those of the realms they
+      administer. Session data never includes the session cookie value.
   - name: Realms
     description: |
       Realm CRUD. Creation is super-admin-only. Once a realm has its own
@@ -43,12 +47,17 @@ tags:
     description: |
       Username/password credential management per realm. Requires
       administering the realm; a super admin qualifies only while the realm
-      has no admin of its own yet (claim-aware).
+      has no admin of its own yet (claim-aware). In the admin realm `_` the
+      credentials are the admins' logins: each one needs the caller to manage
+      every admin record using it (a super admin when none does), so realm
+      admins manage their own and their colleagues' logins, and the super
+      admin cannot touch those of a claimed realm's admins. Password hashes
+      are never returned.
   - name: TOTP
     description: |
-      Two-factor authentication management. Requires administering the
-      realm; a super admin qualifies only while the realm has no admin of
-      its own yet (claim-aware).
+      Two-factor authentication management, for admin logins in the admin
+      realm `_` only (any other realm answers 400). Requires managing the
+      login, as for its credential.
   - name: App Token
     description: |
       App token self-service endpoints (`/auth/token/...`).
@@ -57,12 +66,12 @@ tags:
     description: |
       AppRole authentication (`/auth/approle/...`).
       The `login` endpoint is unauthenticated.
-      Role management (create, delete, list, secret-id) requires admin session cookie.
+      Role management (create, delete, list, secret-id) requires a super admin session cookie.
   - name: Kubernetes Auth
     description: |
       Kubernetes service-account JWT authentication (`/auth/kubernetes/...`).
       The `login` endpoint validates the JWT against the role's JWKS URL.
-      Role management requires admin session cookie.
+      Role management requires a super admin session cookie.
   - name: SAML
     description: |
       SAML 2.0 SP-initiated Web Browser SSO (`/saml/{realm_id}/...`). Present only on
@@ -300,11 +309,18 @@ components:
         userpass:
           type: string
           nullable: true
-          description: Foreign key into the userpass table (username, not password).
+          description: |
+            Username of the admin's login, a credential of the admin realm `_` (a username, not a
+            password). Setting it needs the caller to manage every other admin record using that
+            login (a super admin when none does), and no other record may be linked to it (409).
           example: alice
         jwt:
           type: string
           nullable: true
+          description: |
+            JWT subject the admin logs in with. Another admin already using it makes the request
+            fail: 403 if the caller does not manage that admin, else 409. The same applies to
+            `fido2` and `client_certificate`.
           example:
         fido2:
           type: string
@@ -323,17 +339,12 @@ components:
         totp_enabled:
           type: boolean
           nullable: true
+          readOnly: true
+          description: |
+            Whether 2FA is active. Ignored in request bodies: 2FA is managed through the TOTP
+            endpoints, and an update keeps the stored 2FA. The TOTP secret and enrolment URL are
+            never returned.
           example: false
-        totp_secret:
-          type: string
-          nullable: true
-          description: Base32-encoded TOTP secret. Read-only via GET.
-          example:
-        totp_auth_url:
-          type: string
-          nullable: true
-          description: otpauth:// URL for QR code enrollment. Read-only via GET.
-          example:
       example:
         id: alice
         realms: [my-service]
@@ -343,8 +354,6 @@ components:
         digital_credentials:
         client_certificate:
         totp_enabled: false
-        totp_secret:
-        totp_auth_url:
 
     PasswordInput:
       description: |
@@ -423,21 +432,17 @@ components:
             POST /certify when explicitly named in that request's `claims` field. Rejected
             with 400 if its serialized size exceeds 4 KiB.
           example: {as_registrant: acme-corp}
-    SessionData:
+    SessionInfo:
       type: object
       description: |
-        ⚠️  SECURITY NOTE: `cookie_string` contains the raw JWT stored in the session and
-        `session_id` is the opaque lookup key. These fields MUST NOT be returned by any
-        admin list endpoint — doing so would expose all active JWTs to any authenticated
-        admin, enabling session hijacking via Bearer token replay.
-        A future `SessionSummary` schema (see openapi TODO) must be defined for list
-        endpoints, omitting `cookie_string` and `session_id`.
-      required: [session_id, realm_id, username, auth_scheme, cookie_string, max_age_seconds, max_stale_age_seconds, created_at]
+        A session as returned by `/sessions`. The stored session cookie value is the session
+        credential and is never returned.
+      required: [session_id, realm_id, username, auth_scheme, max_age_seconds, max_stale_age_seconds, created_at]
       properties:
         session_id:
           type: string
-          format: uuid
-          example: 550e8400-e29b-41d4-a716-446655440000
+          description: SHA-256 (hex) of the `_ea_` cookie value.
+          example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
         realm_id:
           type: string
           example: my-service
@@ -446,9 +451,6 @@ components:
           example: alice
         auth_scheme:
           $ref: '#/components/schemas/AuthScheme'
-        cookie_string:
-          type: string
-          example: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
         max_age_seconds:
           type: integer
           format: int64
@@ -1466,41 +1468,12 @@ paths:
           description: Certificate signing is not configured on this server.
 
   /sessions:
-    post:
-      tags: [Sessions]
-      summary: Create or update a session (internal)
-      operationId: upsertSession
-      description: Internal server-to-server endpoint. Creates or replaces a session in the store.
-      security:
-        - cookieAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [session_id, realm, authenticated_client, session_value]
-              properties:
-                session_id:
-                  type: string
-                  format: uuid
-                  example: 550e8400-e29b-41d4-a716-446655440000
-                realm:
-                  $ref: '#/components/schemas/Realm'
-                authenticated_client:
-                  $ref: '#/components/schemas/AuthenticatedClientScheme'
-                session_value:
-                  type: string
-                  example: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
-      responses:
-        '204':
-          $ref: '#/components/responses/NoContent'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-
     delete:
       tags: [Sessions]
       summary: Delete sessions by ID (explicit logout)
+      description: |
+        Deletes the listed sessions that are the caller's own or belong to a realm the caller
+        administers. Other IDs, unknown or not the caller's to delete, are ignored alike.
       operationId: deleteSessions
       security:
         - cookieAuth: []
@@ -1519,7 +1492,7 @@ paths:
   /sessions/expired:
     delete:
       tags: [Sessions]
-      summary: Purge all expired sessions
+      summary: Purge all expired sessions (super admin only)
       operationId: deleteExpiredSessions
       security:
         - cookieAuth: []
@@ -1528,12 +1501,18 @@ paths:
           $ref: '#/components/responses/NoContent'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /sessions/{session_id}:
     get:
       tags: [Sessions]
       summary: Retrieve session data by ID
-      description: Returns null (HTTP 200, not 404) when the session does not exist or has expired.
+      description: |
+        Callers see their own sessions (same realm and username), and those of any realm they
+        administer. Returns null (HTTP 200, not 404) when the session does not exist, has
+        expired, or is not one the caller may see. `session_id` is the SHA-256 (hex) of the
+        `_ea_` cookie value.
       operationId: getSessionById
       parameters:
         - $ref: '#/components/parameters/sessionId'
@@ -1546,17 +1525,16 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/SessionData'
+                  - $ref: '#/components/schemas/SessionInfo'
                   - type: 'null'
               examples:
                 found:
                   summary: Session found
                   value:
-                    session_id: 550e8400-e29b-41d4-a716-446655440000
+                    session_id: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
                     realm_id: my-service
                     username: alice
                     auth_scheme: up
-                    cookie_string: eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJhbGljZSJ9.sig
                     max_age_seconds: 3600
                     max_stale_age_seconds: 1800
                     created_at: 1744996400
@@ -1569,6 +1547,10 @@ paths:
     post:
       tags: [Sessions]
       summary: Retrieve session data and optionally perform bulk logout
+      description: |
+        Same visibility as `GET`. A `sessions_action` also needs the listed
+        `authenticated_clients` to be the caller itself, unless the caller administers the
+        session's realm.
       operationId: getSession
       parameters:
         - $ref: '#/components/parameters/sessionId'
@@ -1607,10 +1589,12 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/SessionData'
+                  - $ref: '#/components/schemas/SessionInfo'
                   - type: 'null'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1618,6 +1602,9 @@ paths:
     post:
       tags: [Sessions]
       summary: Get all session IDs for a set of clients in a realm
+      description: |
+        Admins of the realm may list any client's sessions. Everybody else may only list their
+        own (same realm, same username, any auth scheme).
       operationId: getSessionsForClients
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -1643,11 +1630,16 @@ paths:
                 $ref: '#/components/schemas/GetSessionsForClientsResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /sessions/realms/{realm_id}:
     delete:
       tags: [Sessions]
       summary: Revoke all sessions for a realm (administrative bulk logout)
+      description: |
+        Admins of the realm only: a realm admin for its own realms; the super admin for `_` and
+        for realms that have no admin of their own yet.
       operationId: deleteSessionsForRealm
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -1818,9 +1810,10 @@ paths:
       tags: [Realms]
       summary: List all userpass credentials across all realms (super admin only)
       description: |
-        The result is filtered: entries in a realm the requester can no
-        longer manage (claimed by another realm's admin) are omitted, even
-        though the endpoint itself is gated to super admins.
+        The result is filtered by the `_` login rule: a login of the admin realm is listed only
+        if the requester manages every admin record using it (so a super admin does not see the
+        logins of the admins of a claimed realm), and entries of other realms only if the
+        requester can still manage that realm. Password hashes are never returned.
       operationId: listAllUserpass
       security:
         - cookieAuth: []
@@ -1853,6 +1846,9 @@ paths:
         only for realms that have no admin of their own yet — once a realm is
         claimed, only that realm's own admin(s) may add more. An admin with an
         empty realms list (unaffiliated) may only be created by a super admin.
+        A `userpass` is accepted only for a login the requester manages (403) and that no other
+        admin is linked to (409); a `jwt`, `fido2` or `client_certificate` already used by another
+        admin is refused the same way. 2FA fields in the body are ignored.
       operationId: createAdmin
       security:
         - cookieAuth: []
@@ -1870,7 +1866,6 @@ paths:
               fido2:
               digital_credentials:
               client_certificate:
-              totp_enabled: false
       responses:
         '201':
           description: Created admin.
@@ -1889,9 +1884,8 @@ paths:
       tags: [Admins]
       summary: List all admins (super admin only)
       description: |
-        The result is filtered: admins scoped to a realm the requester can no
-        longer manage (claimed by that realm's own admin) are omitted, even
-        though the endpoint itself is gated to super admins.
+        A super admin sees every admin, including those of claimed realms, to be able to
+        contact them; it still cannot change them.
       operationId: listAdmins
       security:
         - cookieAuth: []
@@ -1914,11 +1908,8 @@ paths:
       tags: [Admins]
       summary: Get an admin by ID
       description: |
-        Subject to the exclusive-ownership rule: the requester must administer
-        every realm the target belongs to. For a super admin this only holds
-        while none of those realms has been claimed by another admin (an
-        unaffiliated target with an empty realms list is the only case where
-        a super admin can still reach it unconditionally). See
+        Any super admin may read any admin, including those of claimed realms. A realm admin
+        must administer every realm the target belongs to (exclusive-ownership rule). See
         `authorization_and_administration.md`.
       operationId: getAdmin
       parameters:
@@ -1947,7 +1938,9 @@ paths:
         Both the current and the incoming realms lists are subject to the exclusive-ownership
         rule (prevents privilege escalation via a crafted body). This applies to super admins
         too: for a non-empty realms list, a super admin qualifies only while every realm in it
-        is unclaimed — see `authorization_and_administration.md`.
+        is unclaimed — see `authorization_and_administration.md`. A changed `userpass`, `jwt`,
+        `fido2` or `client_certificate` follows the same rule as on create. 2FA fields in the body
+        are ignored; the stored 2FA is kept.
       operationId: updateAdmin
       parameters:
         - $ref: '#/components/parameters/adminId'
@@ -2210,6 +2203,8 @@ paths:
       description: |
         Returns a secret and otpauth:// URL for QR code display.
         The secret is NOT stored until verify is called successfully.
+        Only for admin logins, in realm `_` (400 in any other realm); the caller must manage
+        the login (403 otherwise).
       operationId: totpGenerate
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -2234,6 +2229,12 @@ paths:
               example:
                 secret_base32: JBSWY3DPEHPK3PXP
                 otpauth_url: otpauth://totp/My%20Application:alice?secret=JBSWY3DPEHPK3PXP&issuer=My%20Application&algorithm=SHA1&digits=6&period=30
+        '400':
+          description: 2FA is only available for admin logins, in realm `_`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2242,10 +2243,13 @@ paths:
   /realms/{realm_id}/totp/verify:
     post:
       tags: [TOTP]
-      summary: Verify a TOTP code and enable TOTP for the user
+      summary: Verify a TOTP code and enable TOTP for an admin login
       description: |
-        Verifies the code against the provided secret. If valid, stores the secret and enables TOTP.
-        Call this after generate once the user has scanned the QR code.
+        Verifies the code against the provided secret. If valid, stores the secret on the admin
+        record using the login and enables TOTP.
+        Call this after generate once the user has scanned the QR code. Only in realm `_`
+        (400 elsewhere, or when no admin uses the login); the caller must manage the login (403
+        otherwise).
       operationId: totpVerify
       parameters:
         - $ref: '#/components/parameters/realmId'
@@ -2266,7 +2270,7 @@ paths:
         '200':
           description: TOTP enabled. Empty body.
         '400':
-          description: Invalid TOTP token.
+          description: Invalid TOTP token, or 2FA is not available here (not realm `_`, or no admin uses the login).
           content:
             application/json:
               schema:
@@ -2279,8 +2283,11 @@ paths:
   /realms/{realm_id}/totp/{username}:
     delete:
       tags: [TOTP]
-      summary: Disable TOTP for a user
-      description: Removes the stored secret and sets totp_enabled = false.
+      summary: Disable TOTP for an admin login
+      description: |
+        Removes the stored secret and sets totp_enabled = false on the admin record using the
+        login. Only in realm `_` (400 elsewhere); the caller must manage the login (403
+        otherwise).
       operationId: totpDisable
       parameters:
         - $ref: '#/components/parameters/realmId'

@@ -91,13 +91,14 @@ pub struct Admin {
     pub digital_credentials: Option<HashMap<String, String>>,
     pub client_certificate: Option<String>,
 
-    /// 2FA/TOTP fields
+    /// 2FA/TOTP fields. Server-owned: the secret and enrolment URL are never serialized, and
+    /// every 2FA field is ignored in request bodies (2FA is managed through the TOTP endpoints).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub totp_enabled: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing)]
     pub totp_secret: Option<String>, // Base32 encoded secret for authenticator apps
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub totp_auth_url: Option<String>, // otpauth:// URL for QR code generation
+    #[serde(skip_serializing)]
+    pub totp_auth_url: Option<String>, // otpauth:// URL for QR code generation (contains the secret)
 }
 
 impl Admin {

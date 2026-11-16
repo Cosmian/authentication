@@ -75,9 +75,6 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                 fido2: admin.fido2,
                 digital_credentials: admin.digital_credentials,
                 client_certificate: admin.client_certificate,
-                totp_enabled: admin.totp_enabled,
-                totp_secret: admin.totp_secret,
-                totp_auth_url: admin.totp_auth_url,
             });
         } else if (open) {
             originalAdminRef.current = null;
@@ -102,9 +99,6 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                 fido2: preservedFields.fido2 ?? null,
                 digital_credentials: preservedFields.digital_credentials ?? null,
                 client_certificate: preservedFields.client_certificate ?? null,
-                totp_enabled: preservedFields.totp_enabled ?? null,
-                totp_secret: preservedFields.totp_secret ?? null,
-                totp_auth_url: preservedFields.totp_auth_url ?? null,
             };
 
             if (isEdit) {

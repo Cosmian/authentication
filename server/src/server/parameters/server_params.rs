@@ -115,7 +115,8 @@ pub struct DevSeedParams {
     /// Takes precedence over `admin_password` when both are set.
     /// Allows keeping secrets out of config files.
     pub admin_password_env: Option<String>,
-    /// Username for a TOTP-enabled regular user in the seeded realm (optional).
+    /// Username of a TOTP-enabled admin login in the admin realm `_` (optional): 2FA only exists
+    /// for admin logins. The admin record has no realm, so it administers nothing.
     pub totp_username: Option<String>,
     /// Plain-text password for the TOTP-enabled user (optional).
     pub totp_password: Option<String>,

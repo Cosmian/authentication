@@ -1,4 +1,7 @@
-use crate::models::{CertificateClaims, ClientClaims, LoginRequest, reject_reserved_claim_names};
+use crate::middleware::find_admin_by_login;
+use crate::models::{
+    ADMIN_REALM, CertificateClaims, ClientClaims, LoginRequest, reject_reserved_claim_names,
+};
 use crate::server::parameters::ServerParams;
 use crate::session::{self, JwksData, JwtTokenConfig, issue_token, session_id_from_cookie_value};
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
@@ -11,6 +14,56 @@ use jsonwebtoken::{Algorithm, Header, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Enforces the 2FA of the admin logging in, if it has one. Returns the response to send instead
+/// of a session when the code is missing or wrong.
+///
+/// 2FA belongs to admin logins: it is read from the admin using the login, in the admin realm
+/// only (ordinary realm users have none).
+async fn check_admin_totp(
+    database: &dyn crate::database::Database,
+    realm: &Realm,
+    client: &AuthenticatedClientScheme,
+    totp_code: Option<&str>,
+) -> Result<Option<HttpResponse>, AuthError> {
+    if realm.id != ADMIN_REALM {
+        return Ok(None);
+    }
+    let Some(admin) = find_admin_by_login(database, client.auth_scheme, &client.username)
+        .await?
+        .filter(|admin| admin.totp_enabled.unwrap_or(false))
+    else {
+        return Ok(None);
+    };
+    let Some(code) = totp_code else {
+        // Credentials are valid but TOTP code is still required
+        return Ok(Some(HttpResponse::Ok().json(AuthenticationResult {
+            session_id: None,
+            next_step: AuthenticationNextStep::TotpRequired,
+        })));
+    };
+    let secret = admin
+        .totp_secret
+        .ok_or_else(|| AuthError::Session("TOTP is enabled but no secret is stored".to_string()))?;
+    let totp_params = realm
+        .auth_params
+        .totp_params
+        .as_ref()
+        .map(crate::totp::realm_params_to_totp_params)
+        .transpose()?;
+    let totps = crate::totp::Totps::from_secret(
+        &secret,
+        // TODO : Shouldn't issuer be the realm ?
+        None,
+        client.username.clone(),
+        totp_params,
+    )?;
+    if totps.validate_token(code)? {
+        Ok(None)
+    } else {
+        Ok(Some(HttpResponse::Unauthorized().json("Invalid TOTP code")))
+    }
+}
 
 pub async fn login(
     jwt_token_config: Data<Arc<session::JwtTokenConfig>>,
@@ -32,52 +85,15 @@ pub async fn login(
         .clone();
 
     // --- TOTP check ---
-    let totp_enabled = database
-        .is_totp_enabled(&realm.id, &authenticated_client.username)
-        .await
-        .map_err(|e| AuthError::Session(format!("Failed to check TOTP status: {e}")))?
-        .unwrap_or(false);
-
-    if totp_enabled {
-        match login_request.totp_code.as_deref() {
-            None => {
-                // Credentials are valid but TOTP code is still required
-                return Ok(HttpResponse::Ok().json(AuthenticationResult {
-                    session_id: None,
-                    next_step: AuthenticationNextStep::TotpRequired,
-                }));
-            }
-            Some(code) => {
-                let secret = database
-                    .get_totp_secret(&realm.id, &authenticated_client.username)
-                    .await
-                    .map_err(|e| {
-                        AuthError::Session(format!("Failed to retrieve TOTP secret: {e}"))
-                    })?
-                    .ok_or_else(|| {
-                        AuthError::Session("TOTP is enabled but no secret is stored".to_string())
-                    })?;
-
-                let totp_params = realm
-                    .auth_params
-                    .totp_params
-                    .as_ref()
-                    .map(crate::totp::realm_params_to_totp_params)
-                    .transpose()?;
-
-                let totps = crate::totp::Totps::from_secret(
-                    &secret,
-                    // TODO : Shouldn't issuer be the realm ?
-                    None,
-                    authenticated_client.username.clone(),
-                    totp_params,
-                )?;
-
-                if !totps.validate_token(code)? {
-                    return Ok(HttpResponse::Unauthorized().json("Invalid TOTP code"));
-                }
-            }
-        }
+    if let Some(response) = check_admin_totp(
+        database.get_ref().as_ref(),
+        &realm,
+        &authenticated_client,
+        login_request.totp_code.as_deref(),
+    )
+    .await?
+    {
+        return Ok(response);
     }
     // --- end TOTP check ---
 

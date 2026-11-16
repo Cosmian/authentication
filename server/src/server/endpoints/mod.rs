@@ -29,7 +29,7 @@ pub use totp_endpoints::{totp_disable, totp_generate, totp_verify};
 mod sessions_endpoints;
 pub use sessions_endpoints::{
     delete_expired_sessions, delete_sessions, delete_sessions_for_realm, get_session,
-    get_session_by_id, get_sessions_for_clients, upsert_session,
+    get_session_by_id, get_sessions_for_clients,
 };
 
 mod auth_token;
@@ -45,7 +45,11 @@ pub use approle::{
 mod kubernetes;
 pub use kubernetes::{k8s_create_role, k8s_delete_role, k8s_get_role, k8s_list_roles, k8s_login};
 
-use crate::{AuthError, database::Database, models::Admin};
+use crate::{
+    AuthError, AuthScheme,
+    database::Database,
+    models::{ADMIN_REALM, Admin},
+};
 use actix_web::HttpMessage;
 use actix_web::HttpRequest;
 use actix_web::web::Data;
@@ -121,6 +125,93 @@ pub fn realm_manageable_given_claims(
 ) -> bool {
     requester.realms.iter().any(|r| r == realm_id)
         || (requester.is_super_admin() && !claimed_realms.contains(realm_id))
+}
+
+// ── Admin logins ────────────────────────────────────────────────────────────
+//
+// An admin logs in with a credential of the admin realm `_`, linked to its record only by name:
+// `Admin.userpass`. A `_` login `u` is used by every admin record whose `userpass` is `u` or whose
+// id is `u`. To create, read, change or delete that login, or its 2FA, the requester must manage
+// every record using it; when none does, only a super admin may.
+
+/// The admin records using the `_` login `username`.
+pub async fn admins_using_login(
+    database: &Data<Arc<dyn Database>>,
+    username: &str,
+) -> Result<Vec<Admin>, AuthError> {
+    let mut admins = database
+        .find_admins_by_auth_scheme(AuthScheme::UsernamePassword, username)
+        .await?;
+    if let Some(named) = database.get_admin(username).await?
+        && !admins.iter().any(|a| a.id == named.id)
+    {
+        admins.push(named);
+    }
+    Ok(admins)
+}
+
+/// Whether `requester` may manage the `_` login `username` and its 2FA.
+pub async fn can_manage_admin_login(
+    requester: &Admin,
+    username: &str,
+    database: &Data<Arc<dyn Database>>,
+) -> Result<bool, AuthError> {
+    let admins = admins_using_login(database, username).await?;
+    if admins.is_empty() {
+        return Ok(requester.is_super_admin());
+    }
+    for admin in &admins {
+        if !can_manage_admin_realms(requester, &admin.realms, database).await? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+/// Credentials and 2FA: per login in the admin realm, per realm elsewhere.
+pub async fn can_manage_credentials(
+    requester: &Admin,
+    realm_id: &str,
+    username: &str,
+    database: &Data<Arc<dyn Database>>,
+) -> Result<bool, AuthError> {
+    if realm_id == ADMIN_REALM {
+        can_manage_admin_login(requester, username, database).await
+    } else {
+        can_manage_realm(requester, realm_id, database).await
+    }
+}
+
+/// Pure version of the exclusive-ownership check for one admin record, for lists.
+pub fn admin_manageable_given_claims(
+    requester: &Admin,
+    admin: &Admin,
+    claimed_realms: &HashSet<String>,
+) -> bool {
+    if admin.realms.is_empty() {
+        return requester.is_super_admin();
+    }
+    admin
+        .realms
+        .iter()
+        .all(|r| realm_manageable_given_claims(requester, r, claimed_realms))
+}
+
+/// Pure version of [`can_manage_admin_login`], given every admin record and the claimed realms.
+pub fn login_manageable_given_claims(
+    requester: &Admin,
+    username: &str,
+    admins: &[Admin],
+    claimed_realms: &HashSet<String>,
+) -> bool {
+    let mut users = admins
+        .iter()
+        .filter(|a| a.userpass.as_deref() == Some(username) || a.id == username)
+        .peekable();
+    if users.peek().is_none() {
+        return requester.is_super_admin();
+    }
+    users.all(|a| admin_manageable_given_claims(requester, a, claimed_realms))
 }
 
 // ── Shared app token helper ─────────────────────────────────────────────────

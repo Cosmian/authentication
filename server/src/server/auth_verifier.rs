@@ -1,7 +1,7 @@
 use crate::{
     AdminAuth, AppTokenExtract, AuthResult, AuthResultHelper, CookieAuthSameServer, ExtractRealm,
     InjectAdminRealm, UsernamePasswordAuth,
-    middleware::{EnsureAuth, JwksManager, JwtAuth, LoginRateLimit},
+    middleware::{EnsureAuth, JwksManager, JwtAuth, LoginRateLimit, require_super_admin},
     server::{
         endpoints::{
             add_admin_to_realm,
@@ -53,7 +53,6 @@ use crate::{
             update_admin,
             update_realm,
             update_userpass,
-            upsert_session,
             version_endpoint,
             whoami,
         },
@@ -66,11 +65,13 @@ use actix_web::{
     App, Error, HttpResponse, HttpServer,
     body::MessageBody,
     dev::{ServerHandle, ServiceFactory, ServiceRequest, ServiceResponse},
+    middleware::from_fn,
     web::{self, Data, JsonConfig, PayloadConfig},
 };
 use cosmian_logger::{debug, info, trace, warn};
 use jsonwebtoken::Algorithm;
 use std::{
+    collections::BTreeMap,
     io,
     sync::{Arc, mpsc},
 };
@@ -166,6 +167,39 @@ pub async fn start_auth_verifier(
         .map_err(|e: io::Error| crate::AuthError::Unexpected(format!("{e}")))
 }
 
+/// Warns about admin records sharing a login. The admin lookup refuses such a login (see
+/// `find_admin_by_login`), so those admins cannot log in until the duplicates are fixed.
+async fn warn_on_shared_admin_logins(database: &dyn crate::database::Database) -> AuthResult<()> {
+    let admins = database.list_admins().await?;
+    warn_on_shared_logins(
+        "userpass",
+        admins
+            .iter()
+            .filter_map(|a| a.userpass.as_deref().map(|login| (login, a.id.as_str()))),
+    );
+    warn_on_shared_logins(
+        "jwt",
+        admins
+            .iter()
+            .filter_map(|a| a.jwt.as_deref().map(|login| (login, a.id.as_str()))),
+    );
+    Ok(())
+}
+
+/// Warns about every login of `kind` used by more than one admin id; `logins` yields
+/// `(login, admin id)` pairs.
+fn warn_on_shared_logins<'a>(kind: &str, logins: impl Iterator<Item = (&'a str, &'a str)>) {
+    let mut by_login: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (login, admin_id) in logins {
+        by_login.entry(login).or_default().push(admin_id);
+    }
+    for (login, ids) in by_login.into_iter().filter(|(_, ids)| ids.len() > 1) {
+        warn!(
+            "Admins {ids:?} share the {kind} login '{login}': none of them can log in until this is fixed"
+        );
+    }
+}
+
 /// Prepares the auth server with the given parameters and returns the server instance.
 /// This function is responsible for setting up the database, session store, and Actix app configuration.
 /// It does not start the server, allowing the caller to control when to run it.
@@ -208,6 +242,7 @@ async fn prepare_auth_verifier(
         }
     };
     let database = crate::database::create_database(&database_params).await?;
+    warn_on_shared_admin_logins(database.as_ref()).await?;
 
     // If a dev_seed config is present, ensure the seeded realm and realm-admin exist.
     if let Some(seed) = &params.dev_seed {
@@ -543,7 +578,6 @@ fn build_app(
         ))
         .wrap(ExtractRealm::new(database.clone()))
         .wrap(build_admin_cors(&allowed_origins))
-        .service(upsert_session)
         .service(get_session_by_id)
         .service(get_session)
         .service(get_sessions_for_clients)
@@ -592,8 +626,9 @@ fn build_app(
         .wrap(Cors::permissive())
         .service(k8s_login);
 
-    // AppRole admin CRUD
+    // AppRole admin CRUD (global roles: super admins only)
     let approle_admin_scope = web::scope("/auth/approle")
+        .wrap(from_fn(require_super_admin))
         .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),
@@ -608,8 +643,9 @@ fn build_app(
         .service(approle_get_role)
         .service(approle_list_roles);
 
-    // K8s admin CRUD
+    // K8s admin CRUD (global roles: super admins only)
     let k8s_admin_scope = web::scope("/auth/kubernetes")
+        .wrap(from_fn(require_super_admin))
         .wrap(AdminAuth::new(database.clone()))
         .wrap(CookieAuthSameServer::new(
             session_store.clone(),

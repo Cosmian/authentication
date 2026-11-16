@@ -52,7 +52,7 @@ A realm is **unclaimed** from the moment it is created until it gets its first a
 | State         | Who may manage its admins, credentials, and config (`PUT` on the realm) |
 | ------------- | ------------------------------------------------------------------------ |
 | **Unclaimed** | The super admin (bootstrap access) — this is how the very first admin of a new realm gets created |
-| **Claimed**   | Only that realm's own admin(s). The super admin loses access, **including read access**, to its admins and credentials |
+| **Claimed**   | Only that realm's own admin(s). The super admin loses access to its credentials and can no longer change its admins, but can still **read** them (`GET /admins`, `GET /admins/{id}`) to contact them |
 
 Two operations are exempt from this rule and stay available to the super admin **permanently**, regardless of claim status:
 
@@ -144,7 +144,7 @@ flowchart TD
     LH -- No --> LJ["Return only realms\nrequester administers"]
 ```
 
-`GET /admins` and `GET /admins/userpass` follow the same "Admin CRUD" / "target.realms" branch as above, applied per item, to decide what the returned list includes.
+`GET /admins` returns every admin to a super admin, and `GET /admins/{id}` is readable by any super admin: seeing a claimed realm's admins is how the super admin contacts them. `GET /admins/userpass` is filtered by the [login rule](#the-_-login-rule).
 
 ---
 
@@ -167,10 +167,10 @@ flowchart TD
 | Method   | Endpoint                         |       Super Admin        |        Realm Admin        |
 | -------- | --------------------------------- | :-----------------------: | :-------------------------: |
 | `POST`   | `/admins`                        |          ✅ ²              |            ✅ ²              |
-| `GET`    | `/admins/{id}`                   |          ✅ ²              |            ✅ ²              |
+| `GET`    | `/admins/{id}`                   |   ✅ always (read-only)    |            ✅ ²              |
 | `PUT`    | `/admins/{id}`                   |    ✅ ² (current AND new)  |     ✅ ² (current AND new)   |
 | `DELETE` | `/admins/{id}`                   |          ✅ ²              |            ✅ ²              |
-| `GET`    | `/admins`                        |     ✅ (results filtered)  |             ❌               |
+| `GET`    | `/admins`                        |        ✅ all admins       |             ❌               |
 | `PUT`    | `/admins/{id}/realms/{realm_id}` |     ✅ if realm unclaimed  |  ✅ if administers realm_id, and owns target ³ |
 | `DELETE` | `/admins/{id}/realms/{realm_id}` |     ✅ if realm unclaimed  |  ✅ if administers realm_id, and owns target ³ |
 
@@ -179,7 +179,7 @@ flowchart TD
 
 ### Credential Management
 
-All `/realms/{realm}/userpass` and `/realms/{realm}/totp/*` endpoints require `can_manage_realm(realm)` — the claim-aware check: a super admin qualifies only while the realm has no admin of its own yet.
+In a regular realm, all `/realms/{realm}/userpass` and `/realms/{realm}/totp/*` endpoints require `can_manage_realm(realm)` — the claim-aware check: a super admin qualifies only while the realm has no admin of its own yet. In the admin realm `_`, the credentials are the admins' logins and follow the [login rule](#the-_-login-rule) instead, per login. 2FA exists only for admin logins in `_`; the TOTP endpoints answer `400` in any other realm.
 
 | Method   | Endpoint                              |      Super Admin       |          Realm Admin           |
 | -------- | -------------------------------------- | :---------------------: | :------------------------------: |
@@ -190,13 +190,25 @@ All `/realms/{realm}/userpass` and `/realms/{realm}/totp/*` endpoints require `c
 | `GET`    | `/realms/{realm}/userpass`            |    ✅ if unclaimed       | ✅ if `can_manage_realm(realm)` |
 | `GET`    | `/admins/userpass`                    | ✅ (results filtered)    |                ❌                 |
 
+In realm `_` every row above applies per login: ✅ only for a login the caller manages (see the rule), and `GET /realms/_/userpass` is open to every admin but lists only the logins it manages. Password hashes are never returned in lists.
+
 ### Session Management
 
-| Method   | Endpoint                 | Super Admin |               Realm Admin                |
-| -------- | ------------------------ | :---------: | :--------------------------------------: |
-| `GET`    | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
-| `DELETE` | `/sessions/{session_id}` |      ✅      | ✅ if session is in an administered realm |
-| `GET`    | `/sessions`              |      ✅      |    ✅ filtered to administered realms     |
+All `/sessions` calls need a valid session cookie, but not an admin one: a caller always reaches its **own** sessions (same realm and username, whatever the login scheme), which is what a backend API server needs to log a user out. Admins reach more:
+
+| Operation                                   | Any client       | Realm admin                    | Super admin                                    |
+| ------------------------------------------- | :--------------: | :----------------------------: | :--------------------------------------------: |
+| `GET`/`POST /sessions/{session_id}`         | ✅ own sessions   | ✅ sessions of its realms       | ✅ realms without an admin of their own, and `_` |
+| `POST /sessions/realms/{realm}/clients`     | ✅ own username   | ✅ any client of its realms     | ✅ same                                         |
+| `DELETE /sessions` (by ID)                  | ✅ own sessions   | ✅ sessions of its realms       | ✅ same                                         |
+| `DELETE /sessions/realms/{realm}`           | ❌                | ✅ its realms                   | ✅ realms without an admin of their own, and `_` |
+| `DELETE /sessions/expired`                  | ❌                | ❌                              | ✅                                              |
+
+The realm-claim rule applies as everywhere else: once a realm has its own admin, the super admin no longer reaches its sessions. A session the caller may not access is reported as not found, and a `DELETE` naming one skips it like a missing session. Session responses never include the cookie value, which is the session credential. Sessions cannot be created through the API.
+
+### Machine Authentication
+
+`/auth/approle/*` and `/auth/kubernetes/*` role management (everything except the unauthenticated `login` endpoints) is for **super admins only**: the roles are global, not tied to a realm.
 
 ### Public / unauthenticated
 
@@ -240,14 +252,11 @@ Granting or revoking realm membership (`add_admin_to_realm` / `remove_admin_from
 
 ---
 
-## Cookie-Realm Constraint
+## Admin Sessions Come From the `_` Realm
 
-Session cookies are scoped to the realm through which the user logged in. A cookie issued by `POST /login?realm=_` can only authenticate requests that require the `_` realm's session.
+Admin endpoints (`/admins/*`, `/realms/*`, `/auth/approle/*`, `/auth/kubernetes/*`) only accept a session opened on the `_` realm by an admin. A session of any other realm is rejected with `401`, even when its username equals an admin's login: the admin lookup uses the username and login scheme of the session, and only the `_` realm holds admin logins.
 
-The `/realms/{realm}/userpass` endpoints read the session cookie and check that the cookie's realm matches (or the caller is a super admin). Practically this means:
-
-- A realm admin for `finance` who logs into `_` **cannot** manage `/realms/finance/userpass` entries — their cookie is for `_`, not for `finance`. They would need to authenticate as a client against the `finance` realm separately.
-- A super admin who logs into `_` **can** manage `/realms/_/userpass` entries directly.
+A `_` session is not tied to `/realms/_/…`: it authorises calls on `/realms/{realm}/…` for every realm the admin may manage (see [Realm-Claim Lifecycle](#realm-claim-lifecycle)).
 
 ---
 
@@ -298,7 +307,7 @@ sequenceDiagram
 
 Alice's cookie (from `POST /login?realm=_`) authorises:
 
-- `GET/POST/PUT/DELETE /realms/_/userpass/*` (credential management **in `_`**)
+- `GET/POST/PUT/DELETE /realms/_/userpass/*` for **her own login and her colleagues'** (the logins of admins whose realms she administers), and `/realms/_/totp/*` for the same logins
 - `GET /admins/realms/my_realm`
 - `POST /admins` with `realms: ["my_realm"]`
 - CRUD on any user whose `realms` is a subset of `["my_realm"]`
@@ -307,10 +316,10 @@ Alice **cannot**:
 
 - Create realms, or delete a realm she doesn't administer
 - Access `/admins` (list all users) or `/admins/userpass` (list all credentials)
-- Manage any other realm
+- Manage any other realm, or any other admin's login or 2FA (the super admin's included)
 - Manage users whose `realms` includes something other than `my_realm`
 
-> **Note:** `my_realm` is now claimed. From this point on, the super admin who set Alice up also loses the ability to create further admins, manage credentials, or update the config in `my_realm` — only Alice (and any admin she adds) can. The super admin permanently retains `GET`/`DELETE` on `my_realm` itself (see [Realm-Claim Lifecycle](#realm-claim-lifecycle)).
+> **Note:** `my_realm` is now claimed. From this point on, the super admin who set Alice up also loses the ability to create further admins, manage credentials (Alice's own login and 2FA included), or update the config in `my_realm` — only Alice (and any admin she adds) can. The super admin can still read Alice's record and permanently retains `GET`/`DELETE` on `my_realm` itself (see [Realm-Claim Lifecycle](#realm-claim-lifecycle)).
 
 ---
 
@@ -336,11 +345,29 @@ Cookie: _ea_=<super_admin_cookie>
 
 ---
 
-## Credentials and the `userpass` Foreign Key
+## Credentials and the `userpass` Link
 
-The `Admin.userpass` field is a **username** (not a password) that acts as a foreign key into the `userpass` table. There can be multiple `UserPass` rows with the same username if the same person authenticates in multiple realms.
+The `Admin.userpass` field is a **username** (not a password) naming the admin's login: a credential of the admin realm `_`. The record and the credential are linked only by that name, and the `userpass` table is keyed by `(realm, username)`.
 
-When a `Admin` record is deleted, all associated `UserPass` credentials are **cascade-deleted** automatically (any orphaned credentials with the same username as `admin.userpass` are removed from all realms).
+### The `_` Login Rule
+
+An admin record **uses** the `_` login `u` when its `userpass` is `u` or its id is `u`. To create, read, change or delete the login `u`, or its 2FA, the caller must be able to manage **every** admin record using `u` (the exclusive-ownership rule); when no record uses `u`, only a super admin may.
+
+- A realm admin manages its own login and its colleagues' (they all belong exclusively to its realm), so realm admins are self-sufficient.
+- The super admin manages the logins of super admins and of unaffiliated admins, but not those of the admins of a claimed realm.
+- A decoy record does not help: the real owner of a login is in the set too.
+
+The same rule decides what `GET /realms/_/userpass` and `GET /admins/userpass` list.
+
+### Linking an admin to a login
+
+- Creating a `_` credential links it to the admin record of the same id, unless that record already has a login. A link is never overwritten.
+- `POST`/`PUT /admins` may set a `userpass` only if the caller manages every other record using that login (a super admin when none does: it adopts the existing credential), and only if no other record is linked to it (`409`). A `jwt`, `fido2` or `client_certificate` already used by another admin is refused the same way (`403` if the caller does not manage that admin, else `409`): a shared login would lock its admins out.
+- Deleting a `_` credential clears the link of the records that used it.
+
+### Deleting an admin
+
+Deleting an admin record deletes its own `_` login, unless another record still uses it. Credentials with the same name in other realms are never touched.
 
 ---
 
@@ -356,7 +383,7 @@ There is no built-in concept of a client whose presence in the database does not
 
 ### Concurrent realm admin creation
 
-Creating two realm admin users simultaneously for the same username is not prevented at the application level. The database unique constraint on `userpass(username)` is the only safeguard. Ensure the caller serializes user creation at the client side.
+Linking two admin records to the same login is refused with `409`. The check is not transactional, but the database backs it: `admin.userpass` and `admin.jwt` have unique indexes, so of two simultaneous requests one fails with `409`. At startup the server creates each index only if no two admins already share a value (a MySQL `jwt` index covers its first 255 characters). Otherwise it logs a warning and the column stays non-unique until the duplicates are fixed; a login shared by several admin records is refused at login and by the admin lookup (the admins using it cannot log in).
 
 ### Realm-claim check is not transactional
 

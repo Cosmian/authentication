@@ -33,16 +33,18 @@ Set-Cookie: _ea_=<cookie_string>; HttpOnly; Secure; SameSite=Strict
 
 The `cookie_string` is an **opaque token** — a lookup key into the server-side session store. It is not a JWT and contains no embedded session data. All session state is stored server-side.
 
-The server also returns a `session_id` (UUID) in the JSON response body:
+The server also returns a `session_id` in the JSON response body. It is the SHA-256 (hex) of the cookie value:
 
 ```json
 {
   "next_step": "Authenticated",
-  "session_id": "550e8400-e29b-41d4-a716-446655440000"
+  "session_id": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
 }
 ```
 
-The `session_id` can be used to look up or invalidate the session via the API. The `cookie_string` (from the cookie) or the `session_id` (from the response body) can both be used to retrieve `SessionData`.
+The `session_id` identifies the session in the `/sessions` API. A backend that only holds the cookie computes it itself. Responses of that API describe the session (`SessionInfo`) but never include the cookie value, which is the session credential.
+
+> **Who may call `/sessions`:** every call needs a valid `_ea_` cookie, and a caller only reaches its **own** sessions (same realm and username). So a backend API server forwards the *user's* cookie with each call, and can then validate or revoke that user's sessions. Admins also reach the sessions of the realms they administer; see [Authorization and Administration](authorization_and_administration.md#session-management).
 
 ---
 
@@ -89,14 +91,24 @@ Call `GET /sessions/{session_id}` on the auth-verifier for every request. This i
 **Cons:** One additional HTTPS round-trip per request.
 
 ```rust
-use auth_client::{AuthClient, AuthClientScheme};
+use auth_client::{AuthClient, AuthClientScheme, SessionInfo};
+use sha2::{Digest, Sha256};
 
 let auth = AuthClient::new("https://auth.example.com", &ca_pem, AuthClientScheme::None)?;
 
-// Extract session_id from the _ea_ cookie value
-let session_id = req.cookie("_ea_").map(|c| c.value().to_string());
+// Forward the user's own cookie: a caller only sees its own session.
+let cookie = req.cookie("_ea_").ok_or(HttpError::Unauthorized)?;
+let session_id = hex::encode(Sha256::digest(cookie.value().as_bytes()));
 
-let session = auth.get_session(&session_id).await?;
+let response = auth
+    .get_raw_with_header(
+        &format!("/sessions/{session_id}"),
+        "Cookie",
+        &format!("_ea_={}", cookie.value()),
+    )
+    .await?;
+// 401 when the cookie is not a valid session any more
+let session: Option<SessionInfo> = response.json().await?;
 
 match session {
     None => return Err(HttpError::Unauthorized),
@@ -153,7 +165,7 @@ let session = auth.get_session_with_action(
     SessionsAction::LogoutOtherSessions,
 ).await?;
 // All of alice's other sessions are now revoked.
-// The current session remains active and its SessionData is returned.
+// The current session remains active and its SessionInfo is returned.
 ```
 
 ### Log out from every device
@@ -170,7 +182,7 @@ let session = auth.get_session_with_action(
     SessionsAction::LogoutAllSessions,
 ).await?;
 // ALL sessions for alice (including the current one) are revoked.
-// SessionData is returned before deletion.
+// SessionInfo is returned before deletion.
 ```
 
 ### Cross-scheme bulk logout

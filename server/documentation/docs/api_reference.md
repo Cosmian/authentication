@@ -256,19 +256,20 @@ certificate, `AuthnRequestsSigned="true"`), to import into the IdP.
 
 ## Session Management
 
+Every `/sessions` call needs a valid `_ea_` cookie. A caller reaches its **own** sessions (same realm and username, any auth scheme); admins also reach the sessions of the realms they may manage (a realm admin its own realms, the super admin `_` and the realms that have no admin of their own yet). A session the caller may not access is reported as not found, and a refused call returns `403`. `session_id` is the SHA-256 (hex) of the `_ea_` cookie value, and the cookie value itself is never returned.
+
 ### `GET /sessions/{session_id}`
 
-Retrieve session data by session ID. Returns `null` (not an error) when the session does not exist or has expired.
+Retrieve session data by session ID. Returns `null` (not an error) when the session does not exist, has expired, or is not one the caller may access.
 
 **Response — `200 OK`** (session found)
 
 ```json
 {
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_id": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "realm_id": "my-service",
   "username": "alice",
   "auth_scheme": "up",
-  "cookie_string": "eyJ…",
   "max_age_seconds": 3600,
   "max_stale_age_seconds": 1800,
   "created_at": 1744996400
@@ -316,7 +317,7 @@ Retrieve session data and optionally apply a bulk logout action in the same requ
 
 ### `POST /sessions/realms/{realm_id}/clients`
 
-Return all session IDs for a set of authenticated clients in a realm.
+Return all session IDs for a set of authenticated clients in a realm. Admins of the realm may ask for any client; everybody else only for their own username (`403` otherwise).
 
 #### Request body
 
@@ -342,7 +343,7 @@ Return all session IDs for a set of authenticated clients in a realm.
 
 ### `DELETE /sessions`
 
-Delete sessions by ID.
+Delete sessions by ID. Every session must be the caller's own or belong to a realm the caller administers; otherwise the request is refused with `403` and nothing is deleted.
 
 #### Request body
 
@@ -360,7 +361,7 @@ Delete sessions by ID.
 
 ### `DELETE /sessions/expired`
 
-Delete all expired sessions from the session store.
+Delete all expired sessions from the session store. Super admins only.
 
 **Response — `204 No Content`** — empty body.
 
@@ -368,7 +369,7 @@ Delete all expired sessions from the session store.
 
 ### `DELETE /sessions/realms/{realm_id}`
 
-Delete all sessions for a given realm (administrative bulk logout).
+Delete all sessions for a given realm (administrative bulk logout). Admins of that realm only.
 
 **Response — `204 No Content`** — empty body.
 
@@ -376,7 +377,7 @@ Delete all sessions for a given realm (administrative bulk logout).
 
 ## Machine Authentication (AppRole / Kubernetes / Token)
 
-Endpoints for machine-to-machine authentication. These sit under the `/auth/` prefix. Login endpoints are **unauthenticated** (the credential is the request body). Role management endpoints require an active admin session cookie. Token self-service endpoints require a valid `X-Vault-Token` header.
+Endpoints for machine-to-machine authentication. These sit under the `/auth/` prefix. Login endpoints are **unauthenticated** (the credential is the request body). Role management endpoints require a super admin session cookie. Token self-service endpoints require a valid `X-Vault-Token` header.
 
 For complete request/response examples and field descriptions see [app_auth_api.md](app_auth_api.md).
 
@@ -760,6 +761,8 @@ List all username/password credentials across every realm. Super admin only.
 
 Create a new `Admin` record. Super admins may create any admin. Realm admins may create an admin only if every realm in the new admin's `realms` list is one they administer.
 
+A `userpass` may only name a login the caller manages (the [`_` login rule](authorization_and_administration.md#the-_-login-rule): every admin already using it, or a super admin when none does) and that no other admin is linked to (`409`). A `jwt`, `fido2` or `client_certificate` already used by another admin is refused: `403` if the caller does not manage that admin, else `409`. Anything in `totp_*` is ignored: 2FA is enabled through the TOTP endpoints only.
+
 #### Request body
 
 ```json
@@ -770,10 +773,7 @@ Create a new `Admin` record. Super admins may create any admin. Realm admins may
   "jwt": null,
   "fido2": null,
   "digital_credentials": null,
-  "client_certificate": null,
-  "totp_enabled": false,
-  "totp_secret": null,
-  "totp_auth_url": null
+  "client_certificate": null
 }
 ```
 
@@ -781,14 +781,12 @@ Create a new `Admin` record. Super admins may create any admin. Realm admins may
 | --------------------- | ------------------ | ---------------------------------------------------------- |
 | `id`                  | `String`           | Unique user identifier                                     |
 | `realms`              | `String[]`         | Realms this user administers. Use `["_"]` for super admin. |
-| `userpass`            | `String` \| `null` | Username key referencing the `userpass` credential table   |
+| `userpass`            | `String` \| `null` | Username of the admin's `_` login (see above)              |
 | `jwt`                 | `String` \| `null` | JWT subject identifier                                     |
 | `fido2`               | `String` \| `null` | FIDO2 identifier (future)                                  |
 | `digital_credentials` | `Object` \| `null` | Key-value map of digital credential identifiers (future)   |
 | `client_certificate`  | `String` \| `null` | Client certificate identifier                              |
-| `totp_enabled`        | `bool` \| `null`   | Whether TOTP is active for this user                       |
-| `totp_secret`         | `String` \| `null` | Base32-encoded TOTP secret (read-only via API)             |
-| `totp_auth_url`       | `String` \| `null` | `otpauth://` URL for QR code enrollment (read-only)        |
+| `totp_enabled`        | `bool` \| `null`   | Read-only: whether TOTP is active. Ignored in request bodies. The TOTP secret is never returned. |
 
 **Response — `201 Created`** — created `Admin` object.
 
@@ -931,9 +929,11 @@ Delete a credential.
 
 See [two_factor_authentication.md](two_factor_authentication.md) for the full enrollment flow.
 
+2FA exists only for **admin logins**, in realm `_`, and is stored on the admin record using the login. The caller must manage that login (the [`_` login rule](authorization_and_administration.md#the-_-login-rule)), otherwise `403`. In any other realm the three endpoints answer `400`.
+
 ### `POST /realms/{realm_id}/totp/generate`
 
-Generate a TOTP secret for a user. The secret is **not stored** at this point — it is only persisted after a successful verification call.
+Generate a TOTP secret for an admin login. The secret is **not stored** at this point — it is only persisted after a successful verification call.
 
 **Query parameters:** `realm={realm_id}`
 
@@ -1065,11 +1065,11 @@ described in [SAML 2.0 single sign-on](saml.md#step-2--configure-the-realm).
   "fido2": null,
   "digital_credentials": null,
   "client_certificate": null,
-  "totp_enabled": false,
-  "totp_secret": null,
-  "totp_auth_url": null
+  "totp_enabled": false
 }
 ```
+
+`totp_enabled` is read-only; the TOTP secret and enrolment URL are never returned, and 2FA fields in request bodies are ignored.
 
 ### `UserPass`
 
@@ -1089,15 +1089,14 @@ described in [SAML 2.0 single sign-on](saml.md#step-2--configure-the-realm).
 > `{ "hashed": "<PHC string>" }` in `password_input` on create/update — see
 > [`POST /realms/{realm_id}/userpass`](#post-realmsrealm_iduserpass).
 
-### `SessionData`
+### `SessionInfo`
 
 ```json
 {
-  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "session_id": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
   "realm_id": "my-service",
   "username": "alice",
   "auth_scheme": "up",
-  "cookie_string": "eyJ…",
   "max_age_seconds": 3600,
   "max_stale_age_seconds": 1800,
   "created_at": 1744996400

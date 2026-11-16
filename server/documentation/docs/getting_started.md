@@ -180,7 +180,7 @@ curl --cacert ca.cert.pem \
 In your API server code, use the `auth_client` crate:
 
 ```rust
-use auth_client::{AuthClient, AuthClientScheme};
+use auth_client::{AuthClient, AuthClientScheme, SessionInfo};
 
 let client = AuthClient::new(
     "https://localhost:8443",
@@ -188,8 +188,16 @@ let client = AuthClient::new(
     AuthClientScheme::None,
 )?;
 
-// session_id is extracted from the incoming _ea_ cookie
-let session = client.get_session(session_id).await?;
+// the user's _ea_ cookie value, forwarded to the Authentication Verifier
+// (a caller only sees its own sessions); session_id = hex(sha256(cookie))
+let response = client
+    .get_raw_with_header(
+        &format!("/sessions/{session_id}"),
+        "Cookie",
+        &format!("_ea_={cookie_value}"),
+    )
+    .await?;
+let session: Option<SessionInfo> = response.json().await?;
 match session {
     None    => { /* session not found or expired — return 401 */ }
     Some(s) => println!("Request from {} in realm {}", s.username, s.realm_id),
