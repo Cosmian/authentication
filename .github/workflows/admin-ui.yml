@@ -35,10 +35,11 @@ jobs:
           cache-dependency-path: admin-ui/pnpm-lock.yaml
 
       # pnpm 9 reads the overrides from package.json, newer pnpm only from pnpm-workspace.yaml: they must not drift.
+      # Both files are parsed (jq, yq: preinstalled on ubuntu-24.04) and compared as JSON objects.
       - name: pnpm overrides match in package.json and pnpm-workspace.yaml
         run: |
-          diff <(jq -r '.pnpm.overrides | to_entries[] | "\(.key)=\(.value)"' package.json | sort) \
-               <(awk '/^overrides:/{f=1;next} f&&/^[^ #]/{f=0} f&&NF&&!/^ *#/{gsub(/"/,""); sub(/^ +/,""); sub(/: */,"="); print}' pnpm-workspace.yaml | sort)
+          diff <(jq -S '.pnpm.overrides // {}' package.json) \
+               <(yq -o=json '.overrides // {}' pnpm-workspace.yaml | jq -S .)
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
