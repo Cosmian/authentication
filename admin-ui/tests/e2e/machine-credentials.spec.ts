@@ -153,7 +153,7 @@ async function mockK8s(page: Page, initial: Record<string, K8sRoleConfig>): Prom
 async function mockToken(page: Page, valid: boolean): Promise<void> {
     let renewed = false;
     await page.route(
-        (url) => url.pathname.startsWith("/auth/token/"),
+        (url) => url.pathname.startsWith("/v1/auth/token/"),
         (route) => {
             const { pathname } = new URL(route.request().url());
             const hasToken = Boolean(route.request().headers()["x-vault-token"]);

@@ -15,8 +15,8 @@ Used by `nix/auth-verifier.nix` to verify reproducible Cargo vendoring:
 
 Used by `nix/admin-ui.nix` to verify the pnpm dependency fetch:
 
-- `admin-ui.pnpm.<linux-x86_64|linux-aarch64|darwin>.sha256` — always the same
-  value on all three platforms, because `fetchDeps` fetches every platform's packages
+- `admin-ui.pnpm.<linux-x86_64|linux-aarch64|darwin>.sha256` — usually the same value on the three
+  platforms, but not guaranteed: take each one from a build on that platform
 
 ### Binary hashes
 

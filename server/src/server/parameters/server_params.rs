@@ -91,6 +91,12 @@ pub struct ServerParams {
     /// rate above.
     #[serde(default = "default_login_rate_limit_burst")]
     pub login_rate_limit_burst: u32,
+
+    /// Realm whose userpass accounts may log in through the Vault-compatible
+    /// `POST /v1/auth/userpass/login/{username}` (`bao login -method=userpass`).
+    /// When unset, that endpoint refuses every login. The admin realm `_` is refused.
+    #[serde(default)]
+    pub vault_userpass_realm: Option<String>,
 }
 
 fn default_login_rate_limit_per_second() -> u32 {

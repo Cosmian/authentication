@@ -25,6 +25,7 @@ A fully commented sample configuration is provided in `auth_verifier.toml` at th
   - [TLS Configuration](#tls-configuration)
     - [Generating certificates](#generating-certificates)
   - [Session JWT Keys](#session-jwt-keys)
+  - [Vault Userpass Login](#vault-userpass-login)
   - [SAML Service Provider Key](#saml-service-provider-key)
   - [Primary Database](#primary-database)
     - [Redis](#redis)
@@ -140,6 +141,21 @@ Generate a dedicated JWT key pair:
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out jwt.key.pem
 openssl ec -in jwt.key.pem -pubout -out jwt.pub.pem
 ```
+
+---
+
+## Vault Userpass Login
+
+```toml
+# Realm whose userpass accounts may log in through the Vault-compatible
+# `POST /v1/auth/userpass/login/{username}` (`bao login -method=userpass`).
+# When unset, that endpoint refuses every login. The admin realm `_` is refused.
+vault_userpass_realm = "kv-users"
+```
+
+| Key | Type | Required | Default |
+|-----|------|----------|---------|
+| `vault_userpass_realm` | `String` | No | `null` (login disabled) |
 
 ---
 

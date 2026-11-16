@@ -4,7 +4,7 @@
 //!
 //! | Method | Path | Description |
 //! |--------|------|-------------|
-//! | POST | `/auth/approle/login` | Login with role_id + secret_id → returns token |
+//! | POST | `/v1/auth/approle/login` | Login with role_id + secret_id → returns token |
 //!
 //! ## Admin CRUD (requires CookieAuthSameServer + AdminAuth)
 //!
@@ -42,7 +42,7 @@ use uuid::Uuid;
 
 /// Login with role_id + secret_id and receive an app token.
 ///
-/// `POST/PUT /auth/approle/login` — both methods accepted; Content-Type-agnostic body parsing.
+/// `POST/PUT /v1/auth/approle/login` — both methods accepted; Content-Type-agnostic body parsing.
 #[route("", method = "POST", method = "PUT")]
 pub async fn approle_login(
     body: Bytes,

@@ -44,6 +44,7 @@ pub use dto::{
     TotpGenerateRequest,
     TotpGenerateResponse,
     TotpVerifyRequest,
+    VaultUserpassLoginRequest,
     Version,
 };
 

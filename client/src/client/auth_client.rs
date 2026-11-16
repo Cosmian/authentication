@@ -17,7 +17,7 @@ use crate::{
         DeleteSessionsRequest, GetSessionRequest, GetSessionsForClientsRequest,
         GetSessionsForClientsResponse, K8sListRolesResponse, K8sLoginRequest,
         K8sRoleConfigResponse, K8sRoleRequest, SessionInfo, SessionsAction, TotpGenerateRequest,
-        TotpGenerateResponse, TotpVerifyRequest, Version,
+        TotpGenerateResponse, TotpVerifyRequest, VaultUserpassLoginRequest, Version,
     },
     models::{Admin, ClientClaims, LoginRequest, Realm, UserPass},
 };
@@ -889,10 +889,28 @@ impl AuthClient {
     ) -> AuthResult<AppAuthResponse> {
         use crate::dto::AppRoleLoginRequest;
         self.post(
-            "/auth/approle/login",
+            "/v1/auth/approle/login",
             &AppRoleLoginRequest {
                 role_id: role_id.to_string(),
                 secret_id: secret_id.map(str::to_string),
+            },
+        )
+        .await
+    }
+
+    /// Login a userpass account of the server's `vault_userpass_realm` and receive an app token
+    /// (`POST /v1/auth/userpass/login/{username}`, as `bao login -method=userpass` does).
+    ///
+    /// No authentication required.
+    pub async fn vault_userpass_login(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> AuthResult<AppAuthResponse> {
+        self.post(
+            &format!("/v1/auth/userpass/login/{username}"),
+            &VaultUserpassLoginRequest {
+                password: password.to_string(),
             },
         )
         .await
@@ -950,7 +968,7 @@ impl AuthClient {
     /// No authentication required.
     pub async fn k8s_login(&self, role: &str, jwt: &str) -> AuthResult<AppAuthResponse> {
         self.post(
-            "/auth/kubernetes/login",
+            "/v1/auth/kubernetes/login",
             &K8sLoginRequest {
                 role: role.to_string(),
                 jwt: jwt.to_string(),
@@ -966,10 +984,10 @@ impl AuthClient {
 pub const APP_TOKEN_HEADER: &str = "X-Vault-Token";
 
 impl AuthClient {
-    /// Return metadata for an app token (`GET /auth/token/lookup-self`).
+    /// Return metadata for an app token (`GET /v1/auth/token/lookup-self`).
     pub async fn token_lookup_self(&self, token: &str) -> AuthResult<AppTokenLookupResponse> {
         let response = self
-            .get_raw_with_header("/auth/token/lookup-self", APP_TOKEN_HEADER, token)
+            .get_raw_with_header("/v1/auth/token/lookup-self", APP_TOKEN_HEADER, token)
             .await
             .map_err(|e| AuthError::Generic(format!("lookup-self GET failed: {e}")))?;
         let status = response.status();
@@ -985,11 +1003,11 @@ impl AuthClient {
             .map_err(|e| AuthError::Generic(format!("failed to parse lookup-self response: {e}")))
     }
 
-    /// Renew an app token (`POST /auth/token/renew-self`).
+    /// Renew an app token (`POST /v1/auth/token/renew-self`).
     pub async fn token_renew_self(&self, token: &str) -> AuthResult<AppAuthResponse> {
         let response = self
             .post_raw_with_header(
-                "/auth/token/renew-self",
+                "/v1/auth/token/renew-self",
                 &serde_json::json!({}),
                 APP_TOKEN_HEADER,
                 token,
@@ -1009,11 +1027,11 @@ impl AuthClient {
             .map_err(|e| AuthError::Generic(format!("failed to parse renew-self response: {e}")))
     }
 
-    /// Revoke an app token (`POST /auth/token/revoke-self`).
+    /// Revoke an app token (`POST /v1/auth/token/revoke-self`).
     ///
     /// Returns `Ok(())` on success (`204 No Content`).
     pub async fn token_revoke_self(&self, token: &str) -> AuthResult<()> {
-        let url = format!("{}/auth/token/revoke-self", self.base_url);
+        let url = format!("{}/v1/auth/token/revoke-self", self.base_url);
         let response = self
             .client
             .post(&url)
@@ -1028,7 +1046,7 @@ impl AuthClient {
     ///
     /// Useful in tests to assert that an expired or revoked token returns `403`.
     pub async fn token_lookup_self_status(&self, token: &str) -> AuthResult<u16> {
-        let url = format!("{}/auth/token/lookup-self", self.base_url);
+        let url = format!("{}/v1/auth/token/lookup-self", self.base_url);
         let response = self
             .client
             .get(&url)

@@ -381,7 +381,7 @@ Endpoints for machine-to-machine authentication. These sit under the `/auth/` pr
 
 For complete request/response examples and field descriptions see [app_auth_api.md](app_auth_api.md).
 
-### `POST /auth/approle/login`
+### `POST /v1/auth/approle/login`
 
 Exchange a `role_id` + `secret_id` pair for an opaque app token. Also accepts `PUT` (SPIRE compatibility).
 
@@ -520,7 +520,7 @@ List all AppRole role names. Requires admin session cookie.
 
 ---
 
-### `POST /auth/kubernetes/login`
+### `POST /v1/auth/kubernetes/login`
 
 Exchange a Kubernetes service-account JWT for an app token.
 
@@ -587,7 +587,7 @@ Delete a Kubernetes role. Requires admin session cookie.
 
 ---
 
-### `GET /auth/token/lookup-self`
+### `GET /v1/auth/token/lookup-self`
 
 Validate an app token and return its metadata.
 
@@ -616,7 +616,7 @@ X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
 
 ---
 
-### `POST /auth/token/renew-self`
+### `POST /v1/auth/token/renew-self`
 
 Extend a renewable token's TTL back to its configured `lease_duration`.
 
@@ -644,7 +644,7 @@ X-Vault-Token: hvs.AAAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRob
 
 ---
 
-### `POST /auth/token/revoke-self`
+### `POST /v1/auth/token/revoke-self`
 
 Immediately invalidate the current token.
 

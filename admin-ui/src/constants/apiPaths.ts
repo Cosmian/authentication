@@ -7,7 +7,7 @@ export const API_VERSION = "/public/version";
 /** Machine-credential (Vault-compatible) auth method roots. Global, not realm-scoped. */
 export const API_APPROLE = "/auth/approle";
 export const API_KUBERNETES = "/auth/kubernetes";
-export const API_TOKEN = "/auth/token";
+export const API_TOKEN = "/v1/auth/token";
 
 /** The special super-admin realm sentinel */
 export const SUPER_ADMIN_REALM_ID = "_";

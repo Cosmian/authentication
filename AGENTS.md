@@ -295,14 +295,15 @@ nix-build -A auth-verifier-static 2>&1 | grep "got:"
 ```
 
 When `admin-ui/pnpm-lock.yaml` changes (including Dependabot PRs), the three
-`admin-ui.pnpm.*` hashes become stale. They are always identical (`fetchDeps`
-fetches every platform's packages), so regenerate once and write the value to
-all three files, without a trailing newline:
+`admin-ui.pnpm.*` hashes become stale. They are usually equal, but do not assume it: take each
+value from a build on that platform (`nix-build` locally on macOS for `darwin`, the `got:` line
+of the failed `Packaging` job for `linux-x86_64` and `linux-aarch64`). Write it without a
+trailing newline:
 
 ```bash
-printf 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' > nix/expected-hashes/admin-ui.pnpm.linux-x86_64.sha256
+printf 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' > nix/expected-hashes/admin-ui.pnpm.darwin.sha256
 nix-build -A admin-ui --no-out-link 2>&1 | grep "got:"
-for p in linux-x86_64 linux-aarch64 darwin; do printf '<got hash>' > nix/expected-hashes/admin-ui.pnpm.$p.sha256; done
+printf '<got hash>' > nix/expected-hashes/admin-ui.pnpm.darwin.sha256   # same for linux-x86_64 / linux-aarch64
 ```
 
 ---

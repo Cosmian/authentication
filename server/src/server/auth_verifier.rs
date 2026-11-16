@@ -53,6 +53,7 @@ use crate::{
             update_admin,
             update_realm,
             update_userpass,
+            vault_userpass_login,
             version_endpoint,
             whoami,
         },
@@ -461,6 +462,7 @@ fn build_app(
     );
     #[cfg(feature = "saml")]
     let saml_rate_limit = login_rate_limit.clone();
+    let vault_userpass_rate_limit = login_rate_limit.clone();
 
     // Create an `App` instance and configure the passed data and the various scopes
     let app = App::new()
@@ -606,23 +608,28 @@ fn build_app(
 
     // ── AppRole-compatible auth scopes ─────────────────────────────────────────
     //
-    // Scope prefixes are kept intentionally specific to avoid Actix-web's
-    // FIFO matching swallowing requests before they reach the right scope.
+    // Vault client routes (what `bao`, SPIRE and the KMS call) live under `/v1/auth/*`,
+    // exactly like OpenBao/Vault. They do not overlap the admin CRUD scopes
+    // (`/auth/approle`, `/auth/kubernetes`), which are unprefixed.
     //
-    // /auth/approle/login  — unauthenticated AppRole login (registered first, most specific)
-    // /auth/kubernetes/login — unauthenticated K8s login
-    // /auth/approle        — AppRole admin CRUD (CookieAuthSameServer + AdminAuth)
-    // /auth/kubernetes     — K8s admin CRUD
-    // /auth/token          — token self-service (AppTokenExtract middleware)
+    // /v1/auth/approle/login          — unauthenticated AppRole login
+    // /v1/auth/kubernetes/login       — unauthenticated K8s login
+    // /v1/auth/userpass/login/{user}  — unauthenticated Vault userpass login
+    // /v1/auth/token                  — token self-service (AppTokenExtract middleware)
+    // /auth/approle, /auth/kubernetes — admin CRUD (CookieAuthSameServer + AdminAuth)
 
-    // Unauthenticated AppRole login — scope must be registered BEFORE /auth/approle
-    // so that /auth/approle/login requests don't fall into the admin scope.
-    let approle_login_scope = web::scope("/auth/approle/login")
+    // The pre-`/v1` login paths are gone. Without this resource they would fall into the
+    // admin scopes below and fail with a misleading cookie/admin error instead of a 404.
+    let legacy_login_resource =
+        web::resource(["/auth/approle/login", "/auth/kubernetes/login"]).to(unsupported_route);
+
+    // Unauthenticated AppRole login
+    let approle_login_scope = web::scope("/v1/auth/approle/login")
         .wrap(Cors::permissive())
         .service(approle_login);
 
     // Unauthenticated K8s login
-    let k8s_login_scope = web::scope("/auth/kubernetes/login")
+    let k8s_login_scope = web::scope("/v1/auth/kubernetes/login")
         .wrap(Cors::permissive())
         .service(k8s_login);
 
@@ -658,7 +665,7 @@ fn build_app(
         .service(k8s_list_roles);
 
     // Token self-service (requires valid X-Vault-Token header)
-    let auth_token_scope = web::scope("/auth/token")
+    let auth_token_scope = web::scope("/v1/auth/token")
         .wrap(AppTokenExtract::new(database.clone()))
         .wrap(Cors::permissive())
         .service(auth_token_lookup_self)
@@ -675,13 +682,20 @@ fn build_app(
         .service(realms_crud_scope)
         .service(app_scope)
         .service(admins_scope)
-        // App auth scopes — most-specific prefixes first so Actix-web doesn't
-        // swallow requests before they reach the right scope.
-        .service(approle_login_scope) // /auth/approle/login  (unauthenticated)
-        .service(k8s_login_scope) // /auth/kubernetes/login (unauthenticated)
+        // App auth scopes. The legacy login resource must precede the admin scopes so
+        // old `/auth/{approle,kubernetes}/login` clients get a 404, not an admin error.
+        .service(legacy_login_resource)
+        .service(approle_login_scope) // /v1/auth/approle/login  (unauthenticated)
+        .service(k8s_login_scope) // /v1/auth/kubernetes/login (unauthenticated)
+        .service(
+            web::scope("/v1/auth/userpass/login")
+                .wrap(Cors::permissive())
+                .wrap(vault_userpass_rate_limit)
+                .service(vault_userpass_login),
+        ) // /v1/auth/userpass/login/{username} (unauthenticated)
         .service(approle_admin_scope) // /auth/approle        (admin CRUD)
         .service(k8s_admin_scope) // /auth/kubernetes     (admin CRUD)
-        .service(auth_token_scope) // /auth/token          (self-service)
+        .service(auth_token_scope) // /v1/auth/token       (self-service)
         // Structured fallback for any unmatched route (e.g. a SPIRE server
         // misconfigured with an unsupported auth method such as `cert_auth`,
         // which has no `/auth/cert/*` handler). Without this, Actix returns a

@@ -22,5 +22,5 @@ pub use app_auth::{
     AppRoleRoleConfigResponse, AppRoleRoleIdData, AppRoleRoleIdResponse, AppRoleRoleRequest,
     AppRoleSecretIdData, AppRoleSecretIdRequest, AppRoleSecretIdResponse, AppTokenData,
     AppTokenLookupResponse, K8sListData, K8sListRolesResponse, K8sLoginRequest, K8sRoleConfigData,
-    K8sRoleConfigResponse, K8sRoleRequest,
+    K8sRoleConfigResponse, K8sRoleRequest, VaultUserpassLoginRequest,
 };

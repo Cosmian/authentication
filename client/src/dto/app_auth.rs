@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 // ── AppRole auth ─────────────────────────────────────────────────────────────
 
-/// Request body for `POST /auth/approle/login`.
+/// Request body for `POST /v1/auth/approle/login`.
 ///
 /// `secret_id` is optional: it is required only when the role's `bind_secret_id`
 /// flag is `true` (the default). Roles with `bind_secret_id: false` may login
@@ -17,6 +17,12 @@ pub struct AppRoleLoginRequest {
     pub role_id: String,
     #[serde(default)]
     pub secret_id: Option<String>,
+}
+
+/// Request body for `POST /v1/auth/userpass/login/{username}` (Vault-compatible userpass login).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultUserpassLoginRequest {
+    pub password: String,
 }
 
 /// Request body for `POST /auth/approle/role/{name}` (create/update).
@@ -121,7 +127,7 @@ pub struct AppRoleRoleConfigData {
 
 // ── Kubernetes auth ───────────────────────────────────────────────────────────
 
-/// Request body for `POST /auth/kubernetes/login`.
+/// Request body for `POST /v1/auth/kubernetes/login`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct K8sLoginRequest {
     pub role: String,
@@ -196,7 +202,7 @@ pub struct K8sRoleConfigData {
     pub bound_audiences: Vec<String>,
 }
 
-/// Response body for `GET /auth/token/lookup-self` and auth login responses.
+/// Response body for `GET /v1/auth/token/lookup-self` and auth login responses.
 ///
 /// Used by SPIRE to verify a token is still valid and to extract the entity name.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,7 +219,7 @@ pub struct AppAuth {
     pub metadata: std::collections::HashMap<String, String>,
 }
 
-/// Response body for `GET /auth/token/lookup-self`.
+/// Response body for `GET /v1/auth/token/lookup-self`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppTokenLookupResponse {
     pub data: AppTokenData,
