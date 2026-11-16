@@ -17,7 +17,7 @@ use crate::{
         DeleteSessionsRequest, GetSessionRequest, GetSessionsForClientsRequest,
         GetSessionsForClientsResponse, K8sListRolesResponse, K8sLoginRequest,
         K8sRoleConfigResponse, K8sRoleRequest, SessionInfo, SessionsAction, TotpGenerateRequest,
-        TotpGenerateResponse, TotpVerifyRequest, Version,
+        TotpGenerateResponse, TotpVerifyRequest, VaultUserpassLoginRequest, Version,
     },
     models::{Admin, ClientClaims, LoginRequest, Realm, UserPass},
 };
@@ -893,6 +893,24 @@ impl AuthClient {
             &AppRoleLoginRequest {
                 role_id: role_id.to_string(),
                 secret_id: secret_id.map(str::to_string),
+            },
+        )
+        .await
+    }
+
+    /// Login a userpass account of the server's `vault_userpass_realm` and receive an app token
+    /// (`POST /v1/auth/userpass/login/{username}`, as `bao login -method=userpass` does).
+    ///
+    /// No authentication required.
+    pub async fn vault_userpass_login(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> AuthResult<AppAuthResponse> {
+        self.post(
+            &format!("/v1/auth/userpass/login/{username}"),
+            &VaultUserpassLoginRequest {
+                password: password.to_string(),
             },
         )
         .await

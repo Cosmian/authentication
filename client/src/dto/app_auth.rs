@@ -19,6 +19,12 @@ pub struct AppRoleLoginRequest {
     pub secret_id: Option<String>,
 }
 
+/// Request body for `POST /v1/auth/userpass/login/{username}` (Vault-compatible userpass login).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VaultUserpassLoginRequest {
+    pub password: String,
+}
+
 /// Request body for `POST /auth/approle/role/{name}` (create/update).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppRoleRoleRequest {

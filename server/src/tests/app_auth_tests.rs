@@ -897,12 +897,7 @@ async fn test_vault_userpass_login() -> AuthResult<()> {
         }
     };
 
-    let ok = login("alice", "alice-pw").await?;
-    assert_eq!(ok.status().as_u16(), 200);
-    let body: crate::dto::AppAuthResponse = ok
-        .json()
-        .await
-        .map_err(|e| crate::AuthError::Generic(format!("bad login response: {e}")))?;
+    let body = noauth.vault_userpass_login("alice", "alice-pw").await?;
     assert_eq!(body.auth.policies, vec!["User"]);
     let lookup = noauth.token_lookup_self(&body.auth.client_token).await?;
     assert_eq!(lookup.data.entity_id, "userpass:vault-users:alice");

@@ -11,15 +11,9 @@ use actix_web::{
     HttpResponse, route,
     web::{Bytes, Data, Path},
 };
-use auth_client::{AppAuth, AppAuthResponse};
+use auth_client::{AppAuth, AppAuthResponse, VaultUserpassLoginRequest};
 use cosmian_logger::info;
-use serde::Deserialize;
 use std::sync::Arc;
-
-#[derive(Deserialize)]
-struct VaultUserpassLoginRequest {
-    password: String,
-}
 
 /// Log in a userpass account of `vault_userpass_realm` and issue a Vault-style app token.
 #[route("/{username}", method = "POST", method = "PUT")]
