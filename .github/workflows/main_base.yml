@@ -119,3 +119,47 @@ jobs:
 
       - name: Run unit tests (saml feature)
         run: nix-shell -I "nixpkgs=$PIN_URL" --run "cargo test --workspace --lib --features auth_verifier/saml -- --nocapture"
+
+  build-documentation:
+    name: Build documentation
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Cache mdBook toolchain
+        id: mdbook-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin
+          key: mdbook-${{ runner.os }}-${{ hashFiles('server/documentation/theme/scripts/setup-mdbook.sh') }}
+
+      - name: Install mdBook toolchain
+        if: steps.mdbook-cache.outputs.cache-hit != 'true'
+        run: sh server/documentation/theme/scripts/setup-mdbook.sh
+
+      - name: Build documentation
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cd server/documentation && mdbook build
+
+      # Secrets are unavailable to fork and dependabot PRs
+      - name: Checkout public_documentation
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        uses: actions/checkout@v6
+        with:
+          repository: Cosmian/public_documentation
+          ref: develop
+          path: public_documentation
+          submodules: true
+          token: ${{ secrets.PAT_TOKEN }}
+          persist-credentials: false
+
+      - name: Build combined documentation
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          ln -s "$GITHUB_WORKSPACE" public_documentation/authentication
+          cd public_documentation
+          bash .github/scripts/build-staging.sh authentication
