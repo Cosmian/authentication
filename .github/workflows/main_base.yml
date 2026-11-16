@@ -33,8 +33,6 @@ jobs:
 
   cargo-machete:
     uses: Cosmian/reusable_workflows/.github/workflows/cargo-machete.yml@develop
-    with:
-      toolchain: ${{ inputs.toolchain }}
 
   cargo-clippy:
     name: Cargo test - ${{ matrix.runner }}
