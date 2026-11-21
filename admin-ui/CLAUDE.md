@@ -47,7 +47,7 @@ tests/
 1. Write failing test (red) — include error/edge cases, not just happy path
 2. Implement minimal code (green)
 3. Refactor, re-run tests
-4. Add E2E test after unit tests pass
+4. Add E2E test after unit tests pass, following the conventions in `tests/e2e/README.md`
 
 ## Coding Rules
 
