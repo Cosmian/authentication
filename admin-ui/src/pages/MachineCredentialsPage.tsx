@@ -12,9 +12,9 @@ import { TokenTab } from "../components/machine/TokenTab";
  * global (not realm-scoped).
  */
 const MachineCredentialsPage: React.FC = () => {
-    const { isGlobalAdmin } = useRealm();
+    const { isSuperAdmin } = useRealm();
 
-    if (!isGlobalAdmin) {
+    if (!isSuperAdmin) {
         return (
             <Alert
                 type="warning"

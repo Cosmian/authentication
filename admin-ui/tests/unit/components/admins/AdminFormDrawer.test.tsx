@@ -28,7 +28,7 @@ vi.mock("../../../../src/contexts/RealmContext", () => ({
         ],
         selectedRealm: "realm-a",
         isSuperAdminMode: false,
-        isGlobalAdmin: false,
+        isSuperAdmin: false,
         realmLabel: (id: string) => id,
     }),
 }));

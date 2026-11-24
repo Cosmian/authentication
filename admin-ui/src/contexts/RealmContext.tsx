@@ -13,10 +13,9 @@ interface RealmContextType {
     selectedRealm: string;
     setSelectedRealm: (realmId: string) => void;
     realmLabel: (realmId: string) => string;
+    /** The Super-Admin view (realm `_`) is selected in the header; says nothing about who is logged in. */
     isSuperAdminMode: boolean;
-    /** True when the logged-in admin is a genuine super-admin (has `_` in their server-side realm list),
-     *  regardless of which realm is currently selected. */
-    isGlobalAdmin: boolean;
+    isSuperAdmin: boolean;
     loading: boolean;
     error: string | null;
     refreshRealms: () => void;
@@ -32,7 +31,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     );
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
     const isSuperAdminMode = selectedRealm === SUPER_ADMIN_REALM_ID;
 
@@ -75,7 +74,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Trust the server response — only show realms the admin can actually access.
             // Do not artificially inject SUPER_ADMIN_REALM for non-super-admins.
             setRealms(data);
-            setIsGlobalAdmin(hasAdmin);
+            setIsSuperAdmin(hasAdmin);
             // If the previously selected realm is no longer accessible, fall back to
             // the first realm in the list (or SUPER_ADMIN_REALM_ID as a safe default).
             setSelectedRealmState((prev) => {
@@ -105,7 +104,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 setSelectedRealm,
                 realmLabel,
                 isSuperAdminMode,
-                isGlobalAdmin,
+                isSuperAdmin,
                 loading,
                 error,
                 refreshRealms: fetchRealms,

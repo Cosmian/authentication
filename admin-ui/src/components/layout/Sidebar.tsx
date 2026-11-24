@@ -14,19 +14,19 @@ export interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
     const navigate = useNavigate();
     const location = useLocation();
-    const { isGlobalAdmin, realms, selectedRealm } = useRealm();
+    const { isSuperAdmin, realms, selectedRealm } = useRealm();
     const { isDarkMode, branding } = useTheme();
 
     const filteredItems = useMemo(() => {
         // The user administers the selected realm if they are a global super-admin
         // OR the selected realm is in their realm list (non-"_" realms)
         const userRealmIds = realms.map((r) => r.id).filter((id) => id !== SUPER_ADMIN_REALM_ID);
-        const canAdministerSelected = isGlobalAdmin || userRealmIds.includes(selectedRealm);
+        const canAdministerSelected = isSuperAdmin || userRealmIds.includes(selectedRealm);
 
         return menuItems
             .filter((item) => {
-                if (item.superAdminOnly && !isGlobalAdmin) return false;
-                if (item.requiresRealmOwnership && !isGlobalAdmin && !canAdministerSelected) return false;
+                if (item.superAdminOnly && !isSuperAdmin) return false;
+                if (item.requiresRealmOwnership && !isSuperAdmin && !canAdministerSelected) return false;
                 return true;
             })
             .map((item) => ({
@@ -35,7 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, onCollapse }) => {
                 icon: item.icon,
                 children: item.children,
             }));
-    }, [isGlobalAdmin, realms, selectedRealm]);
+    }, [isSuperAdmin, realms, selectedRealm]);
 
     const selectedKey = location.pathname === "/" ? "/" : location.pathname;
 

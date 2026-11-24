@@ -17,7 +17,7 @@ import { earliestExpiry } from "../utils/x509";
 
 const RealmsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { isGlobalAdmin, refreshRealms } = useRealm();
+    const { isSuperAdmin, refreshRealms } = useRealm();
     const api = useMemo(() => createRealmsApi(serverUrl), [serverUrl]);
 
     const [realms, setRealms] = useState<Realm[]>([]);
@@ -87,7 +87,7 @@ const RealmsPage: React.FC = () => {
         }
     };
 
-    if (!isGlobalAdmin) {
+    if (!isSuperAdmin) {
         return <Alert type="error" showIcon message="Access Denied" description="Realm management requires Super-Admin privileges." />;
     }
 

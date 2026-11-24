@@ -47,7 +47,7 @@ const mockRealmContext = {
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
     isSuperAdminMode: true,
-    isGlobalAdmin: true,
+    isSuperAdmin: true,
     loading: false,
     error: null,
     refreshRealms: vi.fn(),
@@ -60,7 +60,7 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
 describe("RealmsPage", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
-        mockRealmContext.isGlobalAdmin = true;
+        mockRealmContext.isSuperAdmin = true;
     });
 
     it("should show loading state initially", async () => {
@@ -166,7 +166,7 @@ describe("RealmsPage", () => {
     });
 
     it("should show access denied when not super admin", async () => {
-        mockRealmContext.isGlobalAdmin = false;
+        mockRealmContext.isSuperAdmin = false;
 
         await act(async () => {
             render(

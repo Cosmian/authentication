@@ -81,7 +81,7 @@ const defaultRealmContext = {
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
     isSuperAdminMode: false,
-    isGlobalAdmin: false,
+    isSuperAdmin: false,
     loading: false,
     error: null,
     refreshRealms: vi.fn(),
@@ -221,7 +221,7 @@ describe("CredentialsPage", () => {
             ...defaultRealmContext,
             selectedRealm: "_",
             isSuperAdminMode: true,
-            isGlobalAdmin: true,
+            isSuperAdmin: true,
         });
 
         await act(async () => {
