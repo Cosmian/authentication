@@ -357,26 +357,40 @@ async fn test_delete_admin_requires_super_admin() -> AuthResult<()> {
     ctx.stop_server().await
 }
 
-/// `list_users` requires super admin; a realm admin must receive HTTP 403.
+/// A realm admin lists only the admins whose realms it all administers (itself included), not
+/// multi-realm, unaffiliated, foreign-realm or super admins.
 #[actix_web::test]
-async fn test_list_admins_requires_super_admin() -> AuthResult<()> {
+async fn test_list_admins_by_realm_admin_is_limited_to_owned_admins() -> AuthResult<()> {
     init_test_logging(None);
     let ctx = start_default_test_server().await?;
 
-    let realm_admin = create_and_authenticate_realm_admin(&ctx, "realm_list_users_guard").await?;
+    let realm_admin = create_multi_realm_target_and_foreign_realm_admin(
+        &ctx,
+        "list_ra_a",
+        "list_ra_b",
+        "list_ra_multi",
+    )
+    .await?;
+    let mut colleague = test_admin("list_ra_colleague");
+    colleague.realms = vec!["list_ra_a".to_string()];
+    realm_admin.create_admin_as_super_admin(&colleague).await?;
 
-    let result = realm_admin.list_admins_as_super_admin().await;
+    let super_admin = authenticate_as_admin(&ctx).await?;
+    super_admin
+        .create_admin_as_super_admin(&test_admin("list_ra_unaffiliated"))
+        .await?;
+    create_and_authenticate_realm_admin(&ctx, "list_ra_foreign").await?;
 
-    assert!(
-        result.is_err(),
-        "Expected an error when non-super-admin calls list_users"
-    );
-    let msg = result.unwrap_err().to_string();
-    assert!(
-        msg.contains("403"),
-        "Expected HTTP 403 in error message, got: {msg}"
-    );
-    info!("list_users correctly rejected non-super-admin with 403");
+    let mut ids: Vec<String> = realm_admin
+        .list_admins_as_super_admin()
+        .await?
+        .into_iter()
+        .map(|a| a.id)
+        .collect();
+    ids.sort();
+
+    assert_eq!(ids, vec!["list_ra_a_solo_admin", "list_ra_colleague"]);
+    info!("Realm admin listed only the admins of its own realm");
 
     ctx.stop_server().await
 }

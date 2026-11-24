@@ -1891,10 +1891,11 @@ paths:
 
     get:
       tags: [Admins]
-      summary: List all admins (super admin only)
+      summary: List admins
       description: |
         A super admin sees every admin, including those of claimed realms, to be able to
-        contact them; it still cannot change them.
+        contact them; it still cannot change them. A realm admin sees the admins whose realms
+        it all administers (itself included), i.e. those it can read with `GET /admins/{admin_id}`.
       operationId: listAdmins
       security:
         - cookieAuth: []
@@ -1909,8 +1910,6 @@ paths:
                   $ref: '#/components/schemas/Admin'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
 
   /admins/{admin_id}:
     get:

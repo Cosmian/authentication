@@ -330,7 +330,7 @@ let created: Admin = admin.create_admin_as_super_admin(&user).await?;
 assert!(created.can_administer_realm("my-service"));
 assert!(!created.is_super_admin());
 
-// List all users
+// List admins (a realm admin gets only the admins it owns)
 let all: Vec<Admin> = admin.list_admins_as_super_admin().await?;
 
 // Add / remove realm from user

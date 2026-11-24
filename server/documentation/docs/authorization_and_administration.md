@@ -144,7 +144,7 @@ flowchart TD
     LH -- No --> LJ["Return only realms\nrequester administers"]
 ```
 
-`GET /admins` returns every admin to a super admin, and `GET /admins/{id}` is readable by any super admin: seeing a claimed realm's admins is how the super admin contacts them. `GET /admins/userpass` is filtered by the [login rule](#the-_-login-rule).
+`GET /admins` returns every admin to a super admin, and `GET /admins/{id}` is readable by any super admin: seeing a claimed realm's admins is how the super admin contacts them. A realm admin gets from `GET /admins` the admins whose realms it all administers, itself included. `GET /admins/userpass` is filtered by the [login rule](#the-_-login-rule).
 
 ---
 
@@ -170,7 +170,7 @@ flowchart TD
 | `GET`    | `/admins/{id}`                   |   ✅ always (read-only)    |            ✅ ²              |
 | `PUT`    | `/admins/{id}`                   |    ✅ ² (current AND new)  |     ✅ ² (current AND new)   |
 | `DELETE` | `/admins/{id}`                   |          ✅ ²              |            ✅ ²              |
-| `GET`    | `/admins`                        |        ✅ all admins       |             ❌               |
+| `GET`    | `/admins`                        |        ✅ all admins       |   ✅ the admins it owns ²    |
 | `PUT`    | `/admins/{id}/realms/{realm_id}` |     ✅ if realm unclaimed  |  ✅ if administers realm_id, and owns target ³ |
 | `DELETE` | `/admins/{id}/realms/{realm_id}` |     ✅ if realm unclaimed  |  ✅ if administers realm_id, and owns target ³ |
 
@@ -310,12 +310,13 @@ Alice's cookie (from `POST /login?realm=_`) authorises:
 - `GET/POST/PUT/DELETE /realms/_/userpass/*` for **her own login and her colleagues'** (the logins of admins whose realms she administers), and `/realms/_/totp/*` for the same logins
 - `GET /admins/realms/my_realm`
 - `POST /admins` with `realms: ["my_realm"]`
+- `GET /admins`, listing the admins whose realms are all `my_realm` (herself and her colleagues)
 - CRUD on any user whose `realms` is a subset of `["my_realm"]`
 
 Alice **cannot**:
 
 - Create realms, or delete a realm she doesn't administer
-- Access `/admins` (list all users) or `/admins/userpass` (list all credentials)
+- Access `/admins/userpass` (list all credentials), or see in `/admins` any admin outside `my_realm`
 - Manage any other realm, or any other admin's login or 2FA (the super admin's included)
 - Manage users whose `realms` includes something other than `my_realm`
 

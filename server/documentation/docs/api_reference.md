@@ -822,7 +822,7 @@ Delete an admin record.
 
 ### `GET /admins`
 
-List all admins. Super admin only.
+List admins. A super admin gets every admin; a realm admin gets the admins whose realms it all administers (itself included).
 
 **Response — `200 OK`** — array of `Admin` objects.
 

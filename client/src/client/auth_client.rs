@@ -618,7 +618,7 @@ impl AuthClient {
         Ok(())
     }
 
-    /// List all admins.
+    /// List admins: all of them for a super admin, only the admins it owns for a realm admin.
     pub async fn list_admins_as_super_admin(&self) -> AuthResult<Vec<Admin>> {
         self.get("/admins").await
     }

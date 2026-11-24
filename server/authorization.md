@@ -71,7 +71,7 @@ A super admin always satisfies `can_administer_realm` for any realm.
 | `GET` | `/admins/{id}` | Any super admin (read-only, claimed realms included) **or** realm admin (see below) |
 | `PUT` | `/admins/{id}` | Super admin **or** realm admin (see below) |
 | `DELETE` | `/admins/{id}` | Super admin **or** realm admin (see below) |
-| `GET` | `/admins` | Super admin (all admins) |
+| `GET` | `/admins` | Super admin (all admins) **or** realm admin (the admins it owns, see below) |
 | `PUT` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 | `DELETE` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 
