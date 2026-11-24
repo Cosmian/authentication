@@ -46,7 +46,7 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
         selectedRealm: "_",
         setSelectedRealm: vi.fn(),
         realmLabel: (id: string) => (id === "_" ? "Admin" : id),
-        isSuperAdmin: true,
+        isSuperAdminMode: true,
         isGlobalAdmin: true,
         loading: false,
         error: null,

@@ -16,7 +16,7 @@ const mockRealm = {
     selectedRealm: "_",
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
-    isSuperAdmin: true,
+    isSuperAdminMode: true,
     isGlobalAdmin: true,
     loading: false,
     error: null,
@@ -96,7 +96,7 @@ describe("Sidebar", () => {
 
     it("super-admin with a specific realm selected still sees the Realms item", () => {
         // Simulate: global super-admin who switched to a concrete realm
-        mockRealm.isSuperAdmin = false; // admin realm is NOT selected
+        mockRealm.isSuperAdminMode = false; // admin realm is NOT selected
         mockRealm.isGlobalAdmin = true; // but user IS a genuine super-admin
         mockRealm.selectedRealm = "realm-a";
         try {
@@ -104,21 +104,21 @@ describe("Sidebar", () => {
             expect(screen.getByText("Realms")).toBeInTheDocument();
         } finally {
             // restore defaults for subsequent tests
-            mockRealm.isSuperAdmin = true;
+            mockRealm.isSuperAdminMode = true;
             mockRealm.isGlobalAdmin = true;
             mockRealm.selectedRealm = "_";
         }
     });
 
     it("realm-admin does not see the Realms item", () => {
-        mockRealm.isSuperAdmin = false;
+        mockRealm.isSuperAdminMode = false;
         mockRealm.isGlobalAdmin = false;
         mockRealm.selectedRealm = "realm-a";
         try {
             renderSidebar();
             expect(screen.queryByText("Realms")).not.toBeInTheDocument();
         } finally {
-            mockRealm.isSuperAdmin = true;
+            mockRealm.isSuperAdminMode = true;
             mockRealm.isGlobalAdmin = true;
             mockRealm.selectedRealm = "_";
         }

@@ -13,7 +13,7 @@ interface RealmContextType {
     selectedRealm: string;
     setSelectedRealm: (realmId: string) => void;
     realmLabel: (realmId: string) => string;
-    isSuperAdmin: boolean;
+    isSuperAdminMode: boolean;
     /** True when the logged-in admin is a genuine super-admin (has `_` in their server-side realm list),
      *  regardless of which realm is currently selected. */
     isGlobalAdmin: boolean;
@@ -34,7 +34,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [error, setError] = useState<string | null>(null);
     const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
 
-    const isSuperAdmin = selectedRealm === SUPER_ADMIN_REALM_ID;
+    const isSuperAdminMode = selectedRealm === SUPER_ADMIN_REALM_ID;
 
     // Guards against setState-after-unmount: fetchRealms is also exposed as refreshRealms
     // for manual re-fetch, so a request can still be in flight when the provider unmounts.
@@ -104,7 +104,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 selectedRealm,
                 setSelectedRealm,
                 realmLabel,
-                isSuperAdmin,
+                isSuperAdminMode,
                 isGlobalAdmin,
                 loading,
                 error,

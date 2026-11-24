@@ -15,7 +15,7 @@ import { TotpManagementModal } from "../components/admins/TotpManagementModal";
 
 const AdminsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { isSuperAdmin, selectedRealm, realms, realmLabel } = useRealm();
+    const { isSuperAdminMode, selectedRealm, realms, realmLabel } = useRealm();
     const api = useMemo(() => createAdminsApi(serverUrl), [serverUrl]);
 
     const [admins, setAdmins] = useState<Admin[]>([]);
@@ -34,10 +34,10 @@ const AdminsPage: React.FC = () => {
 
     // Check realm-admin ownership for non-super-admin mode
     const userRealmIds = realms.map((r) => r.id).filter((id) => id !== SUPER_ADMIN_REALM_ID);
-    const canAdministerSelected = isSuperAdmin || userRealmIds.includes(selectedRealm);
+    const canAdministerSelected = isSuperAdminMode || userRealmIds.includes(selectedRealm);
 
     const fetchAdmins = useCallback(async () => {
-        if (!isSuperAdmin) return;
+        if (!isSuperAdminMode) return;
         setLoading(true);
         setError(null);
         try {
@@ -48,7 +48,7 @@ const AdminsPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [api, isSuperAdmin]);
+    }, [api, isSuperAdminMode]);
 
     useEffect(() => {
         fetchAdmins();
@@ -97,7 +97,7 @@ const AdminsPage: React.FC = () => {
     };
 
     // ── Realm-admin mode (specific realm selected) ──
-    if (!isSuperAdmin) {
+    if (!isSuperAdminMode) {
         if (!canAdministerSelected) {
             return <Result status="403" title="Access Denied" subTitle="You do not administer this realm." />;
         }

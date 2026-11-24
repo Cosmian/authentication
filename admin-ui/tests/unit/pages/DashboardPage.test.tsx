@@ -44,7 +44,7 @@ const defaultRealmContext = {
     selectedRealm: "_",
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
-    isSuperAdmin: true,
+    isSuperAdminMode: true,
     isGlobalAdmin: true,
     loading: false,
     error: null,

@@ -10,7 +10,7 @@ import { ConfirmDeleteModal } from "../components/common/ConfirmDeleteModal";
 
 const SessionsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { selectedRealm, isSuperAdmin, realmLabel } = useRealm();
+    const { selectedRealm, isSuperAdminMode, realmLabel } = useRealm();
     const api = useMemo(() => createSessionsApi(serverUrl), [serverUrl]);
 
     const [revokeModalOpen, setRevokeModalOpen] = useState(false);
@@ -49,7 +49,7 @@ const SessionsPage: React.FC = () => {
                     description="Choose a realm from the header selector to manage its sessions."
                     className="mb-4"
                 />
-                {isSuperAdmin && (
+                {isSuperAdminMode && (
                     <div className="mt-4">
                         <Button icon={<ClearOutlined />} onClick={handlePurgeExpired} loading={purging}>
                             Purge Expired Sessions

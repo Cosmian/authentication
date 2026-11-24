@@ -80,7 +80,7 @@ const defaultRealmContext = {
     selectedRealm: "my-service",
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
-    isSuperAdmin: false,
+    isSuperAdminMode: false,
     isGlobalAdmin: false,
     loading: false,
     error: null,
@@ -220,7 +220,7 @@ describe("CredentialsPage", () => {
         vi.mocked(useRealm).mockReturnValue({
             ...defaultRealmContext,
             selectedRealm: "_",
-            isSuperAdmin: true,
+            isSuperAdminMode: true,
             isGlobalAdmin: true,
         });
 
