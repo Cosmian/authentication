@@ -110,13 +110,13 @@ describe("Sidebar", () => {
         }
     });
 
-    it("realm-admin does not see the Realms item", () => {
+    it("realm-admin sees the Realms item", () => {
         mockRealm.isSuperAdminMode = false;
         mockRealm.isSuperAdmin = false;
         mockRealm.selectedRealm = "realm-a";
         try {
             renderSidebar();
-            expect(screen.queryByText("Realms")).not.toBeInTheDocument();
+            expect(screen.getByText("Realms")).toBeInTheDocument();
         } finally {
             mockRealm.isSuperAdminMode = true;
             mockRealm.isSuperAdmin = true;

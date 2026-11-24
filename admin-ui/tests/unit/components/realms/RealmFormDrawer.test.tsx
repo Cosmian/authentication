@@ -186,6 +186,31 @@ describe("RealmFormDrawer", () => {
         expect(fetchSpy).toHaveBeenCalledWith(expect.stringContaining(existingRealm.id), expect.objectContaining({ method: "PUT" }));
     });
 
+    it("should show the server's reason and call onForbidden when a save is refused with 403", async () => {
+        const onForbidden = vi.fn();
+        const onSuccess = vi.fn();
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+            new Response(JSON.stringify("Only administrators of realm 'test-realm' can update it"), { status: 403 }),
+        );
+
+        await act(async () => {
+            render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={onSuccess} onForbidden={onForbidden} />);
+        });
+        await act(async () => {
+            fireEvent.change(screen.getByLabelText("Session Max Age (seconds)"), { target: { value: "7200" } });
+        });
+        const saveBtn = screen.getAllByRole("button", { name: "Save" });
+        const submitBtn = saveBtn[saveBtn.length - 1];
+        await waitFor(() => expect(submitBtn).not.toBeDisabled());
+        await act(async () => {
+            fireEvent.click(submitBtn);
+        });
+
+        await waitFor(() => expect(onForbidden).toHaveBeenCalledTimes(1));
+        expect(screen.getByText("Only administrators of realm 'test-realm' can update it")).toBeInTheDocument();
+        expect(onSuccess).not.toHaveBeenCalled();
+    });
+
     it("edit mode: button is disabled initially (form matches original)", async () => {
         await act(async () => {
             render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />);

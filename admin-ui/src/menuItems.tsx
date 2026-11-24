@@ -20,7 +20,6 @@ export const menuItems: MenuItem[] = [
         key: "/realms",
         label: "Realms",
         icon: <AppstoreOutlined />,
-        superAdminOnly: true,
     },
     {
         key: "/admins",

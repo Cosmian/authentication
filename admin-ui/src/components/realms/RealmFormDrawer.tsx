@@ -15,6 +15,8 @@ export interface RealmFormDrawerProps {
     realm: Realm | null;
     onClose: () => void;
     onSuccess: () => void;
+    /** Called when the server refuses a save with 403, e.g. the realm has been claimed since the page loaded. */
+    onForbidden?: () => void;
 }
 
 const TOTP_ALGORITHMS: { value: TotpAlgorithm; label: string }[] = [
@@ -50,7 +52,7 @@ function reportSubmitError(error: unknown, form: FormInstance, isEdit: boolean):
     return null;
 }
 
-export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, onClose, onSuccess }) => {
+export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, onClose, onSuccess, onForbidden }) => {
     const [form] = Form.useForm();
     const { serverUrl } = useAuth();
     const api = useMemo(() => createRealmsApi(serverUrl), [serverUrl]);
@@ -199,6 +201,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             }
             onSuccess();
         } catch (error) {
+            if (error instanceof ApiError && error.status === 403) onForbidden?.();
             setSubmitError(reportSubmitError(error, form, isEdit));
         } finally {
             setSubmitting(false);

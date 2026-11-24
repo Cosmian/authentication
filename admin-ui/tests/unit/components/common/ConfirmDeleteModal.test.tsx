@@ -29,6 +29,24 @@ describe("ConfirmDeleteModal", () => {
         expect(onCancel).toHaveBeenCalled();
     });
 
+    it("should show the warning above the prompt when one is given", () => {
+        render(
+            <ConfirmDeleteModal
+                open={true}
+                itemName="my-realm"
+                warning="Its admins are left without a realm."
+                onConfirm={vi.fn()}
+                onCancel={vi.fn()}
+            />,
+        );
+        expect(screen.getByText("Its admins are left without a realm.")).toBeInTheDocument();
+    });
+
+    it("should show no warning by default", () => {
+        render(<ConfirmDeleteModal open={true} itemName="my-realm" onConfirm={vi.fn()} onCancel={vi.fn()} />);
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
     it("should not render when open is false", () => {
         render(<ConfirmDeleteModal open={false} itemName="my-realm" onConfirm={vi.fn()} onCancel={vi.fn()} />);
         expect(screen.queryByText(/Delete "my-realm"/)).not.toBeInTheDocument();

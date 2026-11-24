@@ -1,15 +1,24 @@
-import { Input, Modal } from "antd";
+import { Alert, Input, Modal } from "antd";
 import React, { useState } from "react";
 
 export interface ConfirmDeleteModalProps {
     open: boolean;
     itemName: string;
+    /** Consequence beyond the item itself, shown above the confirmation prompt. */
+    warning?: string;
     onConfirm: () => void;
     onCancel: () => void;
     loading?: boolean;
 }
 
-export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({ open, itemName, onConfirm, onCancel, loading = false }) => {
+export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
+    open,
+    itemName,
+    warning,
+    onConfirm,
+    onCancel,
+    loading = false,
+}) => {
     const [typed, setTyped] = useState("");
 
     const handleAfterClose = (): void => setTyped("");
@@ -26,6 +35,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({ open, it
             afterClose={handleAfterClose}
             destroyOnClose
         >
+            {warning && <Alert type="warning" showIcon message={warning} className="mb-4" />}
             <p>
                 This action cannot be undone. Type <strong>{itemName}</strong> to confirm.
             </p>
