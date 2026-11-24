@@ -67,6 +67,12 @@ async function mockRealmsApi(page: Page, initialRealms: Realm[]): Promise<void> 
             }),
     );
 
+    // The super admin's realm context lists admins to find the claimed realms.
+    await page.route(
+        (url) => url.pathname === "/admins",
+        (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
+    );
+
     // LIST  GET /admins/realms
     await page.route(
         (url) => url.pathname === "/admins/realms",

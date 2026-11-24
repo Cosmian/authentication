@@ -1,12 +1,20 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { message } from "antd";
 import { SUPER_ADMIN_REALM_ID, SUPER_ADMIN_REALM_LABEL, API_REALMS } from "../constants/apiPaths";
-import type { Realm } from "../types/api";
+import type { Admin, Realm } from "../types/api";
+import { createAdminsApi } from "../services/adminsApi";
 import { useAuth } from "./AuthContext";
 
 /* eslint-disable react-refresh/only-export-components */
 
 const LS_SELECTED_REALM_KEY = "admin-ui-selected-realm";
+
+/** Realms with at least one admin of their own; realm `_` is excluded, it belongs to the super admins. */
+function claimedRealmIds(admins: Admin[]): string[] {
+    const ids = new Set(admins.flatMap((admin) => admin.realms));
+    ids.delete(SUPER_ADMIN_REALM_ID);
+    return [...ids];
+}
 
 interface RealmContextType {
     realms: Realm[];
@@ -16,6 +24,8 @@ interface RealmContextType {
     /** The Super-Admin view (realm `_`) is selected in the header; says nothing about who is logged in. */
     isSuperAdminMode: boolean;
     isSuperAdmin: boolean;
+    /** Whether the server lets the logged-in admin change the realm: a super admin loses that once the realm has its own admins. */
+    canManageRealm: (realmId: string) => boolean;
     loading: boolean;
     error: string | null;
     refreshRealms: () => void;
@@ -32,6 +42,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+    const [claimedRealms, setClaimedRealms] = useState<string[]>([]);
 
     const isSuperAdminMode = selectedRealm === SUPER_ADMIN_REALM_ID;
 
@@ -58,6 +69,33 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         [realms],
     );
 
+    const canManageRealm = useCallback(
+        (realmId: string): boolean => {
+            if (!isSuperAdmin) return realms.some((r) => r.id === realmId);
+            return realmId === SUPER_ADMIN_REALM_ID || !claimedRealms.includes(realmId);
+        },
+        [isSuperAdmin, realms, claimedRealms],
+    );
+
+    // Only a super admin can list every admin. If this fails, claimed realms stay unmarked and the server still refuses the change.
+    const loadClaimedRealms = useCallback(
+        async (superAdmin: boolean) => {
+            if (!superAdmin) {
+                setClaimedRealms([]);
+                return;
+            }
+            try {
+                const admins = await createAdminsApi(serverUrl).list();
+                if (mountedRef.current) setClaimedRealms(claimedRealmIds(admins));
+            } catch {
+                if (!mountedRef.current) return;
+                message.error("Failed to load admins");
+                setClaimedRealms([]);
+            }
+        },
+        [serverUrl],
+    );
+
     const fetchRealms = useCallback(async () => {
         if (!isAuthenticated) {
             if (mountedRef.current) setLoading(false);
@@ -82,15 +120,17 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return data[0]?.id ?? SUPER_ADMIN_REALM_ID;
             });
             setError(null);
+            await loadClaimedRealms(hasAdmin);
         } catch {
             if (!mountedRef.current) return;
             message.error("Failed to load realms");
             setRealms([]);
+            setClaimedRealms([]);
             setError("Failed to load realms");
         } finally {
             if (mountedRef.current) setLoading(false);
         }
-    }, [isAuthenticated, serverUrl]);
+    }, [isAuthenticated, serverUrl, loadClaimedRealms]);
 
     useEffect(() => {
         fetchRealms();
@@ -105,6 +145,7 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 realmLabel,
                 isSuperAdminMode,
                 isSuperAdmin,
+                canManageRealm,
                 loading,
                 error,
                 refreshRealms: fetchRealms,

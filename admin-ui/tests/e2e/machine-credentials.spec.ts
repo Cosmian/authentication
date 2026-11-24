@@ -77,6 +77,10 @@ async function mockCommon(page: Page, realms: typeof superAdminRealms): Promise<
         (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(realms) }),
     );
     await page.route(
+        (url) => url.pathname === "/admins",
+        (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) }),
+    );
+    await page.route(
         (url) => url.pathname === "/public/version",
         (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ version: "test" }) }),
     );

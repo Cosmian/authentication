@@ -46,6 +46,7 @@ const defaultRealmContext = {
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
     isSuperAdminMode: true,
     isSuperAdmin: true,
+    canManageRealm: () => true,
     loading: false,
     error: null,
     refreshRealms: vi.fn(),
