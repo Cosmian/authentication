@@ -14,9 +14,11 @@ interface AdminFormDrawerProps {
     onClose: () => void;
     onSuccess: () => void;
     onTotpSetup?: (adminId: string) => void;
+    /** Realm preselected when creating an admin. */
+    defaultRealm?: string;
 }
 
-export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, onClose, onSuccess, onTotpSetup }) => {
+export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, onClose, onSuccess, onTotpSetup, defaultRealm }) => {
     const [form] = Form.useForm();
     const { serverUrl } = useAuth();
     const { realms } = useRealm();
@@ -80,9 +82,10 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
             originalAdminRef.current = null;
             setSubmitError(null);
             form.resetFields();
+            if (defaultRealm) form.setFieldsValue({ realms: [defaultRealm] });
             setPreservedFields({});
         }
-    }, [open, admin, form]);
+    }, [open, admin, form, defaultRealm]);
 
     const handleSubmit = async () => {
         try {

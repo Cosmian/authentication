@@ -100,6 +100,18 @@ describe("AdminFormDrawer — submit button state", () => {
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
 
+    it("create mode: a preselected realm satisfies the realm requirement", async () => {
+        await act(async () => {
+            render(<AdminFormDrawer open={true} admin={null} defaultRealm="realm-a" onClose={vi.fn()} onSuccess={vi.fn()} />);
+        });
+        await act(async () => {
+            fireEvent.change(screen.getByLabelText("Admin ID"), { target: { value: "bob" } });
+        });
+        expect(screen.getByTitle("realm-a")).toBeInTheDocument();
+        const btn = getSubmitButton("Create");
+        await waitFor(() => expect(btn).not.toBeDisabled());
+    });
+
     // ── Edit mode ─────────────────────────────────────────────────────────────
 
     it("edit mode: button is disabled initially (form matches original)", async () => {
