@@ -21,7 +21,7 @@ interface AdminFormDrawerProps {
 export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, onClose, onSuccess, onTotpSetup, defaultRealm }) => {
     const [form] = Form.useForm();
     const { serverUrl } = useAuth();
-    const { realms } = useRealm();
+    const { realms, canManageRealm } = useRealm();
     const [loading, setLoading] = useState(false);
     const [canSubmit, setCanSubmit] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -58,10 +58,11 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
     // Fields silently preserved on PUT
     const [preservedFields, setPreservedFields] = useState<Partial<Admin>>({});
 
-    const realmOptions = realms.map((r) => ({
-        label: r.id === SUPER_ADMIN_REALM_ID ? "_ (Super-Admin)" : r.id,
-        value: r.id,
-    }));
+    // A realm that has its own admins refuses new ones from a super admin, so it cannot be picked.
+    const realmOptions = realms.map((r) => {
+        const label = r.id === SUPER_ADMIN_REALM_ID ? "_ (Super-Admin)" : r.id;
+        return canManageRealm(r.id) ? { label, value: r.id } : { label: `${label} (has its own admins)`, value: r.id, disabled: true };
+    });
 
     useEffect(() => {
         if (open && admin) {

@@ -4,6 +4,7 @@
 - Admin UI: `RealmContext` gains `canManageRealm(realmId)`, true for a realm admin's own realms and, for a super admin, for realm `_` and the realms that have no admin of their own yet (claimed realms come from `GET /admins`), so pages can stop offering changes the server refuses.
 - Admin UI: the Realms page is open to realm admins, who can edit and delete their own realms but not create realms; for a super admin, a realm that has admins of its own is tagged "Claimed" with Edit disabled (the server refuses it) while Delete stays available, and deleting a realm that has admins warns that they are left without a realm.
 - Admin UI: the Admins page lists the admins of the selected realm to its own admins, with Edit, TOTP, Credential and Delete, and the same drawer as the Super-Admin view to add one (the realm is preselected), instead of a create-only form; a super admin sees the admins of a claimed realm without any action (the server refuses them), and no New Admin button there.
+- Admin UI: the admin form's realm picker lists realms that have admins of their own as disabled (the server refuses new admins there from a super admin), and the sidebar decides whether to show Admins with the same `canManageRealm` check as the pages instead of its own copy of the rule.
 
 ## Bug Fixes
 

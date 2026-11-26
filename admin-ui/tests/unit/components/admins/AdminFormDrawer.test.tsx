@@ -16,21 +16,24 @@ vi.mock("../../../../src/contexts/AuthContext", () => ({
     }),
 }));
 
+const makeRealm = (id: string) => ({
+    id,
+    auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
+    session_max_age_seconds: 3600,
+    session_max_stale_age_seconds: 1800,
+});
+
+const mockRealm = {
+    realms: [makeRealm("realm-a"), makeRealm("realm-b")],
+    selectedRealm: "realm-a",
+    isSuperAdminMode: false,
+    isSuperAdmin: false,
+    canManageRealm: (() => true) as (realmId: string) => boolean,
+    realmLabel: (id: string) => id,
+};
+
 vi.mock("../../../../src/contexts/RealmContext", () => ({
-    useRealm: () => ({
-        realms: [
-            {
-                id: "realm-a",
-                auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
-                session_max_age_seconds: 3600,
-                session_max_stale_age_seconds: 1800,
-            },
-        ],
-        selectedRealm: "realm-a",
-        isSuperAdminMode: false,
-        isSuperAdmin: false,
-        realmLabel: (id: string) => id,
-    }),
+    useRealm: () => mockRealm,
 }));
 
 const existingAdmin: Admin = {
@@ -68,6 +71,20 @@ async function fillRequiredFields() {
 describe("AdminFormDrawer — submit button state", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
+        mockRealm.canManageRealm = () => true;
+    });
+
+    it("realm picker: a realm that has its own admins is listed but cannot be picked", async () => {
+        mockRealm.canManageRealm = (realmId) => realmId !== "realm-b";
+        await act(async () => {
+            render(<AdminFormDrawer open={true} admin={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
+        });
+        await act(async () => {
+            fireEvent.mouseDown(screen.getByRole("combobox"));
+        });
+
+        expect(await screen.findByTitle("realm-a")).not.toHaveClass("ant-select-item-option-disabled");
+        expect(await screen.findByTitle("realm-b (has its own admins)")).toHaveClass("ant-select-item-option-disabled");
     });
 
     // ── Create mode ──────────────────────────────────────────────────────────

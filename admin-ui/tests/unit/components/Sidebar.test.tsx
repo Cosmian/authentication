@@ -18,6 +18,7 @@ const mockRealm = {
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
     isSuperAdminMode: true,
     isSuperAdmin: true,
+    canManageRealm: (() => true) as (realmId: string) => boolean,
     loading: false,
     error: null,
 };
@@ -121,6 +122,41 @@ describe("Sidebar", () => {
             mockRealm.isSuperAdminMode = true;
             mockRealm.isSuperAdmin = true;
             mockRealm.selectedRealm = "_";
+        }
+    });
+
+    it("realm-admin sees the Admins item for a realm it manages, not for one it does not", () => {
+        mockRealm.isSuperAdminMode = false;
+        mockRealm.isSuperAdmin = false;
+        mockRealm.selectedRealm = "realm-a";
+        try {
+            mockRealm.canManageRealm = (realmId) => realmId === "realm-a";
+            const { unmount } = renderSidebar();
+            expect(screen.getByText("Admins")).toBeInTheDocument();
+            unmount();
+
+            mockRealm.canManageRealm = () => false;
+            renderSidebar();
+            expect(screen.queryByText("Admins")).not.toBeInTheDocument();
+        } finally {
+            mockRealm.isSuperAdminMode = true;
+            mockRealm.isSuperAdmin = true;
+            mockRealm.selectedRealm = "_";
+            mockRealm.canManageRealm = () => true;
+        }
+    });
+
+    it("super-admin still sees the Admins item on a claimed realm, to read its admins", () => {
+        mockRealm.isSuperAdminMode = false;
+        mockRealm.selectedRealm = "realm-a";
+        mockRealm.canManageRealm = () => false;
+        try {
+            renderSidebar();
+            expect(screen.getByText("Admins")).toBeInTheDocument();
+        } finally {
+            mockRealm.isSuperAdminMode = true;
+            mockRealm.selectedRealm = "_";
+            mockRealm.canManageRealm = () => true;
         }
     });
 });
