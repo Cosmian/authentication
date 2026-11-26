@@ -32,3 +32,8 @@
 
 - Realm permissions described as they are since the realm-claim change: the `can_manage_realm` doc comment no longer says a super admin loses read access, `server/authorization.md`, the API reference, the client guide, the overview and `.github/copilot-instructions.md` no longer call realm update and delete super-admin only, and `can_administer_realm` is documented as a UI hint rather than an authorization decision.
 - `AGENTS.md` §4a adds the admin UI as a layer to keep in sync and a rule for authorization changes: state the admin UI impact (or "No admin UI impact") in the PR and the changelog, with the UI update optional; `admin-ui/AGENTS.md` states that the UI permission checks mirror the server rules and that unavailable actions are hidden.
+
+## Security
+
+- Update `actix-http` to 3.22.1 (RUSTSEC-2026-0552, -0553, -0554), `url` to 2.5.9 (RUSTSEC-2026-0592) and `cookie` 0.18 to 0.18.3 (RUSTSEC-2026-0594), plus `actix-web` 4.20.0, so `cargo deny` passes again.
+- Accept RUSTSEC-2026-0594 for the `cookie` 0.16.2 copy pinned by `actix-web` (private cookies are not compiled in or used) and RUSTSEC-2026-0543 (`chrono` unmaintained, no patched version) in `deny.toml`, each with its reason; revisit when `actix-web` moves to `cookie` >= 0.18.3 and when `chrono` is migrated.
