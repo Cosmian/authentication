@@ -8,6 +8,47 @@ import { createAdminsApi } from "../../services/adminsApi";
 import { createCredentialsApi } from "../../services/credentialsApi";
 import { TotpManagementModal } from "./TotpManagementModal";
 
+/**
+ * Create `admin` and, with a password, its login in realm `_`. A super admin creates the login first:
+ * the admin claims its realm, after which only that realm's admins may manage the login. A realm
+ * admin creates the admin first: a login no admin uses yet is the super admin's.
+ */
+async function createAdminWithLogin(
+    serverUrl: string,
+    admin: Admin,
+    password: string | undefined,
+    changePassword: boolean,
+    superAdmin: boolean,
+): Promise<void> {
+    const adminsApi = createAdminsApi(serverUrl);
+    if (!password) {
+        await adminsApi.create(admin);
+        return;
+    }
+    const credentialsApi = createCredentialsApi(serverUrl);
+    const login = {
+        realm: SUPER_ADMIN_REALM_ID,
+        username: admin.id,
+        password_hash: "",
+        password_input: { plaintext: password },
+        change_password: changePassword,
+        roles: [],
+    };
+    if (!superAdmin) {
+        await adminsApi.create(admin);
+        await credentialsApi.create(SUPER_ADMIN_REALM_ID, login);
+        return;
+    }
+    await credentialsApi.create(SUPER_ADMIN_REALM_ID, login);
+    try {
+        await adminsApi.create({ ...admin, userpass: admin.id });
+    } catch (err) {
+        // Do not leave a login without its admin behind.
+        await credentialsApi.delete(SUPER_ADMIN_REALM_ID, admin.id).catch(() => message.error(`Could not remove the login "${admin.id}"`));
+        throw err;
+    }
+}
+
 interface AdminFormDrawerProps {
     open: boolean;
     admin: Admin | null;
@@ -21,7 +62,7 @@ interface AdminFormDrawerProps {
 export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, onClose, onSuccess, onTotpSetup, defaultRealm }) => {
     const [form] = Form.useForm();
     const { serverUrl } = useAuth();
-    const { realms, canManageRealm } = useRealm();
+    const { realms, canManageRealm, isSuperAdmin } = useRealm();
     const [loading, setLoading] = useState(false);
     const [canSubmit, setCanSubmit] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
@@ -137,22 +178,14 @@ export const AdminFormDrawer: React.FC<AdminFormDrawerProps> = ({ open, admin, o
                     message.success(`Password updated for admin "${adminId}"`);
                 }
             } else {
-                await adminsApi.create(payload);
+                await createAdminWithLogin(
+                    serverUrl,
+                    payload,
+                    values.password as string | undefined,
+                    (values.change_password as boolean | undefined) ?? false,
+                    isSuperAdmin,
+                );
                 message.success(`Admin "${adminId}" created`);
-
-                // Create userpass credential if a password was provided
-                if (values.password) {
-                    const credentialsApi = createCredentialsApi(serverUrl);
-                    await credentialsApi.create(SUPER_ADMIN_REALM_ID, {
-                        realm: SUPER_ADMIN_REALM_ID,
-                        username: adminId,
-                        password_hash: "",
-                        password_input: { plaintext: values.password as string },
-                        change_password: (values.change_password as boolean | undefined) ?? false,
-                        roles: [],
-                    });
-                    message.success(`Credential created for admin "${adminId}"`);
-                }
             }
             onSuccess();
 

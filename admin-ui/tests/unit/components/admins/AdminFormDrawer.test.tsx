@@ -150,3 +150,52 @@ describe("AdminFormDrawer — submit button state", () => {
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
 });
+
+describe("AdminFormDrawer — creating an admin with a password", () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        mockRealm.canManageRealm = () => true;
+    });
+
+    /** Fill the create form for `bob` in `realm-a` with a password, submit, and return the requests made. */
+    async function createBob(): Promise<{ method: string; path: string; body: Record<string, unknown> }[]> {
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({}), { status: 201 }));
+        const onSuccess = vi.fn();
+        await act(async () => {
+            render(<AdminFormDrawer open={true} admin={null} defaultRealm="realm-a" onClose={vi.fn()} onSuccess={onSuccess} />);
+        });
+        await act(async () => {
+            fireEvent.change(screen.getByLabelText("Admin ID"), { target: { value: "bob" } });
+            fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-pw" } });
+            fireEvent.change(screen.getByLabelText("Confirm Password"), { target: { value: "secret-pw" } });
+        });
+        const btn = getSubmitButton("Create");
+        await waitFor(() => expect(btn).not.toBeDisabled());
+        await act(async () => {
+            fireEvent.click(btn);
+        });
+        await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+        return fetchSpy.mock.calls.map(([url, init]) => ({
+            method: String(init?.method),
+            path: String(url),
+            body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        }));
+    }
+
+    it("a super admin creates the login first, then the admin linked to it", async () => {
+        mockRealm.isSuperAdmin = true;
+        try {
+            const calls = await createBob();
+            expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /realms/_/userpass", "POST /admins"]);
+            expect(calls[1].body).toMatchObject({ id: "bob", realms: ["realm-a"], userpass: "bob" });
+        } finally {
+            mockRealm.isSuperAdmin = false;
+        }
+    });
+
+    it("a realm admin creates the admin first, then its login", async () => {
+        const calls = await createBob();
+        expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /admins", "POST /realms/_/userpass"]);
+        expect(calls[0].body).toMatchObject({ id: "bob", userpass: null });
+    });
+});

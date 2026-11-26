@@ -12,6 +12,8 @@
 
 ## Bug Fixes
 
+- Admin UI: a super admin creating the first admin of a realm with a password got the admin but not its password (`403`), leaving an admin that could not log in in a realm the super admin could no longer fix; the form now creates the login before the admin for a super admin (the admin claims the realm, after which only the realm's admins may manage the login), keeps the admin-first order for realm admins, and removes the login again if the admin cannot be created.
+
 - Admin UI: a realm admin no longer gets "Access Denied" on the Realms page and the sidebar shows it the Realms entry, matching the server rules since the realm-claim change (#89) that let a realm's own admins edit and delete it; a save the server refuses with 403 now refreshes the claimed state.
 
 ## Refactor
