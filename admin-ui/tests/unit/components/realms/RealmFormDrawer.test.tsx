@@ -57,7 +57,39 @@ describe("RealmFormDrawer", () => {
 
         expect(screen.getByText("Username / Password")).toBeInTheDocument();
         expect(screen.getByText("JWT / OIDC")).toBeInTheDocument();
-        expect(screen.getByText("TOTP (Two-Factor)")).toBeInTheDocument();
+        // 2FA only exists for admin logins, so a new realm has no TOTP settings.
+        expect(screen.queryByText("TOTP (Two-Factor)")).not.toBeInTheDocument();
+    });
+
+    it("should offer TOTP settings for the admin realm only", async () => {
+        const { unmount } = render(
+            <RealmFormDrawer open={true} realm={{ ...existingRealm, id: "_" }} onClose={vi.fn()} onSuccess={vi.fn()} />,
+        );
+        expect(await screen.findByRole("checkbox", { name: "TOTP (Two-Factor)" })).toBeChecked();
+        unmount();
+
+        render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />);
+        await screen.findByText("Edit Realm: test-realm");
+        expect(screen.queryByText("TOTP (Two-Factor)")).not.toBeInTheDocument();
+    });
+
+    it("should keep the stored TOTP settings of another realm when saving it", async () => {
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(existingRealm), { status: 200 }));
+        await act(async () => {
+            render(<RealmFormDrawer open={true} realm={existingRealm} onClose={vi.fn()} onSuccess={vi.fn()} />);
+        });
+        await act(async () => {
+            fireEvent.change(screen.getByLabelText("Session Max Age (seconds)"), { target: { value: "7200" } });
+        });
+        const saveBtn = screen.getAllByRole("button", { name: "Save" });
+        await waitFor(() => expect(saveBtn[saveBtn.length - 1]).not.toBeDisabled());
+        await act(async () => {
+            fireEvent.click(saveBtn[saveBtn.length - 1]);
+        });
+
+        await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+        const sent = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as Realm;
+        expect(sent.auth_params.totp_params).toEqual({ algorithm: "SHA1", step: 30 });
     });
 
     it("should call onClose when the drawer close icon is clicked", async () => {
@@ -97,6 +129,7 @@ describe("RealmFormDrawer", () => {
         // The server drops `totp_params` from its JSON when unset, rather than sending null.
         const withoutTotp: Realm = {
             ...existingRealm,
+            id: "_",
             auth_params: { username_password_params: { allow_expired_passwords: false }, jwt_params: null },
         };
         await act(async () => {

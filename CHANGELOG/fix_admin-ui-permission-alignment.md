@@ -7,6 +7,7 @@
 - Admin UI: the admin form's realm picker lists realms that have admins of their own as disabled (the server refuses new admins there from a super admin), and the sidebar decides whether to show Admins with the same `canManageRealm` check as the pages instead of its own copy of the rule.
 - Admin UI: the Credentials page no longer loads or offers actions on a realm that has its own admins (the server answers 403 for a super admin): the overview shows a note in place of that realm's panel and its New Credential button, and the single-realm view shows the same note.
 - Admin UI: the Sessions page hides "Revoke All Sessions" on a realm that has its own admins, where the server now refuses a super admin, and says why.
+- Admin UI: the realm form offers the TOTP settings only for the admin realm `_`, the only realm where 2FA exists, and keeps the stored TOTP settings of other realms unchanged when saving them; it used to let any realm enable a 2FA that nothing enforces.
 
 ## Bug Fixes
 
