@@ -80,11 +80,11 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Do not artificially inject SUPER_ADMIN_REALM for non-super-admins.
             setRealms(data);
             setIsSuperAdmin(hasAdmin);
-            // If the previously selected realm is no longer accessible, fall back to
-            // the first realm in the list (or SUPER_ADMIN_REALM_ID as a safe default).
+            // If the previously selected realm is no longer accessible, fall back to the first
+            // realm in the list. An empty list is an admin with no realm left, never a super admin.
             setSelectedRealmState((prev) => {
                 if (data.some((r) => r.id === prev)) return prev;
-                return data[0]?.id ?? SUPER_ADMIN_REALM_ID;
+                return data[0]?.id ?? "";
             });
             setError(null);
             await loadClaimedRealms(hasAdmin);

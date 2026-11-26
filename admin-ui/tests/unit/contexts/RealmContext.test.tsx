@@ -42,10 +42,12 @@ const mockApi = (state: ApiState) =>
     });
 
 const TestConsumer: React.FC = () => {
-    const { realms, selectedRealm, realmLabel, setSelectedRealm, loading, error, refreshRealms, canManageRealm } = useRealm();
+    const { realms, selectedRealm, isSuperAdminMode, realmLabel, setSelectedRealm, loading, error, refreshRealms, canManageRealm } =
+        useRealm();
     return (
         <div>
             <span data-testid="selected">{selectedRealm}</span>
+            <span data-testid="super-admin-mode">{String(isSuperAdminMode)}</span>
             <span data-testid="label">{realmLabel(selectedRealm)}</span>
             <span data-testid="loading">{String(loading)}</span>
             <span data-testid="error">{error ?? ""}</span>
@@ -125,7 +127,7 @@ describe("RealmContext", () => {
         expect(screen.getByTestId("error")).toHaveTextContent("Failed to load realms");
     });
 
-    it("should fall back to admin realm on empty API response", async () => {
+    it("should select no realm, not the admin realm, when the server returns none", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
 
         await act(async () => {
@@ -136,8 +138,25 @@ describe("RealmContext", () => {
             );
         });
 
-        expect(screen.getByTestId("selected")).toHaveTextContent("_");
+        expect(screen.getByTestId("selected")).toHaveTextContent(/^$/);
+        expect(screen.getByTestId("super-admin-mode")).toHaveTextContent("false");
         expect(screen.getByTestId("count")).toHaveTextContent("0");
+    });
+
+    it("should not turn a realm admin into a super admin when it deletes its last realm", async () => {
+        localStorage.setItem("admin-ui-selected-realm", "demo");
+        const state: ApiState = { realms: [makeRealm("demo")], admins: "fail" };
+        mockApi(state);
+        await renderProvider();
+        expect(screen.getByTestId("selected")).toHaveTextContent("demo");
+
+        state.realms = [];
+        await act(async () => {
+            screen.getByText("refresh").click();
+        });
+
+        expect(screen.getByTestId("selected")).toHaveTextContent(/^$/);
+        expect(screen.getByTestId("super-admin-mode")).toHaveTextContent("false");
     });
 
     it("should restore selected realm from localStorage", async () => {
