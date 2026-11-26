@@ -22,3 +22,8 @@
 - `test_list_admins_requires_super_admin` is replaced by a test that a realm admin lists only the admins it owns, not multi-realm, unaffiliated, foreign-realm or super admins.
 - Admin UI unit and Playwright tests cover a realm admin editing its realm (SAML metadata included) without being offered realm creation, and a super admin seeing a claimed realm as read-only while still able to delete it.
 - Admin UI unit tests for the Admins page (Super-Admin view, realm view, claimed realm, empty, error and loading states) and a Playwright spec where a realm admin lists and deletes an admin of its realm.
+
+## Docs
+
+- Realm permissions described as they are since the realm-claim change: the `can_manage_realm` doc comment no longer says a super admin loses read access, `server/authorization.md`, the API reference, the client guide, the overview and `.github/copilot-instructions.md` no longer call realm update and delete super-admin only, and `can_administer_realm` is documented as a UI hint rather than an authorization decision.
+- `AGENTS.md` §4a adds the admin UI as a layer to keep in sync and a rule for authorization changes: state the admin UI impact (or "No admin UI impact") in the PR and the changelog, with the UI update optional; `admin-ui/AGENTS.md` states that the UI permission checks mirror the server rules and that unavailable actions are hidden.

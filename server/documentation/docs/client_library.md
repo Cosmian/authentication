@@ -258,7 +258,7 @@ match result.next_step {
 
 ## Realm Management
 
-Realm management requires super admin authentication.
+Creating realms requires super admin authentication. A realm admin can list, read, update and delete its own realms; a super admin can no longer update a realm that has admins of its own (see [Authorization and Administration](authorization_and_administration.md)).
 
 ```rust
 use auth_client::{Realm, RealmAuthParams};

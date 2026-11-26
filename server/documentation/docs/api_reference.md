@@ -708,7 +708,7 @@ Retrieve a realm by ID. Realm admins may only retrieve realms they administer.
 
 ### `PUT /admins/realms/{realm_id}`
 
-Replace a realm's configuration. Super admin only. Returns the updated realm.
+Replace a realm's configuration. An admin of the realm, or a super admin while the realm has no admin of its own. Returns the updated realm.
 
 #### Request body — same shape as `POST /admins/realms`
 
@@ -718,7 +718,7 @@ Replace a realm's configuration. Super admin only. Returns the updated realm.
 
 ### `DELETE /admins/realms/{realm_id}`
 
-Delete a realm and all associated data. Super admin only.
+Delete a realm and all associated data. An admin of the realm, or a super admin (always, even when the realm has its own admins).
 
 **Response — `204 No Content`** — empty body.
 

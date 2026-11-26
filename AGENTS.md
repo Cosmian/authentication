@@ -173,6 +173,7 @@ server/src/server/endpoints/   ←→   client/src/   ←→   server/documentat
 | **Client DTOs** (`client/src/dto/`, `client/src/models/`) | Struct field names and types that are serialized/deserialized over the wire |
 | **Client methods** (`client/src/client/auth_client.rs`) | URL format strings, HTTP methods, request/response types |
 | **OpenAPI schema** (`server/documentation/openapi.yaml`) | Paths, parameter names, schema component field names, security requirements, examples |
+| **Admin UI** (`admin-ui/src/services/`, `admin-ui/src/types/api.ts`, `admin-ui/src/pages/`, `admin-ui/src/contexts/RealmContext.tsx`) | API calls, types and permission checks that depend on the changed route, field or rule (see rule 5) |
 
 ### Rules for agents
 
@@ -197,6 +198,16 @@ server/src/server/endpoints/   ←→   client/src/   ←→   server/documentat
    - Add the client method in `auth_client.rs`.
    - Add the full path entry (summary, operationId, parameters, requestBody,
      responses, security, example) in `openapi.yaml`.
+
+5. **Authorization change** (who may call an endpoint, or what a list endpoint
+   returns: `is_super_admin()`, `can_manage_realm`, `can_manage_admin_realms`,
+   `realm_manageable_given_claims`, list filters):
+   - List the admin UI pages, permission checks (`isSuperAdmin`, `isSuperAdminMode`,
+     `canManageRealm`) and API calls that depend on the changed rule.
+   - Say in the PR description and the branch changelog either `Admin UI impact:`
+     followed by what breaks in the UI, or `No admin UI impact`. Never leave it unstated.
+   - Updating the UI in the same change is welcome but not required. When it is not
+     done, offer to open a follow-up issue instead of changing the UI unasked.
 
 ### Schema field naming conventions
 

@@ -69,14 +69,17 @@ pub fn admin_from_request(req: &HttpRequest) -> Result<Admin, AuthError> {
 
 // ── Realm-claim authorization ───────────────────────────────────────────────
 
-/// Whether `requester` may administer `realm_id`.
+/// Whether `requester` may change `realm_id` or act on what it holds (credentials, admins).
 ///
 /// Direct membership (`requester.realms` contains `realm_id`) always grants
 /// access. A super admin who is not a direct member may act on the realm only
 /// while it has no admin of its own yet (bootstrap). Once any admin is scoped
-/// to the realm, only that realm's own admins may act on it — including
-/// reading it — and the super admin loses access until it becomes
-/// admin-less again.
+/// to the realm, only that realm's own admins may act on it, and the super
+/// admin loses access until it becomes admin-less again.
+///
+/// Reads and deletions a super admin keeps (the realm itself, its admins, see
+/// `get_realm`, `list_realms`, `delete_realm`, `get_admin`, `list_admins`) do
+/// not go through this function.
 pub async fn can_manage_realm(
     requester: &Admin,
     realm_id: &str,
