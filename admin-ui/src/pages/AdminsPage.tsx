@@ -17,7 +17,7 @@ const READ_ONLY_HINT = "This admin belongs to a realm that has its own admins: o
 
 const AdminsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { isSuperAdmin, isSuperAdminMode, canManageRealm, selectedRealm, realmLabel, loading: realmsLoading } = useRealm();
+    const { isSuperAdmin, isSuperAdminMode, canManageRealm, selectedRealm, realmLabel, loading: realmsLoading, refreshRealms } = useRealm();
     const api = useMemo(() => createAdminsApi(serverUrl), [serverUrl]);
 
     const [admins, setAdmins] = useState<Admin[]>([]);
@@ -73,10 +73,12 @@ const AdminsPage: React.FC = () => {
         setEditingAdmin(null);
     };
 
+    // Adding a realm's first admin claims it, deleting its last one releases it.
     const handleDrawerSuccess = (): void => {
         setDrawerOpen(false);
         setEditingAdmin(null);
         fetchAdmins();
+        refreshRealms();
     };
 
     const handleDelete = async (adminId: string) => {
@@ -84,6 +86,7 @@ const AdminsPage: React.FC = () => {
             await api.delete(adminId);
             message.success(`Admin "${adminId}" deleted`);
             fetchAdmins();
+            refreshRealms();
         } catch {
             message.error(`Failed to delete admin "${adminId}"`);
         }

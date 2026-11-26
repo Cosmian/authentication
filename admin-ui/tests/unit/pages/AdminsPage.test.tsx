@@ -158,6 +158,26 @@ describe("AdminsPage", () => {
         });
     });
 
+    it("should refresh the claimed realms after deleting an admin, which can release its realm", async () => {
+        asRealmAdmin();
+        mockRealm.refreshRealms = vi.fn();
+        const fetchSpy = await renderPage([demoAdmin, demoColleague]);
+        fetchSpy.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+        await act(async () =>
+            rowOf("demo-colleague")
+                .getByRole("button", { name: /Delete/ })
+                .click(),
+        );
+        await act(async () => screen.getAllByRole("button", { name: "Delete" }).at(-1)?.click());
+
+        expect(fetchSpy).toHaveBeenCalledWith(
+            expect.stringContaining("/admins/demo-colleague"),
+            expect.objectContaining({ method: "DELETE" }),
+        );
+        expect(mockRealm.refreshRealms).toHaveBeenCalledTimes(1);
+    });
+
     it("should show an error when the admins cannot be loaded", async () => {
         vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("Network error"));
         await act(async () => {
