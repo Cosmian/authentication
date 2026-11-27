@@ -37,3 +37,7 @@
 
 - Update `actix-http` to 3.22.1 (RUSTSEC-2026-0552, -0553, -0554), `url` to 2.5.9 (RUSTSEC-2026-0592) and `cookie` 0.18 to 0.18.3 (RUSTSEC-2026-0594), plus `actix-web` 4.20.0, so `cargo deny` passes again.
 - Accept RUSTSEC-2026-0594 for the `cookie` 0.16.2 copy pinned by `actix-web` (private cookies are not compiled in or used) and RUSTSEC-2026-0543 (`chrono` unmaintained, no patched version) in `deny.toml`, each with its reason; revisit when `actix-web` moves to `cookie` >= 0.18.3 and when `chrono` is migrated.
+
+## CI
+
+- The Security Audit job installs `cargo-deny` 0.21.0 instead of the latest release, because 0.22 needs rustc 1.95 and the repository toolchain is 1.94.1, so the install step failed before any check ran; bump both together.
