@@ -811,3 +811,53 @@ async fn test_k8s_role_upsert() {
         db.delete_k8s_role("k8s-upsert-role").await.ok();
     }
 }
+
+/// Replicas starting together all run `initialize_db` on an empty database: each one sees
+/// the admin realm/login/admin missing, and the losers of each insert race get `Conflict`.
+/// That means the row exists, so every call must still succeed.
+#[tokio::test]
+async fn test_initialize_db_concurrent_calls_all_succeed() {
+    // One connection queues every task's existence check before any insert, so all of them
+    // reliably see the empty database.
+    let db = create_database(&DatabaseParams {
+        backend: DatabaseBackend::SQLite,
+        connection_url: "sqlite::memory:".to_string(),
+        max_connections: 1,
+        min_connections: 1,
+        connect_timeout_secs: 30,
+        idle_timeout_secs: 300,
+        auto_init_schema: true,
+    })
+    .await
+    .expect("Failed to create SQLite database");
+    // Drop the seed `init` created; the realm delete cascades to its userpass.
+    db.delete_realm(ADMIN_REALM).await.expect("delete realm");
+    db.delete_admin(APP_REALM_ADMIN_USERNAME)
+        .await
+        .expect("delete admin");
+
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..4 {
+        let db = Arc::clone(&db);
+        tasks.spawn(async move { db.initialize_db().await });
+    }
+    while let Some(joined) = tasks.join_next().await {
+        joined
+            .expect("task panicked")
+            .expect("concurrent initialize_db must succeed");
+    }
+
+    assert!(db.get_realm(ADMIN_REALM).await.unwrap().is_some());
+    assert!(
+        db.get_userpass(ADMIN_REALM, APP_REALM_ADMIN_USERNAME)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        db.get_admin(APP_REALM_ADMIN_USERNAME)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}

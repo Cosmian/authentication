@@ -3,6 +3,16 @@ use crate::models::{ADMIN_REALM, Admin, AuthScheme, Realm, UserPass};
 use crate::{RealmAuthParams, UsernamePasswordParams};
 use async_trait::async_trait;
 
+/// Another initializer (a replica starting at the same time) may insert a row between our
+/// existence check and our insert. The row existing is what `initialize_db` wants, so the
+/// resulting `Conflict` is success.
+fn already_exists_is_ok(result: AuthDbResult<()>) -> AuthDbResult<()> {
+    match result {
+        Err(AuthDbError::Conflict(_)) => Ok(()),
+        other => other,
+    }
+}
+
 // ── App auth DB types ─────────────────────────────────────────────────────────
 
 /// An app token record as stored in the database.
@@ -97,7 +107,7 @@ pub trait Database: Send + Sync {
                 session_max_stale_age_seconds: 3600,
                 certificate_max_age_seconds: 365 * 24 * 3600,
             };
-            self.create_realm(&app_realm).await?;
+            already_exists_is_ok(self.create_realm(&app_realm).await)?;
         }
 
         // create the  entry in the userpass table
@@ -120,7 +130,7 @@ pub trait Database: Send + Sync {
                 roles: Vec::new(),
                 extra_claims: None,
             };
-            self.create_userpass(&app_user_pass).await?;
+            already_exists_is_ok(self.create_userpass(&app_user_pass).await)?;
             // create the admin in the admin table
             let admin = Admin {
                 id: APP_REALM_ADMIN_USERNAME.to_string(),
@@ -134,7 +144,7 @@ pub trait Database: Send + Sync {
                 totp_secret: None,
                 totp_auth_url: None,
             };
-            self.create_admin(&admin).await?;
+            already_exists_is_ok(self.create_admin(&admin).await)?;
         }
 
         Ok(())
