@@ -246,7 +246,11 @@ impl SessionStore for PostgresSessionStore {
             user_conditions
         );
 
-        let mut query = sqlx::query(&query_str).bind(realm_id).bind(now).bind(now);
+        // query_str is fixed SQL plus generated placeholders; every value goes through bind.
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(query_str))
+            .bind(realm_id)
+            .bind(now)
+            .bind(now);
 
         // Bind each username and auth_scheme pair
         for (i, user) in authenticated_users.iter().enumerate() {
