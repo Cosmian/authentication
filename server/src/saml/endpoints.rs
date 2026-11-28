@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use actix_web::{
-    HttpRequest, HttpResponse,
-    cookie::{Cookie, SameSite, time::Duration},
-    get,
+    HttpRequest, HttpResponse, get,
     http::header,
     post,
     web::{Data, Form, Path, Query},
@@ -28,7 +26,9 @@ use crate::{
         sp_signing_key::SamlSpSigningKey,
     },
     server::parameters::{DatabaseParams, ServerParams},
-    session::{JwtTokenConfig, SessionStore, issue_token, session_id_from_cookie_value},
+    session::{
+        JwtTokenConfig, SessionStore, issue_token, request_cookie, session_id_from_cookie_value,
+    },
 };
 
 /// How long a user has to sign in at the IdP.
@@ -100,7 +100,10 @@ pub(crate) async fn saml_login(
     Ok(HttpResponse::Found()
         .insert_header((header::LOCATION, idp_url.as_str()))
         .insert_header((header::CACHE_CONTROL, "no-store"))
-        .cookie(request_cookie(&request_id))
+        .append_header((
+            header::SET_COOKIE,
+            saml_request_cookie(&request_id, PENDING_REQUEST_SECONDS),
+        ))
         .finish())
 }
 
@@ -140,14 +143,14 @@ pub(crate) async fn saml_acs(
         &token,
         realm.session_max_age_seconds,
         server_params.tls_params.is_some(),
-    )?;
-    let session_id = session_id_from_cookie_value(session_cookie.value().as_bytes())?;
+    );
+    let session_id = session_id_from_cookie_value(token.as_bytes())?;
     let client = AuthenticatedClientScheme {
         username: identity.subject,
         auth_scheme: AuthScheme::Saml,
     };
     session_store
-        .upsert_session(&session_id, &realm, &client, &session_cookie.to_string())
+        .upsert_session(&session_id, &realm, &client, &session_cookie)
         .await?;
     info!(
         event = "auth.login.success",
@@ -158,14 +161,16 @@ pub(crate) async fn saml_acs(
         "login successful"
     );
 
-    let mut used_request_cookie = request_cookie("");
-    used_request_cookie.make_removal();
+    let used_request_cookie = format!(
+        "{}; Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+        saml_request_cookie("", 0)
+    );
     Ok(HttpResponse::Ok()
         .content_type("text/html; charset=utf-8")
         .insert_header((header::CACHE_CONTROL, "no-store"))
         .insert_header((header::CONTENT_SECURITY_POLICY, "default-src 'none'"))
-        .cookie(session_cookie)
-        .cookie(used_request_cookie)
+        .append_header((header::SET_COOKIE, session_cookie))
+        .append_header((header::SET_COOKIE, used_request_cookie))
         .body(redirect_page(&pending.return_url)))
 }
 
@@ -190,12 +195,7 @@ async fn consume_response(
     database: &dyn Database,
     state: &SamlState,
 ) -> AuthResult<(Realm, PendingSamlRequest, SamlIdentity)> {
-    if req
-        .cookie(REQUEST_COOKIE)
-        .map(|c| c.value().to_string())
-        .as_deref()
-        != Some(form.relay_state.as_str())
-    {
+    if request_cookie(req.headers(), REQUEST_COOKIE) != Some(form.relay_state.as_str()) {
         return Err(AuthError::Saml(
             "this sign-in was not started from this browser".to_string(),
         ));
@@ -267,16 +267,12 @@ fn resolve_return_url(params: &SamlParams, return_to: Option<&str>) -> AuthResul
     Ok(url.to_string())
 }
 
-fn request_cookie(request_id: &str) -> Cookie<'static> {
+fn saml_request_cookie(request_id: &str, max_age: i64) -> String {
     // SameSite=None: the IdP's form POST back to the ACS is a cross-site request.
     // Path=/: the ACS URL may sit behind a reverse-proxy path prefix (`sp_acs_url`).
-    Cookie::build(REQUEST_COOKIE, request_id.to_string())
-        .path("/")
-        .secure(true)
-        .http_only(true)
-        .same_site(SameSite::None)
-        .max_age(Duration::seconds(PENDING_REQUEST_SECONDS))
-        .finish()
+    format!(
+        "{REQUEST_COOKIE}={request_id}; HttpOnly; SameSite=None; Secure; Path=/; Max-Age={max_age}"
+    )
 }
 
 /// Browsers may withhold the `SameSite=Strict` session cookie on the navigation that follows a

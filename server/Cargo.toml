@@ -30,7 +30,7 @@ actix-cors = { workspace = true }
 actix-files = { workspace = true, optional = true }
 governor = { workspace = true }
 actix-tls = { workspace = true }
-actix-web = { workspace = true, features = ["macros", "cookies"] }
+actix-web = { workspace = true, features = ["macros"] }
 argon2 = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }

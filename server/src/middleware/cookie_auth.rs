@@ -7,12 +7,14 @@
 
 use crate::{
     AuthError,
-    session::{COOKIE_NAME, JwtTokenConfig, SessionStore, session_id_from_cookie_value},
+    session::{
+        COOKIE_NAME, JwtTokenConfig, SessionStore, request_cookie, session_id_from_cookie_value,
+        set_cookie_value,
+    },
 };
 use actix_web::{
     Error, HttpMessage,
     body::{BoxBody, EitherBody},
-    cookie::Cookie,
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
 };
 use cosmian_logger::{debug, trace};
@@ -23,7 +25,6 @@ use futures::{
 use std::{
     pin::Pin,
     rc::Rc,
-    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -127,16 +128,16 @@ where
         Box::pin(async move {
             // Extract the cookie from the request and validate it against the database
             // Try to extract the session cookie from the request
-            let Some(cookie) = req.cookie(COOKIE_NAME) else {
+            let Some(cookie) = request_cookie(req.headers(), COOKIE_NAME) else {
                 debug!("Cookie Auth Same Server: No session cookie found");
                 return Err(AuthError::Session("No session cookie found".to_string()).into());
             };
             // Do not log the full cookie value to avoid exposing session credentials
             trace!(
                 "Cookie Auth Same Server: Found session cookie with name: {}",
-                cookie.name()
+                COOKIE_NAME
             );
-            let session_id = session_id_from_cookie_value(cookie.value().as_bytes())?;
+            let session_id = session_id_from_cookie_value(cookie.as_bytes())?;
 
             let Some(session_data) = session_store.get_session(&session_id).await? else {
                 debug!(
@@ -149,14 +150,12 @@ where
                 "Cookie Auth Same Server: Valid session found for cookie: {}",
                 session_id
             );
-            let cookie = Cookie::from_str(&session_data.cookie_string).map_err(|e| {
-                AuthError::Unexpected(format!(
-                    "Failed parsing the session cookie from the store: {e}"
-                ))
+            let token = set_cookie_value(&session_data.cookie_string).ok_or_else(|| {
+                AuthError::Unexpected("Failed parsing the session cookie from the store".to_owned())
             })?;
 
             let client_claims = crate::session::validate_token(
-                cookie.value(),
+                token,
                 jwt_token_config.algorithm,
                 &jwt_token_config.decoding_key,
             )?;
