@@ -4,11 +4,20 @@ use crate::{RealmAuthParams, UsernamePasswordParams};
 use async_trait::async_trait;
 
 /// Another initializer (a replica starting at the same time) may insert a row between our
-/// existence check and our insert. The row existing is what `initialize_db` wants, so the
-/// resulting `Conflict` is success.
-fn already_exists_is_ok(result: AuthDbResult<()>) -> AuthDbResult<()> {
+/// existence check and our insert. A `Conflict` is success only if that row now exists:
+/// `create_admin` also reports `Conflict` when a different admin already owns the login.
+async fn conflict_is_ok_if_exists(
+    result: AuthDbResult<()>,
+    exists: impl Future<Output = AuthDbResult<bool>>,
+) -> AuthDbResult<()> {
     match result {
-        Err(AuthDbError::Conflict(_)) => Ok(()),
+        Err(conflict @ AuthDbError::Conflict(_)) => {
+            if exists.await? {
+                Ok(())
+            } else {
+                Err(conflict)
+            }
+        }
         other => other,
     }
 }
@@ -107,7 +116,10 @@ pub trait Database: Send + Sync {
                 session_max_stale_age_seconds: 3600,
                 certificate_max_age_seconds: 365 * 24 * 3600,
             };
-            already_exists_is_ok(self.create_realm(&app_realm).await)?;
+            conflict_is_ok_if_exists(self.create_realm(&app_realm).await, async {
+                Ok(self.get_realm(ADMIN_REALM).await?.is_some())
+            })
+            .await?;
         }
 
         // create the  entry in the userpass table
@@ -130,7 +142,13 @@ pub trait Database: Send + Sync {
                 roles: Vec::new(),
                 extra_claims: None,
             };
-            already_exists_is_ok(self.create_userpass(&app_user_pass).await)?;
+            conflict_is_ok_if_exists(self.create_userpass(&app_user_pass).await, async {
+                Ok(self
+                    .get_userpass(ADMIN_REALM, APP_REALM_ADMIN_USERNAME)
+                    .await?
+                    .is_some())
+            })
+            .await?;
             // create the admin in the admin table
             let admin = Admin {
                 id: APP_REALM_ADMIN_USERNAME.to_string(),
@@ -144,7 +162,10 @@ pub trait Database: Send + Sync {
                 totp_secret: None,
                 totp_auth_url: None,
             };
-            already_exists_is_ok(self.create_admin(&admin).await)?;
+            conflict_is_ok_if_exists(self.create_admin(&admin).await, async {
+                Ok(self.get_admin(APP_REALM_ADMIN_USERNAME).await?.is_some())
+            })
+            .await?;
         }
 
         Ok(())
