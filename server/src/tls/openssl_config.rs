@@ -287,6 +287,98 @@ pub(crate) fn configure_client_cert_verification(
     })?;
     // Request the client certificates only, do not require them
     builder.set_verify(SslVerifyMode::PEER);
+    // With client-certificate verification on and no session id context, OpenSSL answers a
+    // resumption attempt with an `internal_error` alert, which browsers (that resume sessions
+    // on their second connection) report as ERR_SSL_PROTOCOL_ERROR.
+    builder
+        .set_session_id_context(b"auth_verifier")
+        .map_err(|e| {
+            AuthError::Config(format!(
+                "Failed to set the session id context in SslAcceptorBuilder: {e}"
+            ))
+        })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use openssl::ssl::{SslConnector, SslSessionCacheMode};
+    use std::{
+        io::{Read, Write},
+        net::{TcpListener, TcpStream},
+        sync::{Arc, Mutex},
+    };
+
+    /// A browser resumes the TLS session it got on its first connection; the server must accept
+    /// that instead of aborting the handshake.
+    #[test]
+    fn test_acceptor_resumes_tls_sessions() {
+        let certs = concat!(env!("CARGO_MANIFEST_DIR"), "/src/tests/certificates/ec/");
+        let acceptor = create_openssl_acceptor(&TlsParams {
+            server_private_key: format!("{certs}auth.server.key.pem"),
+            server_certificate: format!("{certs}auth.server.cert.pem"),
+            server_ca_chain: format!("{certs}auth.ca.pem"),
+            ..Default::default()
+        })
+        .expect("acceptor")
+        .build();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = std::thread::spawn(move || {
+            for _ in 0..2 {
+                let (tcp, _) = listener.accept().expect("accept");
+                let mut tls = acceptor.accept(tcp).expect("server handshake");
+                // The TLS 1.3 session ticket is sent before this byte, so the client has it
+                // once it has read the byte.
+                tls.write_all(b"x").expect("server write");
+                let _ = tls.read(&mut [0_u8; 1]);
+            }
+        });
+
+        let session = Arc::new(Mutex::new(None));
+        let mut connector = SslConnector::builder(SslMethod::tls()).expect("connector");
+        connector.set_verify(SslVerifyMode::NONE);
+        connector.set_session_cache_mode(SslSessionCacheMode::CLIENT);
+        let sink = Arc::clone(&session);
+        connector.set_new_session_callback(move |_, new_session| {
+            *sink.lock().expect("lock") = Some(new_session);
+        });
+        let connector = connector.build();
+
+        let connect = || {
+            let mut config = connector.configure().expect("configure");
+            config.set_verify_hostname(false);
+            let tcp = TcpStream::connect(addr).expect("connect");
+            (config, tcp)
+        };
+
+        let (config, tcp) = connect();
+        let mut first = config.connect("localhost", tcp).expect("first handshake");
+        first.read_exact(&mut [0_u8; 1]).expect("first read");
+        first.write_all(b"y").expect("first write");
+        // Without a close_notify OpenSSL marks the session non-resumable.
+        first.shutdown().expect("first shutdown");
+        drop(first);
+        let saved = session
+            .lock()
+            .expect("lock")
+            .take()
+            .expect("session ticket");
+
+        let (config, tcp) = connect();
+        let mut ssl = config.into_ssl("localhost").expect("ssl");
+        // SAFETY: `saved` was issued to an SSL created from this same `SslContext`.
+        unsafe { ssl.set_session(&saved) }.expect("set session");
+        let mut second = ssl
+            .connect(tcp)
+            .map_err(|e| e.to_string())
+            .expect("resumed handshake");
+        second.read_exact(&mut [0_u8; 1]).expect("second read");
+        assert!(second.ssl().session_reused());
+        second.write_all(b"y").expect("second write");
+        drop(second);
+        server.join().expect("server thread");
+    }
 }
