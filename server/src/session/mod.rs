@@ -1,5 +1,8 @@
 mod cookies;
-pub use cookies::{COOKIE_NAME, build_cookie, delete_cookie, session_id_from_cookie_value};
+pub use cookies::{
+    COOKIE_NAME, build_cookie, delete_cookie, request_cookie, session_id_from_cookie_value,
+    set_cookie_value,
+};
 
 mod factory;
 pub use factory::create_session_store_with_collector;

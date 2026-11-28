@@ -69,10 +69,7 @@ ignore = [
   # { id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
   # "a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
   # { crate = "a-crate-that-is-yanked@0.1.1", reason = "you can specify why you are ignoring the yanked crate" },
-  { id = "RUSTSEC-2026-0459", reason = "Bundled SQLite < 3.54.0 may return uninitialized page-cache memory when opening an untrusted database file; the fix needs libsqlite3-sys >= 0.39 but sqlx-sqlite (0.8 and 0.9) caps it below 0.38. We only open our own database files; revisit once sqlx allows libsqlite3-sys >= 0.39" },
-  { id = "RUSTSEC-2026-0594", reason = "Private-cookie nonce reuse after fork() in cookie < 0.18.3; the copy at 0.16.2 is pinned by actix-web (4.20.0 is the latest release). The `private` feature is not compiled (only percent-encode) and no private/signed jars are used, so the vulnerable code is absent. Revisit once actix-web moves to cookie >= 0.18.3" },
   { id = "RUSTSEC-2026-0543", reason = "chrono is flagged unmaintained with no patched version; it is only used for UTC timestamps and SAML time-window checks, and no vulnerability is reported. Migrating to jiff/time is tracked separately" },
-  { id = "RUSTSEC-2023-0071", reason = "Marvin Attack on rsa crate (via sqlx-mysql): no patched version exists upstream (patched = []), accepted risk" },
 ] # The path where the advisory databases are cloned/fetched into
 # db-path = "$CARGO_HOME/advisory-dbs"
 # The url(s) of the advisory databases to use

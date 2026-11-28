@@ -811,3 +811,78 @@ async fn test_k8s_role_upsert() {
         db.delete_k8s_role("k8s-upsert-role").await.ok();
     }
 }
+
+/// A one-connection SQLite database with the seed that `init` created removed (the realm
+/// delete cascades to its userpass), so `initialize_db` has everything to create. One
+/// connection queues every concurrent caller's existence check before any insert, so all
+/// of them reliably see the empty database.
+async fn create_unseeded_sqlite_db() -> Arc<dyn Database> {
+    let db = create_database(&DatabaseParams {
+        backend: DatabaseBackend::SQLite,
+        connection_url: "sqlite::memory:".to_string(),
+        max_connections: 1,
+        min_connections: 1,
+        connect_timeout_secs: 30,
+        idle_timeout_secs: 300,
+        auto_init_schema: true,
+    })
+    .await
+    .expect("Failed to create SQLite database");
+    db.delete_realm(ADMIN_REALM).await.expect("delete realm");
+    db.delete_admin(APP_REALM_ADMIN_USERNAME)
+        .await
+        .expect("delete admin");
+    db
+}
+
+/// Replicas starting together all run `initialize_db` on an empty database: each one sees
+/// the admin realm/login/admin missing, and the losers of each insert race get `Conflict`.
+/// That means the row exists, so every call must still succeed.
+#[tokio::test]
+async fn test_initialize_db_concurrent_calls_all_succeed() {
+    let db = create_unseeded_sqlite_db().await;
+
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..4 {
+        let db = Arc::clone(&db);
+        tasks.spawn(async move { db.initialize_db().await });
+    }
+    while let Some(joined) = tasks.join_next().await {
+        joined
+            .expect("task panicked")
+            .expect("concurrent initialize_db must succeed");
+    }
+
+    assert!(db.get_realm(ADMIN_REALM).await.unwrap().is_some());
+    assert!(
+        db.get_userpass(ADMIN_REALM, APP_REALM_ADMIN_USERNAME)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        db.get_admin(APP_REALM_ADMIN_USERNAME)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+/// A `Conflict` from `initialize_db` is only benign when the row it wanted now exists. When
+/// another admin already owns the `remove_me` login, the first-start admin cannot be created
+/// and the error must surface instead of being swallowed.
+#[tokio::test]
+async fn test_initialize_db_reports_login_taken_by_another_admin() {
+    use crate::tests::helpers::test_admin;
+
+    let db = create_unseeded_sqlite_db().await;
+    let mut squatter = test_admin("squatter");
+    squatter.userpass = Some(APP_REALM_ADMIN_USERNAME.to_string());
+    db.create_admin(&squatter).await.expect("create squatter");
+
+    let result = db.initialize_db().await;
+    assert!(
+        matches!(result, Err(AuthDbError::Conflict(_))),
+        "{result:?}"
+    );
+}

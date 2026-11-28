@@ -21,7 +21,10 @@ test.describe("Admin UI against the real server and IdP", () => {
         await page.goto("/admin-ui/");
         await page.getByPlaceholder("Username").fill(ADMIN.username);
         await page.getByPlaceholder("Password").fill(ADMIN.password);
+        // Navigating away mid-login aborts the request and the session cookie is never stored.
+        const login = page.waitForResponse((response) => response.url().includes("/login?") && response.request().method() === "POST");
         await page.getByRole("button", { name: "Login" }).click();
+        expect((await login).status()).toBe(200);
         await page.goto("/admin-ui/realms");
 
         await page.getByRole("button", { name: "Create Realm" }).click();

@@ -7,6 +7,7 @@ use crate::session::{self, JwksData, JwtTokenConfig, issue_token, session_id_fro
 use crate::{AuthError, AuthenticatedClientScheme, server::Version};
 use crate::{AuthenticationNextStep, AuthenticationResult, Realm, build_cookie};
 use actix_web::HttpMessage;
+use actix_web::http::header;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 use cosmian_logger::{debug, info};
@@ -126,9 +127,8 @@ pub async fn login(
     )?;
 
     let is_https = server_params.tls_params.is_some();
-    let cookie = build_cookie(&token, realm.session_max_age_seconds, is_https)?;
-    let session_id = session_id_from_cookie_value(cookie.value().as_bytes())?;
-    let cookie_string = cookie.to_string();
+    let cookie_string = build_cookie(&token, realm.session_max_age_seconds, is_https);
+    let session_id = session_id_from_cookie_value(token.as_bytes())?;
 
     // Store session in the session store
     session_store
@@ -150,13 +150,12 @@ pub async fn login(
     );
 
     // Build the response with the session cookie set in the Set-Cookie header
-    let mut response = HttpResponse::Ok().json(AuthenticationResult {
-        session_id: Some(session_id),
-        next_step: AuthenticationNextStep::Authenticated,
-    });
-    response
-        .add_cookie(&cookie)
-        .map_err(|e| AuthError::Unexpected(format!("failed adding cookie to the response: {e}")))?;
+    let response = HttpResponse::Ok()
+        .append_header((header::SET_COOKIE, cookie_string))
+        .json(AuthenticationResult {
+            session_id: Some(session_id),
+            next_step: AuthenticationNextStep::Authenticated,
+        });
 
     Ok(response)
 }

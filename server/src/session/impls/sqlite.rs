@@ -241,7 +241,11 @@ impl SessionStore for SqliteSessionStore {
             user_conditions
         );
 
-        let mut query = sqlx::query(&query_str).bind(realm_id).bind(now).bind(now);
+        // query_str is fixed SQL plus generated placeholders; every value goes through bind.
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(query_str))
+            .bind(realm_id)
+            .bind(now)
+            .bind(now);
 
         // Bind each username and auth_scheme pair
         for (i, user) in authenticated_users.iter().enumerate() {
@@ -307,7 +311,8 @@ impl SessionStore for SqliteSessionStore {
             .join(", ");
         let query_str = format!("DELETE FROM session WHERE session_id IN ({})", placeholders);
 
-        let mut query = sqlx::query(&query_str);
+        // query_str is fixed SQL plus generated placeholders; every value goes through bind.
+        let mut query = sqlx::query(sqlx::AssertSqlSafe(query_str));
         for session_id in session_ids {
             query = query.bind(session_id);
         }

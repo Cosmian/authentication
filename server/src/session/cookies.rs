@@ -1,7 +1,6 @@
 use actix_web::{
-    cookie::{Cookie, CookieJar, SameSite, time::Duration},
     dev::ResponseHead,
-    http::header::{HeaderValue, SET_COOKIE},
+    http::header::{self, HeaderMap, HeaderValue, SET_COOKIE},
 };
 
 use crate::{AuthError, AuthResult};
@@ -16,48 +15,23 @@ pub fn session_id_from_cookie_value(cookie_value: &[u8]) -> AuthResult<String> {
     Ok(hex::encode(session_id))
 }
 
-pub fn build_cookie(
-    value: &str,
-    max_age_seconds: i64,
-    is_https: bool,
-) -> Result<Cookie<'static>, AuthError> {
-    let mut cookie = Cookie::new(COOKIE_NAME.to_owned(), value.to_owned());
-
+/// The `Set-Cookie` header value of the session cookie. The value is a JWT (base64url and dots),
+/// which needs no escaping.
+#[must_use]
+pub fn build_cookie(value: &str, max_age_seconds: i64, is_https: bool) -> String {
     // Only set the Secure flag when the server is running over HTTPS.
     // Setting it on plain HTTP would prevent the browser from ever sending the cookie.
-    cookie.set_secure(is_https);
-    cookie.set_http_only(true);
-    cookie.set_same_site(Some(SameSite::Strict));
-    cookie.set_path("/");
-    cookie.set_max_age(Some(Duration::seconds(max_age_seconds)));
-
-    let mut jar = CookieJar::new();
-    jar.add(cookie);
-
-    // set cookie
-    let cookie = jar
-        .delta()
-        .next()
-        .ok_or_else(|| {
-            AuthError::Cookie(
-                "Failed to create a session cookie for the outgoing response".to_string(),
-            )
-        })?
-        .to_owned();
-    Ok(cookie)
+    let secure = if is_https { "; Secure" } else { "" };
+    format!(
+        "{COOKIE_NAME}={value}; HttpOnly; SameSite=Strict; Path=/; Max-Age={max_age_seconds}{secure}"
+    )
 }
 
 pub fn delete_cookie(response: &mut ResponseHead) -> Result<(), AuthError> {
-    let mut removal_cookie = Cookie::build(COOKIE_NAME, "")
-        .path("/")
-        .secure(true)
-        .http_only(true)
-        .same_site(SameSite::Strict)
-        .finish();
-
-    removal_cookie.make_removal();
-
-    let val = HeaderValue::from_str(&removal_cookie.to_string()).map_err(|err| {
+    let val = HeaderValue::from_str(&format!(
+        "{COOKIE_NAME}=; HttpOnly; SameSite=Strict; Secure; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    ))
+    .map_err(|err| {
         AuthError::Cookie(format!(
             "Failed to create a cookie for session deletion: {err}"
         ))
@@ -65,4 +39,59 @@ pub fn delete_cookie(response: &mut ResponseHead) -> Result<(), AuthError> {
     response.headers_mut().append(SET_COOKIE, val);
 
     Ok(())
+}
+
+/// Value of the cookie `name` among the `Cookie` request headers (RFC 6265 §5.4): the first
+/// pair whose trimmed name matches exactly, with one pair of surrounding quotes removed.
+pub fn request_cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers
+        .get_all(header::COOKIE)
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .filter_map(|pair| pair.trim().split_once('='))
+        .find(|(candidate, _)| candidate.trim() == name)
+        .map(|(_, value)| {
+            let value = value.trim();
+            value
+                .strip_prefix('"')
+                .and_then(|v| v.strip_suffix('"'))
+                .unwrap_or(value)
+        })
+}
+
+/// Value of a stored `Set-Cookie` string (`name=value; attributes...`).
+#[must_use]
+pub fn set_cookie_value(set_cookie: &str) -> Option<&str> {
+    set_cookie
+        .split(';')
+        .next()?
+        .split_once('=')
+        .map(|(_, v)| v.trim())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_cookie_matches_exact_name() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_static("a=1; _ea_=\"x\"; _ea_saml=y"),
+        );
+        assert_eq!(request_cookie(&headers, "_ea_"), Some("x"));
+        assert_eq!(request_cookie(&headers, "_ea_saml"), Some("y"));
+        assert_eq!(request_cookie(&headers, "_e"), None);
+    }
+
+    #[test]
+    fn built_cookie_round_trips_and_secure_follows_https() {
+        assert_eq!(
+            set_cookie_value(&build_cookie("tok", 60, true)),
+            Some("tok")
+        );
+        assert!(build_cookie("tok", 60, true).contains("; Secure"));
+        assert!(!build_cookie("tok", 60, false).contains("Secure"));
+    }
 }
