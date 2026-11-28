@@ -16,21 +16,24 @@ vi.mock("../../../../src/contexts/AuthContext", () => ({
     }),
 }));
 
+const makeRealm = (id: string) => ({
+    id,
+    auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
+    session_max_age_seconds: 3600,
+    session_max_stale_age_seconds: 1800,
+});
+
+const mockRealm = {
+    realms: [makeRealm("realm-a"), makeRealm("realm-b")],
+    selectedRealm: "realm-a",
+    isSuperAdminMode: false,
+    isSuperAdmin: false,
+    canManageRealm: (() => true) as (realmId: string) => boolean,
+    realmLabel: (id: string) => id,
+};
+
 vi.mock("../../../../src/contexts/RealmContext", () => ({
-    useRealm: () => ({
-        realms: [
-            {
-                id: "realm-a",
-                auth_params: { username_password_params: null, jwt_params: null, totp_params: null },
-                session_max_age_seconds: 3600,
-                session_max_stale_age_seconds: 1800,
-            },
-        ],
-        selectedRealm: "realm-a",
-        isSuperAdmin: false,
-        isGlobalAdmin: false,
-        realmLabel: (id: string) => id,
-    }),
+    useRealm: () => mockRealm,
 }));
 
 const existingAdmin: Admin = {
@@ -68,6 +71,20 @@ async function fillRequiredFields() {
 describe("AdminFormDrawer — submit button state", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
+        mockRealm.canManageRealm = () => true;
+    });
+
+    it("realm picker: a realm that has its own admins is listed but cannot be picked", async () => {
+        mockRealm.canManageRealm = (realmId) => realmId !== "realm-b";
+        await act(async () => {
+            render(<AdminFormDrawer open={true} admin={null} onClose={vi.fn()} onSuccess={vi.fn()} />);
+        });
+        await act(async () => {
+            fireEvent.mouseDown(screen.getByRole("combobox"));
+        });
+
+        expect(await screen.findByTitle("realm-a")).not.toHaveClass("ant-select-item-option-disabled");
+        expect(await screen.findByTitle("realm-b (has its own admins)")).toHaveClass("ant-select-item-option-disabled");
     });
 
     // ── Create mode ──────────────────────────────────────────────────────────
@@ -100,6 +117,18 @@ describe("AdminFormDrawer — submit button state", () => {
         await waitFor(() => expect(btn).not.toBeDisabled());
     });
 
+    it("create mode: a preselected realm satisfies the realm requirement", async () => {
+        await act(async () => {
+            render(<AdminFormDrawer open={true} admin={null} defaultRealm="realm-a" onClose={vi.fn()} onSuccess={vi.fn()} />);
+        });
+        await act(async () => {
+            fireEvent.change(screen.getByLabelText("Admin ID"), { target: { value: "bob" } });
+        });
+        expect(screen.getByTitle("realm-a")).toBeInTheDocument();
+        const btn = getSubmitButton("Create");
+        await waitFor(() => expect(btn).not.toBeDisabled());
+    });
+
     // ── Edit mode ─────────────────────────────────────────────────────────────
 
     it("edit mode: button is disabled initially (form matches original)", async () => {
@@ -119,5 +148,54 @@ describe("AdminFormDrawer — submit button state", () => {
         });
         const btn = getSubmitButton("Save");
         await waitFor(() => expect(btn).not.toBeDisabled());
+    });
+});
+
+describe("AdminFormDrawer — creating an admin with a password", () => {
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        mockRealm.canManageRealm = () => true;
+    });
+
+    /** Fill the create form for `bob` in `realm-a` with a password, submit, and return the requests made. */
+    async function createBob(): Promise<{ method: string; path: string; body: Record<string, unknown> }[]> {
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({}), { status: 201 }));
+        const onSuccess = vi.fn();
+        await act(async () => {
+            render(<AdminFormDrawer open={true} admin={null} defaultRealm="realm-a" onClose={vi.fn()} onSuccess={onSuccess} />);
+        });
+        await act(async () => {
+            fireEvent.change(screen.getByLabelText("Admin ID"), { target: { value: "bob" } });
+            fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret-pw" } });
+            fireEvent.change(screen.getByLabelText("Confirm Password"), { target: { value: "secret-pw" } });
+        });
+        const btn = getSubmitButton("Create");
+        await waitFor(() => expect(btn).not.toBeDisabled());
+        await act(async () => {
+            fireEvent.click(btn);
+        });
+        await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+        return fetchSpy.mock.calls.map(([url, init]) => ({
+            method: String(init?.method),
+            path: String(url),
+            body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        }));
+    }
+
+    it("a super admin creates the login first, then the admin linked to it", async () => {
+        mockRealm.isSuperAdmin = true;
+        try {
+            const calls = await createBob();
+            expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /realms/_/userpass", "POST /admins"]);
+            expect(calls[1].body).toMatchObject({ id: "bob", realms: ["realm-a"], userpass: "bob" });
+        } finally {
+            mockRealm.isSuperAdmin = false;
+        }
+    });
+
+    it("a realm admin creates the admin first, then its login", async () => {
+        const calls = await createBob();
+        expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /admins", "POST /realms/_/userpass"]);
+        expect(calls[0].body).toMatchObject({ id: "bob", userpass: null });
     });
 });

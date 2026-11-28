@@ -3,6 +3,7 @@ import type { FormInstance } from "antd";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { Realm, RealmAuthParams, TotpAlgorithm } from "../../types/api";
 import { useAuth } from "../../contexts/AuthContext";
+import { SUPER_ADMIN_REALM_ID } from "../../constants/apiPaths";
 import { ApiError } from "../../services/api";
 import { createRealmsApi } from "../../services/realmsApi";
 import { defaultSpUrls, isSamlDirty, toSamlFormValues, toSamlParams } from "../../utils/samlForm";
@@ -15,6 +16,8 @@ export interface RealmFormDrawerProps {
     realm: Realm | null;
     onClose: () => void;
     onSuccess: () => void;
+    /** Called when the server refuses a save with 403, e.g. the realm has been claimed since the page loaded. */
+    onForbidden?: () => void;
 }
 
 const TOTP_ALGORITHMS: { value: TotpAlgorithm; label: string }[] = [
@@ -50,7 +53,7 @@ function reportSubmitError(error: unknown, form: FormInstance, isEdit: boolean):
     return null;
 }
 
-export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, onClose, onSuccess }) => {
+export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, onClose, onSuccess, onForbidden }) => {
     const [form] = Form.useForm();
     const { serverUrl } = useAuth();
     const api = useMemo(() => createRealmsApi(serverUrl), [serverUrl]);
@@ -60,6 +63,8 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
     const originalRealmRef = useRef<Realm | null>(null);
 
     const isEdit = realm !== null;
+    // 2FA only exists for admin logins, so the server reads a realm's TOTP settings for realm `_` alone.
+    const showTotp = realm?.id === SUPER_ADMIN_REALM_ID;
 
     // Track which auth method sections are enabled
     const [upEnabled, setUpEnabled] = useState(false);
@@ -173,12 +178,14 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                       smallest_refresh_interval_seconds: values.smallest_refresh_interval_seconds ?? null,
                   }
                 : null,
-            totp_params: totpEnabled
-                ? {
-                      algorithm: values.totp_algorithm ?? "SHA1",
-                      step: values.totp_step ?? 30,
-                  }
-                : null,
+            totp_params: showTotp
+                ? totpEnabled
+                    ? {
+                          algorithm: values.totp_algorithm ?? "SHA1",
+                          step: values.totp_step ?? 30,
+                      }
+                    : null
+                : (realm?.auth_params.totp_params ?? null),
             saml_params: samlEnabled ? toSamlParams(values.saml) : null,
         };
 
@@ -199,6 +206,7 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
             }
             onSuccess();
         } catch (error) {
+            if (error instanceof ApiError && error.status === 403) onForbidden?.();
             setSubmitError(reportSubmitError(error, form, isEdit));
         } finally {
             setSubmitting(false);
@@ -269,21 +277,23 @@ export const RealmFormDrawer: React.FC<RealmFormDrawerProps> = ({ open, realm, o
                 </div>
 
                 {/* TOTP */}
-                <div className="mb-4">
-                    <Checkbox checked={totpEnabled} onChange={(e) => setTotpEnabled(e.target.checked)}>
-                        TOTP (Two-Factor)
-                    </Checkbox>
-                    {totpEnabled && (
-                        <div className="ml-6 mt-2">
-                            <Form.Item name="totp_algorithm" label="Algorithm">
-                                <Select options={TOTP_ALGORITHMS} />
-                            </Form.Item>
-                            <Form.Item name="totp_step" label="Step (seconds)">
-                                <InputNumber min={1} className="w-full" />
-                            </Form.Item>
-                        </div>
-                    )}
-                </div>
+                {showTotp && (
+                    <div className="mb-4">
+                        <Checkbox checked={totpEnabled} onChange={(e) => setTotpEnabled(e.target.checked)}>
+                            TOTP (Two-Factor)
+                        </Checkbox>
+                        {totpEnabled && (
+                            <div className="ml-6 mt-2">
+                                <Form.Item name="totp_algorithm" label="Algorithm">
+                                    <Select options={TOTP_ALGORITHMS} />
+                                </Form.Item>
+                                <Form.Item name="totp_step" label="Step (seconds)">
+                                    <InputNumber min={1} className="w-full" />
+                                </Form.Item>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {/* SAML */}
                 <div className="mb-4">

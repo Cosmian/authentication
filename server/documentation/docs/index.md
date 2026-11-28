@@ -108,7 +108,7 @@ The Authentication Verifier exposes a RESTful API.
 
 The API is separated into 3 sections:
 
-- the realm management API, open to super admins,
+- the realm management API, open to super admins and, for their own realms, to realm admins,
 - the admin management API, open to realm admins,
 - and the authentication API, open to all clients.
 

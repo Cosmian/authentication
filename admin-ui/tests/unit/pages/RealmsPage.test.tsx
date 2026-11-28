@@ -46,8 +46,9 @@ const mockRealmContext = {
     selectedRealm: "_",
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
+    isSuperAdminMode: true,
     isSuperAdmin: true,
-    isGlobalAdmin: true,
+    canManageRealm: (() => true) as (realmId: string) => boolean,
     loading: false,
     error: null,
     refreshRealms: vi.fn(),
@@ -57,10 +58,23 @@ vi.mock("../../../src/contexts/RealmContext", () => ({
     useRealm: () => mockRealmContext,
 }));
 
+const renderPage = async () => {
+    await act(async () => {
+        render(
+            <MemoryRouter>
+                <RealmsPage />
+            </MemoryRouter>,
+        );
+    });
+};
+
+const cardOf = (realmId: string) => screen.getByText(realmId).closest(".ant-card") as HTMLElement;
+
 describe("RealmsPage", () => {
     beforeEach(() => {
         vi.restoreAllMocks();
-        mockRealmContext.isGlobalAdmin = true;
+        mockRealmContext.isSuperAdmin = true;
+        mockRealmContext.canManageRealm = () => true;
     });
 
     it("should show loading state initially", async () => {
@@ -165,18 +179,83 @@ describe("RealmsPage", () => {
         expect(screen.getByText("Failed to load realms")).toBeInTheDocument();
     });
 
-    it("should show access denied when not super admin", async () => {
-        mockRealmContext.isGlobalAdmin = false;
+    it("should let a realm admin open the page, edit its realm and not create realms", async () => {
+        mockRealmContext.isSuperAdmin = false;
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify([mockRealms[1]]), { status: 200 }));
 
-        await act(async () => {
-            render(
-                <MemoryRouter>
-                    <RealmsPage />
-                </MemoryRouter>,
-            );
-        });
+        await renderPage();
 
-        expect(screen.getByText("Access Denied")).toBeInTheDocument();
+        expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
+        expect(within(cardOf("my-service")).getByRole("button", { name: /Edit/ })).toBeEnabled();
+        expect(within(cardOf("my-service")).getByRole("button", { name: /Delete/ })).toBeEnabled();
+        expect(screen.queryByText("Create Realm")).not.toBeInTheDocument();
+        expect(screen.queryByText("New Realm")).not.toBeInTheDocument();
+        expect(screen.queryByText("Claimed")).not.toBeInTheDocument();
+    });
+
+    it("should show a realm admin without realms an empty state with no create action", async () => {
+        mockRealmContext.isSuperAdmin = false;
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+
+        await renderPage();
+
+        expect(screen.getByText("You don't administer any realm")).toBeInTheDocument();
+        expect(screen.queryByText("Create Realm")).not.toBeInTheDocument();
+    });
+
+    it("should mark a claimed realm for the super admin: Edit disabled, Delete still available", async () => {
+        mockRealmContext.canManageRealm = (realmId) => realmId !== "my-service";
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(mockRealms), { status: 200 }));
+
+        await renderPage();
+
+        const claimed = within(cardOf("my-service"));
+        expect(claimed.getByText("Claimed")).toBeInTheDocument();
+        expect(claimed.getByRole("button", { name: /Edit/ })).toBeDisabled();
+        expect(claimed.getByRole("button", { name: /Delete/ })).toBeEnabled();
+        expect(screen.getAllByText("Claimed")).toHaveLength(1);
+    });
+
+    it("should warn before the super admin deletes a claimed realm", async () => {
+        mockRealmContext.canManageRealm = (realmId) => realmId !== "my-service";
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(mockRealms), { status: 200 }));
+
+        await renderPage();
+        await act(async () =>
+            within(cardOf("my-service"))
+                .getByRole("button", { name: /Delete/ })
+                .click(),
+        );
+
+        expect(screen.getByText(/Its admins are left without a realm/)).toBeInTheDocument();
+    });
+
+    it("should not warn when the super admin deletes a realm without admins", async () => {
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify(mockRealms), { status: 200 }));
+
+        await renderPage();
+        await act(async () =>
+            within(cardOf("my-service"))
+                .getByRole("button", { name: /Delete/ })
+                .click(),
+        );
+
+        expect(screen.getByText(/Delete "my-service"/)).toBeInTheDocument();
+        expect(screen.queryByText(/Its admins are left without a realm/)).not.toBeInTheDocument();
+    });
+
+    it("should warn a realm admin before it deletes its own realm", async () => {
+        mockRealmContext.isSuperAdmin = false;
+        vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify([mockRealms[1]]), { status: 200 }));
+
+        await renderPage();
+        await act(async () =>
+            within(cardOf("my-service"))
+                .getByRole("button", { name: /Delete/ })
+                .click(),
+        );
+
+        expect(screen.getByText(/Its admins are left without a realm/)).toBeInTheDocument();
     });
 
     it("should show Create Realm button", async () => {

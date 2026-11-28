@@ -70,6 +70,8 @@ tests/
 - **Realm `_`** = Admin realm, always present, displayed as "Admin"
 - **Super admin** = Admin with `"_"` in realms list
 - **Session** = server-side, `_ea_` cookie is opaque lookup key
+- **Permission checks** mirror the server: `isSuperAdmin` (the logged-in admin is a super admin), `isSuperAdminMode` (the Super-Admin view is selected in the header) and `canManageRealm(realmId)` (the server lets the admin change that realm). They must match the rules in `server/src/server/endpoints/mod.rs` (`can_manage_realm`, `can_manage_admin_realms`, `realm_manageable_given_claims`) and be reviewed whenever those rules change; the server stays the authority, so a write it refuses with 403 must be reported, not hidden
+- **Unavailable actions** are hidden, not shown disabled; a disabled control is only for display, e.g. Edit with a tooltip on a claimed realm
 - All realm-scoped API paths include `/realms/{realm_id}/...`
 
 ## Auth Server Proxy (dev)

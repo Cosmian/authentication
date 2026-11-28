@@ -52,7 +52,7 @@ function saveButton(): HTMLElement {
 }
 
 /** Whole-form validation re-parses the metadata on every change, which is slow under jsdom. */
-const SLOW = { timeout: 5000 };
+const SLOW = { timeout: 10000 };
 
 /** Make the saved realm dirty, save, and answer with `status` / `body`. */
 async function saveWithResponse(status: number, body: string): Promise<void> {

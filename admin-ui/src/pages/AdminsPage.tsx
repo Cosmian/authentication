@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Form, Input, message, Popconfirm, Result, Space, Table, Tag, Typography } from "antd";
+import { Alert, Badge, Button, message, Popconfirm, Space, Table, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, EditOutlined, KeyOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { Admin } from "../types/api";
@@ -13,9 +13,11 @@ import { AdminFormDrawer } from "../components/admins/AdminFormDrawer";
 import { AdminCredentialModal } from "../components/admins/AdminCredentialModal";
 import { TotpManagementModal } from "../components/admins/TotpManagementModal";
 
+const READ_ONLY_HINT = "This admin belongs to a realm that has its own admins: only they can change it.";
+
 const AdminsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { isSuperAdmin, selectedRealm, realms, realmLabel } = useRealm();
+    const { isSuperAdmin, isSuperAdminMode, canManageRealm, selectedRealm, realmLabel, loading: realmsLoading, refreshRealms } = useRealm();
     const api = useMemo(() => createAdminsApi(serverUrl), [serverUrl]);
 
     const [admins, setAdmins] = useState<Admin[]>([]);
@@ -32,12 +34,14 @@ const AdminsPage: React.FC = () => {
     // Credential modal state
     const [credentialTarget, setCredentialTarget] = useState<Admin | null>(null);
 
-    // Check realm-admin ownership for non-super-admin mode
-    const userRealmIds = realms.map((r) => r.id).filter((id) => id !== SUPER_ADMIN_REALM_ID);
-    const canAdministerSelected = isSuperAdmin || userRealmIds.includes(selectedRealm);
+    // The server only lists the admins the user may read; the Super-Admin view shows them all, a realm view the realm's.
+    const visibleAdmins = isSuperAdminMode ? admins : admins.filter((admin) => admin.realms.includes(selectedRealm));
+    const canCreate = isSuperAdminMode || canManageRealm(selectedRealm);
+    // An admin without realms is only for super admins; otherwise every one of its realms must be manageable.
+    const canManageAdmin = (admin: Admin): boolean => (admin.realms.length === 0 ? isSuperAdmin : admin.realms.every(canManageRealm));
 
     const fetchAdmins = useCallback(async () => {
-        if (!isSuperAdmin) return;
+        if (realmsLoading) return;
         setLoading(true);
         setError(null);
         try {
@@ -48,7 +52,7 @@ const AdminsPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [api, isSuperAdmin]);
+    }, [api, realmsLoading]);
 
     useEffect(() => {
         fetchAdmins();
@@ -69,10 +73,12 @@ const AdminsPage: React.FC = () => {
         setEditingAdmin(null);
     };
 
+    // Adding a realm's first admin claims it, deleting its last one releases it.
     const handleDrawerSuccess = (): void => {
         setDrawerOpen(false);
         setEditingAdmin(null);
         fetchAdmins();
+        refreshRealms();
     };
 
     const handleDelete = async (adminId: string) => {
@@ -80,6 +86,7 @@ const AdminsPage: React.FC = () => {
             await api.delete(adminId);
             message.success(`Admin "${adminId}" deleted`);
             fetchAdmins();
+            refreshRealms();
         } catch {
             message.error(`Failed to delete admin "${adminId}"`);
         }
@@ -96,17 +103,7 @@ const AdminsPage: React.FC = () => {
         fetchAdmins();
     };
 
-    // ── Realm-admin mode (specific realm selected) ──
-    if (!isSuperAdmin) {
-        if (!canAdministerSelected) {
-            return <Result status="403" title="Access Denied" subTitle="You do not administer this realm." />;
-        }
-
-        return <RealmAdminCreateForm selectedRealm={selectedRealm} realmLabel={realmLabel} api={api} />;
-    }
-
-    // ── Super-admin mode ──
-    if (loading) return <LoadingState message="Loading admins..." />;
+    if (realmsLoading || loading) return <LoadingState message="Loading admins..." />;
     if (error) return <Alert type="error" showIcon message="Error" description={error} />;
 
     const columns = [
@@ -114,7 +111,8 @@ const AdminsPage: React.FC = () => {
             title: "ID",
             dataIndex: "id",
             key: "id",
-            render: (id: string, record: Admin) => <Typography.Link onClick={() => handleEdit(record)}>{id}</Typography.Link>,
+            render: (id: string, record: Admin) =>
+                canManageAdmin(record) ? <Typography.Link onClick={() => handleEdit(record)}>{id}</Typography.Link> : id,
         },
         {
             title: "Realms",
@@ -151,31 +149,36 @@ const AdminsPage: React.FC = () => {
         {
             title: "Actions",
             key: "actions",
-            render: (_: unknown, record: Admin) => (
-                <Space>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-                        Edit
-                    </Button>
-                    <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => setTotpTarget(record)}>
-                        TOTP
-                    </Button>
-                    <Button size="small" icon={<KeyOutlined />} onClick={() => setCredentialTarget(record)}>
-                        Credential
-                    </Button>
-                    {!record.realms.includes(SUPER_ADMIN_REALM_ID) && (
-                        <Popconfirm
-                            title={`Delete admin "${record.id}"?`}
-                            onConfirm={() => handleDelete(record.id)}
-                            okText="Delete"
-                            okType="danger"
-                        >
-                            <Button size="small" danger icon={<DeleteOutlined />}>
-                                Delete
-                            </Button>
-                        </Popconfirm>
-                    )}
-                </Space>
-            ),
+            render: (_: unknown, record: Admin) =>
+                canManageAdmin(record) ? (
+                    <Space>
+                        <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
+                            Edit
+                        </Button>
+                        <Button size="small" icon={<SafetyCertificateOutlined />} onClick={() => setTotpTarget(record)}>
+                            TOTP
+                        </Button>
+                        <Button size="small" icon={<KeyOutlined />} onClick={() => setCredentialTarget(record)}>
+                            Credential
+                        </Button>
+                        {!record.realms.includes(SUPER_ADMIN_REALM_ID) && (
+                            <Popconfirm
+                                title={`Delete admin "${record.id}"?`}
+                                onConfirm={() => handleDelete(record.id)}
+                                okText="Delete"
+                                okType="danger"
+                            >
+                                <Button size="small" danger icon={<DeleteOutlined />}>
+                                    Delete
+                                </Button>
+                            </Popconfirm>
+                        )}
+                    </Space>
+                ) : (
+                    <Tooltip title={READ_ONLY_HINT}>
+                        <Tag>Read-only</Tag>
+                    </Tooltip>
+                ),
         },
     ];
 
@@ -183,20 +186,31 @@ const AdminsPage: React.FC = () => {
         <div>
             <PageHeader
                 title="Admin Management"
-                description="Manage administrator accounts"
-                actionLabel="New Admin"
+                description={isSuperAdminMode ? "Manage administrator accounts" : `Administrators of realm: ${realmLabel(selectedRealm)}`}
+                actionLabel={canCreate ? "New Admin" : undefined}
                 onAction={handleCreate}
             />
 
-            {admins.length === 0 ? (
-                <EmptyState description="No admins found" actionLabel="New Admin" onAction={handleCreate} />
+            {!canCreate && (
+                <Alert
+                    type="info"
+                    showIcon
+                    className="mb-4"
+                    message="This realm has its own admins"
+                    description="You can see them to get in touch, but only they can add or change admins of this realm."
+                />
+            )}
+
+            {visibleAdmins.length === 0 ? (
+                <EmptyState description="No admins found" actionLabel={canCreate ? "New Admin" : undefined} onAction={handleCreate} />
             ) : (
-                <Table dataSource={admins} columns={columns} rowKey="id" pagination={false} />
+                <Table dataSource={visibleAdmins} columns={columns} rowKey="id" pagination={false} />
             )}
 
             <AdminFormDrawer
                 open={drawerOpen}
                 admin={editingAdmin}
+                defaultRealm={isSuperAdminMode ? undefined : selectedRealm}
                 onClose={handleDrawerClose}
                 onSuccess={handleDrawerSuccess}
                 onTotpSetup={(adminId) =>
@@ -233,80 +247,6 @@ const AdminsPage: React.FC = () => {
                     onSuccess={handleCredentialSuccess}
                 />
             )}
-        </div>
-    );
-};
-
-// ── Realm-admin create-only form ──
-
-interface RealmAdminCreateFormProps {
-    selectedRealm: string;
-    realmLabel: (id: string) => string;
-    api: ReturnType<typeof createAdminsApi>;
-}
-
-const RealmAdminCreateForm: React.FC<RealmAdminCreateFormProps> = ({ selectedRealm, realmLabel, api }) => {
-    const [form] = Form.useForm();
-    const [loading, setLoading] = useState(false);
-    const [submitError, setSubmitError] = useState<string | null>(null);
-
-    const handleSubmit = async () => {
-        try {
-            const values = await form.validateFields();
-            setLoading(true);
-            const admin: Admin = {
-                id: values.id,
-                realms: [selectedRealm],
-                userpass: null,
-                jwt: values.jwt || null,
-                fido2: null,
-                digital_credentials: null,
-                client_certificate: null,
-            };
-            await api.create(admin);
-            message.success(`Admin "${values.id}" created for realm "${selectedRealm}"`);
-            form.resetFields();
-            setSubmitError(null);
-        } catch (err) {
-            if (err instanceof Error) {
-                setSubmitError(err.message);
-            }
-            // else: form validation errors — shown inline
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div>
-            <Alert
-                type="info"
-                showIcon
-                message="Realm-admin mode"
-                description="You can create new admins scoped to this realm. Switch to Super-Admin mode to view and manage all admins."
-                className="mb-4"
-            />
-            <PageHeader title="Create a new Admin" description={`Create admin for realm: ${realmLabel(selectedRealm)}`} />
-            <div style={{ maxWidth: 480 }}>
-                <Form form={form} layout="vertical" autoComplete="off" onFinish={handleSubmit} onValuesChange={() => setSubmitError(null)}>
-                    <Form.Item name="id" label="Admin ID" rules={[{ required: true, message: "Admin ID is required" }]}>
-                        <Input placeholder="e.g. alice" />
-                    </Form.Item>
-                    <Form.Item name="jwt" label="JWT">
-                        <Input placeholder="JWT identifier" />
-                    </Form.Item>
-                    {submitError && (
-                        <Form.Item>
-                            <Alert type="error" message={submitError} showIcon />
-                        </Form.Item>
-                    )}
-                    <Form.Item>
-                        <Button type="primary" htmlType="submit" loading={loading}>
-                            Create Admin
-                        </Button>
-                    </Form.Item>
-                </Form>
-            </div>
         </div>
     );
 };

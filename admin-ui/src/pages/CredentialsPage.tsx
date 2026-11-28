@@ -12,6 +12,8 @@ import { EmptyState } from "../components/common/EmptyState";
 import { CredentialModal } from "../components/credentials/CredentialModal";
 import { ResetPasswordModal } from "../components/credentials/ResetPasswordModal";
 
+const CLAIMED_HINT = "This realm has its own admins: only they can manage its credentials.";
+
 /** Fetches and displays credentials for a single realm — used in the super-admin overview. */
 const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refreshKey?: number }> = ({
     realmId,
@@ -148,7 +150,7 @@ const RealmCredentialsPanel: React.FC<{ realmId: string; serverUrl: string; refr
 
 const CredentialsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { selectedRealm, realmLabel, realms } = useRealm();
+    const { selectedRealm, realmLabel, realms, canManageRealm } = useRealm();
 
     const [credentials, setCredentials] = useState<UserPass[]>([]);
     const [loading, setLoading] = useState(false);
@@ -168,7 +170,7 @@ const CredentialsPage: React.FC = () => {
     const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({});
 
     const fetchCredentials = useCallback(async () => {
-        if (selectedRealm === SUPER_ADMIN_REALM_ID) return;
+        if (selectedRealm === SUPER_ADMIN_REALM_ID || !canManageRealm(selectedRealm)) return;
         const api = createCredentialsApi(serverUrl);
         setLoading(true);
         setError(null);
@@ -180,7 +182,7 @@ const CredentialsPage: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [serverUrl, selectedRealm]);
+    }, [serverUrl, selectedRealm, canManageRealm]);
 
     useEffect(() => {
         fetchCredentials();
@@ -239,26 +241,37 @@ const CredentialsPage: React.FC = () => {
                     <Collapse
                         accordion={false}
                         defaultActiveKey={concreteRealms.map((r) => r.id)}
-                        items={concreteRealms.map((r) => ({
-                            key: r.id,
-                            label: (
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 8 }}>
-                                    <Typography.Text strong>{r.id}</Typography.Text>
-                                    <Button
-                                        size="small"
-                                        type="primary"
-                                        icon={<PlusOutlined />}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setCreateTargetRealm(r.id);
-                                        }}
+                        items={concreteRealms.map((r) => {
+                            const manageable = canManageRealm(r.id);
+                            return {
+                                key: r.id,
+                                label: (
+                                    <div
+                                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: 8 }}
                                     >
-                                        New Credential
-                                    </Button>
-                                </div>
-                            ),
-                            children: <RealmCredentialsPanel realmId={r.id} serverUrl={serverUrl} refreshKey={refreshKeys[r.id] ?? 0} />,
-                        }))}
+                                        <Typography.Text strong>{r.id}</Typography.Text>
+                                        {manageable && (
+                                            <Button
+                                                size="small"
+                                                type="primary"
+                                                icon={<PlusOutlined />}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setCreateTargetRealm(r.id);
+                                                }}
+                                            >
+                                                New Credential
+                                            </Button>
+                                        )}
+                                    </div>
+                                ),
+                                children: manageable ? (
+                                    <RealmCredentialsPanel realmId={r.id} serverUrl={serverUrl} refreshKey={refreshKeys[r.id] ?? 0} />
+                                ) : (
+                                    <Typography.Text type="secondary">{CLAIMED_HINT}</Typography.Text>
+                                ),
+                            };
+                        })}
                     />
                 )}
                 <CredentialModal
@@ -268,6 +281,15 @@ const CredentialsPage: React.FC = () => {
                     onClose={() => setCreateTargetRealm(null)}
                     onSuccess={() => handleSuperAdminSuccess(createTargetRealm!)}
                 />
+            </div>
+        );
+    }
+
+    if (!canManageRealm(selectedRealm)) {
+        return (
+            <div style={{ maxWidth: 900 }}>
+                <PageHeader title="Credentials" description={`Realm: ${realmLabel(selectedRealm)}`} />
+                <Alert type="info" showIcon message="This realm has its own admins" description={CLAIMED_HINT} />
             </div>
         );
     }

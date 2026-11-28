@@ -80,8 +80,9 @@ const defaultRealmContext = {
     selectedRealm: "my-service",
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
+    isSuperAdminMode: false,
     isSuperAdmin: false,
-    isGlobalAdmin: false,
+    canManageRealm: () => true,
     loading: false,
     error: null,
     refreshRealms: vi.fn(),
@@ -220,8 +221,9 @@ describe("CredentialsPage", () => {
         vi.mocked(useRealm).mockReturnValue({
             ...defaultRealmContext,
             selectedRealm: "_",
+            isSuperAdminMode: true,
             isSuperAdmin: true,
-            isGlobalAdmin: true,
+            canManageRealm: () => true,
         });
 
         await act(async () => {
@@ -237,5 +239,51 @@ describe("CredentialsPage", () => {
         expect(screen.getByText("internal-app")).toBeInTheDocument();
         // The super-admin realm itself should not appear as a panel
         expect(screen.queryByText("_")).not.toBeInTheDocument();
+    });
+
+    it("explains a claimed realm in the overview, without fetching it or offering New Credential", async () => {
+        mockList.mockResolvedValue(mockCredentials);
+        vi.mocked(useRealm).mockReturnValue({
+            ...defaultRealmContext,
+            selectedRealm: "_",
+            isSuperAdminMode: true,
+            isSuperAdmin: true,
+            canManageRealm: (realmId: string) => realmId !== "internal-app",
+        });
+
+        await act(async () => {
+            render(
+                <MemoryRouter>
+                    <CredentialsPage />
+                </MemoryRouter>,
+            );
+        });
+
+        await waitFor(() => expect(screen.getByText("alice")).toBeInTheDocument());
+        expect(screen.getByText("This realm has its own admins: only they can manage its credentials.")).toBeInTheDocument();
+        expect(mockList).toHaveBeenCalledTimes(1);
+        expect(mockList).toHaveBeenCalledWith("my-service");
+        expect(screen.getAllByText("New Credential")).toHaveLength(1);
+    });
+
+    it("shows a note instead of loading credentials when the selected realm has its own admins", async () => {
+        vi.mocked(useRealm).mockReturnValue({
+            ...defaultRealmContext,
+            selectedRealm: "internal-app",
+            isSuperAdmin: true,
+            canManageRealm: (realmId: string) => realmId !== "internal-app",
+        });
+
+        await act(async () => {
+            render(
+                <MemoryRouter>
+                    <CredentialsPage />
+                </MemoryRouter>,
+            );
+        });
+
+        expect(screen.getByText("This realm has its own admins")).toBeInTheDocument();
+        expect(screen.queryByText("New Credential")).not.toBeInTheDocument();
+        expect(mockList).not.toHaveBeenCalled();
     });
 });

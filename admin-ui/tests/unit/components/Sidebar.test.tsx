@@ -16,8 +16,9 @@ const mockRealm = {
     selectedRealm: "_",
     setSelectedRealm: vi.fn(),
     realmLabel: (id: string) => (id === "_" ? "Super-Admin" : id),
+    isSuperAdminMode: true,
     isSuperAdmin: true,
-    isGlobalAdmin: true,
+    canManageRealm: (() => true) as (realmId: string) => boolean,
     loading: false,
     error: null,
 };
@@ -96,31 +97,66 @@ describe("Sidebar", () => {
 
     it("super-admin with a specific realm selected still sees the Realms item", () => {
         // Simulate: global super-admin who switched to a concrete realm
-        mockRealm.isSuperAdmin = false; // admin realm is NOT selected
-        mockRealm.isGlobalAdmin = true; // but user IS a genuine super-admin
+        mockRealm.isSuperAdminMode = false; // admin realm is NOT selected
+        mockRealm.isSuperAdmin = true; // but user IS a genuine super-admin
         mockRealm.selectedRealm = "realm-a";
         try {
             renderSidebar();
             expect(screen.getByText("Realms")).toBeInTheDocument();
         } finally {
             // restore defaults for subsequent tests
+            mockRealm.isSuperAdminMode = true;
             mockRealm.isSuperAdmin = true;
-            mockRealm.isGlobalAdmin = true;
             mockRealm.selectedRealm = "_";
         }
     });
 
-    it("realm-admin does not see the Realms item", () => {
+    it("realm-admin sees the Realms item", () => {
+        mockRealm.isSuperAdminMode = false;
         mockRealm.isSuperAdmin = false;
-        mockRealm.isGlobalAdmin = false;
         mockRealm.selectedRealm = "realm-a";
         try {
             renderSidebar();
-            expect(screen.queryByText("Realms")).not.toBeInTheDocument();
+            expect(screen.getByText("Realms")).toBeInTheDocument();
         } finally {
+            mockRealm.isSuperAdminMode = true;
             mockRealm.isSuperAdmin = true;
-            mockRealm.isGlobalAdmin = true;
             mockRealm.selectedRealm = "_";
+        }
+    });
+
+    it("realm-admin sees the Admins item for a realm it manages, not for one it does not", () => {
+        mockRealm.isSuperAdminMode = false;
+        mockRealm.isSuperAdmin = false;
+        mockRealm.selectedRealm = "realm-a";
+        try {
+            mockRealm.canManageRealm = (realmId) => realmId === "realm-a";
+            const { unmount } = renderSidebar();
+            expect(screen.getByText("Admins")).toBeInTheDocument();
+            unmount();
+
+            mockRealm.canManageRealm = () => false;
+            renderSidebar();
+            expect(screen.queryByText("Admins")).not.toBeInTheDocument();
+        } finally {
+            mockRealm.isSuperAdminMode = true;
+            mockRealm.isSuperAdmin = true;
+            mockRealm.selectedRealm = "_";
+            mockRealm.canManageRealm = () => true;
+        }
+    });
+
+    it("super-admin still sees the Admins item on a claimed realm, to read its admins", () => {
+        mockRealm.isSuperAdminMode = false;
+        mockRealm.selectedRealm = "realm-a";
+        mockRealm.canManageRealm = () => false;
+        try {
+            renderSidebar();
+            expect(screen.getByText("Admins")).toBeInTheDocument();
+        } finally {
+            mockRealm.isSuperAdminMode = true;
+            mockRealm.selectedRealm = "_";
+            mockRealm.canManageRealm = () => true;
         }
     });
 });

@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Col, message, Row, Space, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, message, Row, Space, Tag, Tooltip, Typography } from "antd";
 import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import type { Realm } from "../types/api";
@@ -15,9 +15,13 @@ import { formatDuration } from "../utils/formatDuration";
 import { expiryLevel } from "../utils/samlValidation";
 import { earliestExpiry } from "../utils/x509";
 
+const CLAIMED_HINT = "This realm has its own admins. Only they can change it; you can still delete it.";
+const DELETE_WARNING =
+    "Deleting a realm also deletes its credentials. Its admins are left without a realm, and only a super admin can manage them afterwards.";
+
 const RealmsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { isGlobalAdmin, refreshRealms } = useRealm();
+    const { isSuperAdmin, canManageRealm, refreshRealms } = useRealm();
     const api = useMemo(() => createRealmsApi(serverUrl), [serverUrl]);
 
     const [realms, setRealms] = useState<Realm[]>([]);
@@ -87,27 +91,33 @@ const RealmsPage: React.FC = () => {
         }
     };
 
-    if (!isGlobalAdmin) {
-        return <Alert type="error" showIcon message="Access Denied" description="Realm management requires Super-Admin privileges." />;
-    }
-
     if (loading) return <LoadingState message="Loading realms..." />;
 
     if (error) {
         return <Alert type="error" showIcon message="Error" description={error} />;
     }
 
+    // A realm admin manages every realm it sees; a super admin loses that on claimed realms.
+    const isClaimed = (realm: Realm): boolean => isSuperAdmin && !canManageRealm(realm.id);
+    const deleteWarning = deleteTarget && (!isSuperAdmin || isClaimed(deleteTarget)) ? DELETE_WARNING : undefined;
+
     return (
         <div>
             <PageHeader
                 title="Realms"
-                description="Manage authentication realms and their configuration"
-                actionLabel="Create Realm"
+                description={
+                    isSuperAdmin ? "Manage authentication realms and their configuration" : "Manage the configuration of your realms"
+                }
+                actionLabel={isSuperAdmin ? "Create Realm" : undefined}
                 onAction={handleCreate}
             />
 
             {realms.length === 0 ? (
-                <EmptyState description="No realms configured" actionLabel="Create Realm" onAction={handleCreate} />
+                <EmptyState
+                    description={isSuperAdmin ? "No realms configured" : "You don't administer any realm"}
+                    actionLabel={isSuperAdmin ? "Create Realm" : undefined}
+                    onAction={handleCreate}
+                />
             ) : (
                 <Row gutter={[16, 16]}>
                     {realms.map((realm) => {
@@ -118,15 +128,30 @@ const RealmsPage: React.FC = () => {
                         if (realm.auth_params.saml_params) methods.push("SAML");
                         const samlExpiry = earliestExpiry(realm.auth_params.saml_params?.idp_signing_certificates ?? []);
                         const flagSamlExpiry = samlExpiry !== null && expiryLevel(samlExpiry) !== "ok";
+                        const claimed = isClaimed(realm);
 
                         return (
                             <Col xs={24} sm={12} lg={8} key={realm.id}>
                                 <Card
                                     title={realm.id}
+                                    extra={
+                                        claimed && (
+                                            <Tooltip title={CLAIMED_HINT}>
+                                                <Tag color="gold">Claimed</Tag>
+                                            </Tooltip>
+                                        )
+                                    }
                                     actions={[
-                                        <Button key="edit" type="text" icon={<EditOutlined />} onClick={() => handleEdit(realm)}>
-                                            Edit
-                                        </Button>,
+                                        <Tooltip key="edit" title={claimed ? CLAIMED_HINT : undefined}>
+                                            <Button
+                                                type="text"
+                                                icon={<EditOutlined />}
+                                                disabled={claimed}
+                                                onClick={() => handleEdit(realm)}
+                                            >
+                                                Edit
+                                            </Button>
+                                        </Tooltip>,
                                         <Button
                                             key="delete"
                                             type="text"
@@ -162,28 +187,36 @@ const RealmsPage: React.FC = () => {
                             </Col>
                         );
                     })}
-                    {/* Add new realm card */}
-                    <Col xs={24} sm={12} lg={8}>
-                        <Card
-                            hoverable
-                            onClick={handleCreate}
-                            className="h-full flex items-center justify-center"
-                            style={{ minHeight: 160 }}
-                        >
-                            <div className="flex flex-col items-center gap-2 text-center">
-                                <PlusOutlined style={{ fontSize: 24 }} />
-                                <Typography.Text type="secondary">New Realm</Typography.Text>
-                            </div>
-                        </Card>
-                    </Col>
+                    {isSuperAdmin && (
+                        <Col xs={24} sm={12} lg={8}>
+                            <Card
+                                hoverable
+                                onClick={handleCreate}
+                                className="h-full flex items-center justify-center"
+                                style={{ minHeight: 160 }}
+                            >
+                                <div className="flex flex-col items-center gap-2 text-center">
+                                    <PlusOutlined style={{ fontSize: 24 }} />
+                                    <Typography.Text type="secondary">New Realm</Typography.Text>
+                                </div>
+                            </Card>
+                        </Col>
+                    )}
                 </Row>
             )}
 
-            <RealmFormDrawer open={drawerOpen} realm={editingRealm} onClose={handleDrawerClose} onSuccess={handleDrawerSuccess} />
+            <RealmFormDrawer
+                open={drawerOpen}
+                realm={editingRealm}
+                onClose={handleDrawerClose}
+                onSuccess={handleDrawerSuccess}
+                onForbidden={refreshRealms}
+            />
 
             <ConfirmDeleteModal
                 open={deleteTarget !== null}
                 itemName={deleteTarget?.id ?? ""}
+                warning={deleteWarning}
                 onConfirm={handleDelete}
                 onCancel={() => setDeleteTarget(null)}
                 loading={deleting}

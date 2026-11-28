@@ -25,8 +25,9 @@ jobs:
         with:
           submodules: recursive
 
+      # Pinned: cargo-deny 0.22 needs rustc 1.95, the toolchain here is 1.94.1 (rust-toolchain.toml).
       - name: Install cargo-deny
-        run: cargo install --locked cargo-deny
+        run: cargo install --locked cargo-deny --version 0.21.0
 
       - name: Run cargo-deny check
         run: cargo deny --log-level warn --all-features check

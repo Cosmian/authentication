@@ -10,7 +10,7 @@ import { ConfirmDeleteModal } from "../components/common/ConfirmDeleteModal";
 
 const SessionsPage: React.FC = () => {
     const { serverUrl } = useAuth();
-    const { selectedRealm, isSuperAdmin, realmLabel } = useRealm();
+    const { selectedRealm, isSuperAdminMode, canManageRealm, realmLabel } = useRealm();
     const api = useMemo(() => createSessionsApi(serverUrl), [serverUrl]);
 
     const [revokeModalOpen, setRevokeModalOpen] = useState(false);
@@ -49,7 +49,7 @@ const SessionsPage: React.FC = () => {
                     description="Choose a realm from the header selector to manage its sessions."
                     className="mb-4"
                 />
-                {isSuperAdmin && (
+                {isSuperAdminMode && (
                     <div className="mt-4">
                         <Button icon={<ClearOutlined />} onClick={handlePurgeExpired} loading={purging}>
                             Purge Expired Sessions
@@ -64,19 +64,25 @@ const SessionsPage: React.FC = () => {
         <div>
             <PageHeader title="Sessions" description={`Realm: ${realmLabel(selectedRealm)}`} />
 
-            <Alert
-                type="info"
-                showIcon
-                message="Session browsing not yet available"
-                description="A server-side endpoint for listing sessions is required. You can revoke all sessions for this realm."
-                className="mb-4"
-            />
+            {!canManageRealm(selectedRealm) ? (
+                <Alert type="info" showIcon message="This realm has its own admins" description="Only they can revoke its sessions." />
+            ) : (
+                <>
+                    <Alert
+                        type="info"
+                        showIcon
+                        message="Session browsing not yet available"
+                        description="A server-side endpoint for listing sessions is required. You can revoke all sessions for this realm."
+                        className="mb-4"
+                    />
 
-            <div className="mt-6">
-                <Button danger type="primary" icon={<DeleteOutlined />} onClick={() => setRevokeModalOpen(true)}>
-                    Revoke All Sessions
-                </Button>
-            </div>
+                    <div className="mt-6">
+                        <Button danger type="primary" icon={<DeleteOutlined />} onClick={() => setRevokeModalOpen(true)}>
+                            Revoke All Sessions
+                        </Button>
+                    </div>
+                </>
+            )}
 
             <ConfirmDeleteModal
                 open={revokeModalOpen}

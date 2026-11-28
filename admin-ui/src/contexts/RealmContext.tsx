@@ -3,6 +3,7 @@ import { message } from "antd";
 import { SUPER_ADMIN_REALM_ID, SUPER_ADMIN_REALM_LABEL, API_REALMS } from "../constants/apiPaths";
 import type { Realm } from "../types/api";
 import { useAuth } from "./AuthContext";
+import { useRealmPermissions } from "./useRealmPermissions";
 
 /* eslint-disable react-refresh/only-export-components */
 
@@ -13,10 +14,11 @@ interface RealmContextType {
     selectedRealm: string;
     setSelectedRealm: (realmId: string) => void;
     realmLabel: (realmId: string) => string;
+    /** The Super-Admin view (realm `_`) is selected in the header; says nothing about who is logged in. */
+    isSuperAdminMode: boolean;
     isSuperAdmin: boolean;
-    /** True when the logged-in admin is a genuine super-admin (has `_` in their server-side realm list),
-     *  regardless of which realm is currently selected. */
-    isGlobalAdmin: boolean;
+    /** Whether the server lets the logged-in admin change the realm: a super admin loses that once the realm has its own admins. */
+    canManageRealm: (realmId: string) => boolean;
     loading: boolean;
     error: string | null;
     refreshRealms: () => void;
@@ -32,9 +34,9 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     );
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
-    const isSuperAdmin = selectedRealm === SUPER_ADMIN_REALM_ID;
+    const isSuperAdminMode = selectedRealm === SUPER_ADMIN_REALM_ID;
 
     // Guards against setState-after-unmount: fetchRealms is also exposed as refreshRealms
     // for manual re-fetch, so a request can still be in flight when the provider unmounts.
@@ -59,6 +61,8 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         [realms],
     );
 
+    const { canManageRealm, loadClaimedRealms, clearClaimedRealms } = useRealmPermissions(serverUrl, mountedRef, isSuperAdmin, realms);
+
     const fetchRealms = useCallback(async () => {
         if (!isAuthenticated) {
             if (mountedRef.current) setLoading(false);
@@ -75,23 +79,25 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             // Trust the server response — only show realms the admin can actually access.
             // Do not artificially inject SUPER_ADMIN_REALM for non-super-admins.
             setRealms(data);
-            setIsGlobalAdmin(hasAdmin);
-            // If the previously selected realm is no longer accessible, fall back to
-            // the first realm in the list (or SUPER_ADMIN_REALM_ID as a safe default).
+            setIsSuperAdmin(hasAdmin);
+            // If the previously selected realm is no longer accessible, fall back to the first
+            // realm in the list. An empty list is an admin with no realm left, never a super admin.
             setSelectedRealmState((prev) => {
                 if (data.some((r) => r.id === prev)) return prev;
-                return data[0]?.id ?? SUPER_ADMIN_REALM_ID;
+                return data[0]?.id ?? "";
             });
             setError(null);
+            await loadClaimedRealms(hasAdmin);
         } catch {
             if (!mountedRef.current) return;
             message.error("Failed to load realms");
             setRealms([]);
+            clearClaimedRealms();
             setError("Failed to load realms");
         } finally {
             if (mountedRef.current) setLoading(false);
         }
-    }, [isAuthenticated, serverUrl]);
+    }, [isAuthenticated, serverUrl, loadClaimedRealms, clearClaimedRealms]);
 
     useEffect(() => {
         fetchRealms();
@@ -104,8 +110,9 @@ export const RealmProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 selectedRealm,
                 setSelectedRealm,
                 realmLabel,
+                isSuperAdminMode,
                 isSuperAdmin,
-                isGlobalAdmin,
+                canManageRealm,
                 loading,
                 error,
                 refreshRealms: fetchRealms,

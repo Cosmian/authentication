@@ -44,7 +44,7 @@ pub fn can_administer_realm(&self, realm: &str) -> bool {
 }
 ```
 
-A super admin always satisfies `can_administer_realm` for any realm.
+A super admin always satisfies `can_administer_realm` for any realm. It is a static hint that knows nothing about realm claims (a realm that has admins of its own): the handlers decide with the claim-aware `can_manage_realm` instead, see [authorization_and_administration.md](documentation/docs/authorization_and_administration.md).
 
 ---
 
@@ -56,8 +56,8 @@ A super admin always satisfies `can_administer_realm` for any realm.
 |--------|------|-----------------|
 | `POST` | `/admins/realms` | Super admin |
 | `GET` | `/admins/realms/{id}` | Admin of `id` **or** super admin |
-| `PUT` | `/admins/realms/{id}` | Super admin |
-| `DELETE` | `/admins/realms/{id}` | Super admin |
+| `PUT` | `/admins/realms/{id}` | Admin of `id` **or** super admin, but only while `id` has no admin of its own |
+| `DELETE` | `/admins/realms/{id}` | Admin of `id` **or** super admin (always, to clean up an abandoned realm) |
 | `GET` | `/admins/realms` | Any authenticated admin (filtered) |
 
 > `GET /admins/realms` returns **all** realms for super admins and only the
@@ -71,7 +71,7 @@ A super admin always satisfies `can_administer_realm` for any realm.
 | `GET` | `/admins/{id}` | Any super admin (read-only, claimed realms included) **or** realm admin (see below) |
 | `PUT` | `/admins/{id}` | Super admin **or** realm admin (see below) |
 | `DELETE` | `/admins/{id}` | Super admin **or** realm admin (see below) |
-| `GET` | `/admins` | Super admin (all admins) |
+| `GET` | `/admins` | Super admin (all admins) **or** realm admin (the admins it owns, see below) |
 | `PUT` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 | `DELETE` | `/admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin |
 

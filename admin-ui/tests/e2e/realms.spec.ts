@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import type { Realm } from "../../src/types/api";
+import type { Admin, Realm } from "../../src/types/api";
 import { idpMetadata } from "../unit/fixtures/saml";
 
 // ── Fixture data ──────────────────────────────────────────────────────────────
@@ -31,9 +31,10 @@ const serviceRealm: Realm = {
 /**
  * Register page.route() handlers to mock all /admins/realms API calls.
  * `realmsStore` is mutated in-place by POST/PUT/DELETE handlers so that
- * the GET refetch after each operation reflects the change.
+ * the GET refetch after each operation reflects the change. `admins` is what `GET /admins`
+ * returns to a super admin; it decides which realms the UI shows as claimed.
  */
-async function mockRealmsApi(page: Page, initialRealms: Realm[]): Promise<void> {
+async function mockRealmsApi(page: Page, initialRealms: Realm[], admins: Admin[] = []): Promise<void> {
     const store: Realm[] = [...initialRealms];
 
     // Also mock /public/version so the Footer doesn't hit a real server.
@@ -65,6 +66,12 @@ async function mockRealmsApi(page: Page, initialRealms: Realm[]): Promise<void> 
                     as_rid: "_",
                 }),
             }),
+    );
+
+    // The super admin's realm context lists admins to find the claimed realms.
+    await page.route(
+        (url) => url.pathname === "/admins",
+        (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(admins) }),
     );
 
     // LIST  GET /admins/realms
@@ -238,5 +245,59 @@ test.describe("Realms page", () => {
 
         const card = page.locator(".ant-card").filter({ hasText: "acme" });
         await expect(card.getByText("SAML", { exact: true })).toBeVisible();
+    });
+
+    test("a realm admin can edit its realm with SAML metadata but cannot create realms", async ({ page }) => {
+        // A realm admin is only offered its own realms, and never realm `_`.
+        await mockRealmsApi(page, [serviceRealm]);
+        await page.goto("/admin-ui/realms");
+
+        const card = page.locator(".ant-card").filter({ hasText: "my-service" });
+        await expect(card).toBeVisible();
+        await expect(page.getByRole("button", { name: "Create Realm" })).toHaveCount(0);
+        await expect(page.getByText("New Realm")).toHaveCount(0);
+
+        await card.getByRole("button", { name: "Edit" }).click();
+        await page.getByRole("checkbox", { name: "SAML 2.0 (single sign-on)" }).check();
+        await page.getByLabel("IdP metadata XML").fill(idpMetadata());
+        await page.getByLabel("SP entity ID", { exact: true }).fill("https://auth.example.com/saml/my-service");
+        await page.getByLabel("Assertion Consumer Service URL", { exact: true }).fill("https://auth.example.com/saml/my-service/acs");
+        const origins = page.getByLabel("Allowed return origins");
+        await origins.fill("https://app.example.com");
+        await origins.press("Enter");
+        await page.getByLabel("Default return URL").fill("https://app.example.com/home");
+
+        const request = page.waitForRequest((r) => r.method() === "PUT" && new URL(r.url()).pathname === "/admins/realms/my-service");
+        await page.getByRole("button", { name: "Save" }).last().click();
+        const body = (await request).postDataJSON() as Realm;
+        expect(body.auth_params.saml_params).toMatchObject({ sp_acs_url: "https://auth.example.com/saml/my-service/acs" });
+
+        await expect(card.getByText("SAML", { exact: true })).toBeVisible();
+    });
+
+    test("a super admin sees a claimed realm as read-only and can still delete it", async ({ page }) => {
+        const admin = (id: string, realms: string[]): Admin => ({
+            id,
+            realms,
+            userpass: id,
+            jwt: null,
+            fido2: null,
+            digital_credentials: null,
+            client_certificate: null,
+        });
+        await mockRealmsApi(page, [baseRealm, serviceRealm], [admin("admin", ["_"]), admin("service-admin", ["my-service"])]);
+        await page.goto("/admin-ui/realms");
+
+        const card = page.locator(".ant-card").filter({ hasText: "my-service" });
+        await expect(card.getByText("Claimed")).toBeVisible();
+        await expect(card.getByRole("button", { name: "Edit" })).toBeDisabled();
+        await expect(page.locator(".ant-card").filter({ hasText: "Claimed" })).toHaveCount(1);
+
+        await card.getByRole("button", { name: "Delete" }).click();
+        await expect(page.getByText(/Its admins are left without a realm/)).toBeVisible();
+        await page.getByPlaceholder("my-service").fill("my-service");
+        await page.getByRole("button", { name: "Delete" }).last().click();
+
+        await expect(page.locator(".ant-card").filter({ hasText: "my-service" })).toHaveCount(0);
     });
 });

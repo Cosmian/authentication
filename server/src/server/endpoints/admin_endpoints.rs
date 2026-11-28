@@ -10,7 +10,7 @@
 //! | `GET /admins/{id}` | Super admin (any admin, read-only, to contact the admins of a claimed realm) **or** realm admin (exclusive ownership) |
 //! | `PUT /admins/{id}` | Realm admin (exclusive ownership) **or** super admin, but only while the target's realm(s) have no admin of their own; applied to both the current and the new realm list |
 //! | `DELETE /admins/{id}` | Same as `PUT /admins/{id}` |
-//! | `GET /admins` | Super admin, all admins |
+//! | `GET /admins` | Super admin: all admins. Realm admin: the admins whose realms it all administers (itself included) |
 //! | `PUT /admins/{id}/realms/{realm_id}` | Admin of `realm_id` **or** super admin, but only while `realm_id` has no admin of its own yet |
 //! | `DELETE /admins/{id}/realms/{realm_id}` | Same as above |
 //!
@@ -317,8 +317,9 @@ pub async fn delete_admin(
     Ok(HttpResponse::NoContent().finish())
 }
 
-/// List all admins. Super admins only. A super admin sees every admin, including those of claimed
-/// realms, to be able to contact them; it still cannot change them (see [`update_admin`]).
+/// List admins. A super admin sees every admin, including those of claimed realms, to be able to
+/// contact them; it still cannot change them (see [`update_admin`]). A realm admin sees the admins
+/// it could read with [`get_admin`]: those whose realms it all administers, itself included.
 ///
 /// Mapped to the scope root so the full URL is `GET /admins`.
 #[get("")]
@@ -327,14 +328,19 @@ pub async fn list_admins(
     database: Data<Arc<dyn Database>>,
 ) -> Result<HttpResponse, AuthError> {
     let requester = admin_from_request(&req)?;
+    let mut admins = database.list_admins().await?;
 
     if !requester.is_super_admin() {
-        return Err(AuthError::Forbidden(
-            "Only super admins can list admins".to_string(),
-        ));
+        admins.retain(|admin| {
+            !admin.realms.is_empty()
+                && admin
+                    .realms
+                    .iter()
+                    .all(|r| requester.can_administer_realm(r))
+        });
     }
 
-    Ok(HttpResponse::Ok().json(database.list_admins().await?))
+    Ok(HttpResponse::Ok().json(admins))
 }
 
 /// Grant an admin membership in a realm.
